@@ -1,0 +1,62 @@
+name: "Theria"
+description: "Smart heating optimization using electricity price-based heat capacitor strategy"
+version: "0.1.0"
+slug: "theria"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: application
+boot: auto
+ports:
+  8081/tcp: 8081
+ingress: true
+ingress_port: 8081
+panel_icon: mdi:radiator
+panel_title: Theria
+panel_admin: true
+hassio_api: true
+homeassistant_api: true
+auth_api: true
+
+options:
+  sensors:
+    nordpool_price: "sensor.nordpool_kwh_se4_sek_2_10_025"
+    outdoor_temp: "sensor.outdoor"  # H60 outdoor temperature sensor
+
+  price_optimization:
+    enabled: true
+    price_sensor: "nordpool_price"
+    expensive_hours: 4  # Number of most expensive hours to avoid heating
+    cheap_hours: 4  # Number of cheapest hours to pre-heat
+    adjustment_degrees: 0.5  # Temperature adjustment in °C
+
+  zones:
+    - id: "butik"
+      name: "Butik"
+      climate_entities:
+        - "climate.vantsidan"
+        - "climate.klippsidan"
+      temp_sensors:
+        - "climate.vantsidan"
+        - "climate.klippsidan"
+        - "sensor.schamponeringstolen_temperature"
+        - "sensor.butik_temperature_2"
+      comfort_target: 21.0  # Target comfort temperature (°C)
+      allowed_deviation: 1.0  # Allowed temperature variation for savings (±°C)
+      enabled: true
+
+schema:
+  zones:
+    - id: str
+      name: str
+      climate_entities:
+        - str
+      temp_sensors:
+        - str
+      comfort_target: float
+      allowed_deviation: float
+      enabled: bool?
