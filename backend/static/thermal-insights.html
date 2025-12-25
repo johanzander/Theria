@@ -285,7 +285,7 @@
         <div class="header">
             <h1>🧠 Thermal Learning Insights</h1>
             <div class="breadcrumb">
-                <a href="/">← Back to Dashboard</a>
+                <a href="./">← Back to Dashboard</a>
             </div>
         </div>
 
@@ -451,11 +451,11 @@
             for (const zone of zones) {
                 try {
                     // Get thermal characteristics
-                    const charRes = await fetch(`/api/thermal/characteristics?zone_id=${zone.id}`);
+                    const charRes = await fetch(`api/thermal/characteristics?zone_id=${zone.id}`);
                     const charData = await charRes.json();
 
                     // Get zone status
-                    const statusRes = await fetch(`/api/zones/${zone.id}/status`);
+                    const statusRes = await fetch(`api/zones/${zone.id}/status`);
                     const statusData = await statusRes.json();
 
                     const confidence = charData.overall_confidence || 0;
@@ -525,7 +525,7 @@
             for (const zone of zones) {
                 try {
                     // Fetch temperature history
-                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
 
                     if (!tempData.history || tempData.history.length === 0) continue;
@@ -729,11 +729,11 @@
                 const zone = zones[zoneIdx];
                 try {
                     // Fetch temperature history
-                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
 
                     // Fetch heating power timeline
-                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
                     const heatingData = await heatingRes.json();
 
                     if (!tempData.history || tempData.history.length === 0) continue;
@@ -894,9 +894,9 @@
             try {
                 // Fetch historical data for the three sensors
                 const [setpointRes, forwardRes, valveRes] = await Promise.all([
-                    fetch(`/api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
-                    fetch(`/api/sensor/history?entity_id=sensor.radiator_forward&hours=${hours}`),
-                    fetch(`/api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
+                    fetch(`api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
+                    fetch(`api/sensor/history?entity_id=sensor.radiator_forward&hours=${hours}`),
+                    fetch(`api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
                 ]);
 
                 const setpointData = await setpointRes.json();
@@ -1074,11 +1074,11 @@
             try {
                 // Fetch all required sensor data in parallel
                 const [forwardRes, returnRes, setpointRes, compressorRes, valveRes] = await Promise.all([
-                    fetch(`/api/sensor/history?entity_id=sensor.heat_carrier_forwrd&hours=${hours}`),
-                    fetch(`/api/sensor/history?entity_id=sensor.heat_carrier_return&hours=${hours}`),
-                    fetch(`/api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
-                    fetch(`/api/sensor/history?entity_id=sensor.compressor_speed_2&hours=${hours}`),
-                    fetch(`/api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
+                    fetch(`api/sensor/history?entity_id=sensor.heat_carrier_forwrd&hours=${hours}`),
+                    fetch(`api/sensor/history?entity_id=sensor.heat_carrier_return&hours=${hours}`),
+                    fetch(`api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
+                    fetch(`api/sensor/history?entity_id=sensor.compressor_speed_2&hours=${hours}`),
+                    fetch(`api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
                 ]);
 
                 const forwardData = await forwardRes.json();
@@ -1459,11 +1459,11 @@
                 const zone = zones[i];
                 try {
                     // Fetch temperature history
-                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
 
                     // Fetch heating power timeline
-                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
                     const heatingData = await heatingRes.json();
 
                     zoneDataList.push({
@@ -1719,7 +1719,7 @@
             for (let i = 0; i < zones.length; i++) {
                 const zone = zones[i];
                 try {
-                    const res = await fetch(`/api/thermal/characteristics/history?zone_id=${zone.id}&hours=${hours}`);
+                    const res = await fetch(`api/thermal/characteristics/history?zone_id=${zone.id}&hours=${hours}`);
                     const data = await res.json();
 
                     if (data.snapshots && data.snapshots.length > 0) {

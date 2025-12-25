@@ -289,7 +289,7 @@
             <h1>🌡️ Theria</h1>
             <p>Smart Zone Temperature Control</p>
             <div class="nav-links">
-                <a href="/thermal-insights" class="nav-link">📊 Thermal Insights</a>
+                <a href="thermal-insights" class="nav-link">📊 Thermal Insights</a>
             </div>
         </div>
 
@@ -323,7 +323,7 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-                const response = await fetch(`/api/zones/${ZONE_ID}/status`, {
+                const response = await fetch(`api/zones/${ZONE_ID}/status`, {
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
@@ -362,7 +362,7 @@
 
         async function loadHistory() {
             try {
-                const response = await fetch(`/api/zones/${ZONE_ID}/history?hours=24`);
+                const response = await fetch(`api/zones/${ZONE_ID}/history?hours=24`);
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -375,7 +375,7 @@
 
         async function loadEvents() {
             try {
-                const response = await fetch(`/api/zones/${ZONE_ID}/events?hours=24`);
+                const response = await fetch(`api/zones/${ZONE_ID}/events?hours=24`);
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -388,7 +388,7 @@
 
         async function loadPrice() {
             try {
-                const response = await fetch('/api/price/current');
+                const response = await fetch('api/price/current');
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -401,7 +401,7 @@
 
         async function loadThermalCharacteristics() {
             try {
-                const response = await fetch(`/api/thermal/characteristics?zone_id=${ZONE_ID}`);
+                const response = await fetch(`api/thermal/characteristics?zone_id=${ZONE_ID}`);
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -1002,7 +1002,7 @@
 
             try {
                 // Send command to HA
-                const response = await fetch(`/api/zones/${ZONE_ID}/set_temperature`, {
+                const response = await fetch(`api/zones/${ZONE_ID}/set_temperature`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1051,7 +1051,7 @@
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
 
                 try {
-                    const response = await fetch(`/api/zones/${ZONE_ID}/status`);
+                    const response = await fetch(`api/zones/${ZONE_ID}/status`);
                     if (!response.ok) continue;
 
                     const data = await response.json();
