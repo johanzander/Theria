@@ -168,8 +168,20 @@ if os.path.exists(static_dir):
 
 @app.get("/")
 async def root():
-    """Root endpoint - redirect to UI."""
-    return RedirectResponse(url="/static/index.html")
+    """Root endpoint - serve UI with proper base path."""
+    from fastapi.responses import HTMLResponse
+    
+    # Read index.html
+    index_path = os.path.join(static_dir, "index.html")
+    with open(index_path) as f:
+        html_content = f.read()
+    
+    # Inject base tag if ingress prefix exists
+    if INGRESS_PREFIX:
+        base_tag = f'<base href="{INGRESS_PREFIX}/">'
+        html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+    
+    return HTMLResponse(content=html_content)
 
 
 # For development

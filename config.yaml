@@ -1,6 +1,6 @@
 name: "Theria"
 description: "Smart heating optimization using electricity price-based heat capacitor strategy"
-version: "0.1.4"
+version: "0.1.5"
 slug: "theria"
 init: false
 arch:
