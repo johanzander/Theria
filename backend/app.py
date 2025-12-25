@@ -120,7 +120,7 @@ app = FastAPI(
     title="Theria API",
     description="Smart heating optimization using electricity price-based heat capacitor strategy",
     version="0.1.0",
-    root_path=INGRESS_PREFIX,
+    root_path=INGRESS_PREFIX if INGRESS_PREFIX else "",
     lifespan=lifespan,
 )
 
@@ -171,6 +171,8 @@ async def root():
     """Root endpoint - serve UI with proper base path."""
     from fastapi.responses import HTMLResponse
     
+    logger.info(f"Serving root with INGRESS_PREFIX: '{INGRESS_PREFIX}'")
+    
     # Read index.html
     index_path = os.path.join(static_dir, "index.html")
     with open(index_path) as f:
@@ -180,6 +182,7 @@ async def root():
     if INGRESS_PREFIX:
         base_tag = f'<base href="{INGRESS_PREFIX}/">'
         html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+        logger.info(f"Injected base tag: {base_tag}")
     
     return HTMLResponse(content=html_content)
 
@@ -190,6 +193,8 @@ async def thermal_insights():
     """Thermal insights page with proper base path."""
     from fastapi.responses import HTMLResponse
     
+    logger.info(f"Serving thermal-insights with INGRESS_PREFIX: '{INGRESS_PREFIX}'")
+    
     # Read thermal-insights.html
     insights_path = os.path.join(static_dir, "thermal-insights.html")
     with open(insights_path) as f:
@@ -199,6 +204,7 @@ async def thermal_insights():
     if INGRESS_PREFIX:
         base_tag = f'<base href="{INGRESS_PREFIX}/">'
         html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+        logger.info(f"Injected base tag: {base_tag}")
     
     return HTMLResponse(content=html_content)
 
