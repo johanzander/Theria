@@ -9,9 +9,9 @@ import sys
 from contextlib import asynccontextmanager
 
 import log_config  # noqa: F401
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -26,15 +26,12 @@ from core.theria.price_optimizer import PriceOptimizer
 from core.theria.temperature_history_service import TemperatureHistoryService
 from core.theria.thermal_learning_service import ThermalLearningService
 
-# Get ingress prefix for Home Assistant integration
-INGRESS_PREFIX = os.environ.get("INGRESS_PREFIX", "")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan manager for startup/shutdown."""
     # Startup
-    logger.info(f"Theria starting with ingress prefix: {INGRESS_PREFIX}")
+    logger.info("Theria starting")
 
     # Log registered routes
     routes = [
@@ -120,7 +117,6 @@ app = FastAPI(
     title="Theria API",
     description="Smart heating optimization using electricity price-based heat capacitor strategy",
     version="0.1.0",
-    root_path=INGRESS_PREFIX if INGRESS_PREFIX else "",
     lifespan=lifespan,
 )
 
@@ -167,20 +163,22 @@ if os.path.exists(static_dir):
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """Root endpoint - serve UI with proper base path."""
     from fastapi.responses import HTMLResponse
     
-    logger.info(f"Serving root with INGRESS_PREFIX: '{INGRESS_PREFIX}'")
+    # Get ingress path from Home Assistant header
+    ingress_path = request.headers.get("X-Ingress-Path", "")
+    logger.info(f"Serving root with X-Ingress-Path: '{ingress_path}'")
     
     # Read index.html
     index_path = os.path.join(static_dir, "index.html")
     with open(index_path) as f:
         html_content = f.read()
     
-    # Inject base tag if ingress prefix exists
-    if INGRESS_PREFIX:
-        base_tag = f'<base href="{INGRESS_PREFIX}/">'
+    # Inject base tag if ingress path exists
+    if ingress_path:
+        base_tag = f'<base href="{ingress_path}/">'
         html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
         logger.info(f"Injected base tag: {base_tag}")
     
@@ -189,20 +187,22 @@ async def root():
 
 @app.get("/thermal-insights")
 @app.get("/thermal-insights.html")
-async def thermal_insights():
+async def thermal_insights(request: Request):
     """Thermal insights page with proper base path."""
     from fastapi.responses import HTMLResponse
     
-    logger.info(f"Serving thermal-insights with INGRESS_PREFIX: '{INGRESS_PREFIX}'")
+    # Get ingress path from Home Assistant header
+    ingress_path = request.headers.get("X-Ingress-Path", "")
+    logger.info(f"Serving thermal-insights with X-Ingress-Path: '{ingress_path}'")
     
     # Read thermal-insights.html
     insights_path = os.path.join(static_dir, "thermal-insights.html")
     with open(insights_path) as f:
         html_content = f.read()
     
-    # Inject base tag if ingress prefix exists
-    if INGRESS_PREFIX:
-        base_tag = f'<base href="{INGRESS_PREFIX}/">'
+    # Inject base tag if ingress path exists
+    if ingress_path:
+        base_tag = f'<base href="{ingress_path}/">'
         html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
         logger.info(f"Injected base tag: {base_tag}")
     
