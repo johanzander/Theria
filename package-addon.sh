@@ -25,6 +25,10 @@ cp backend/log_config.py ./build/theria/backend/
 cp backend/requirements.txt ./build/theria/backend/
 cp backend/run.sh ./build/theria/backend/
 
+# Copy static files (UI)
+echo "📦 Copying static files..."
+cp -r backend/static ./build/theria/backend/
+
 # Copy core module
 echo "📦 Copying core module..."
 cp -r core ./build/theria/

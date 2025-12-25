@@ -35,6 +35,9 @@ WORKDIR /app
 # Copy Python application files from backend directory
 COPY backend/app.py backend/api.py backend/log_config.py backend/requirements.txt ./
 
+# Copy static files (UI)
+COPY backend/static/ ./static/
+
 # Copy core directory
 COPY core/ /app/core/
 
