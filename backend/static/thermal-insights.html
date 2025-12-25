@@ -424,7 +424,7 @@
 
             try {
                 // Load zones list
-                const zonesRes = await fetch('/api/zones');
+                const zonesRes = await fetch('api/zones');
                 const zonesData = await zonesRes.json();
                 zones = zonesData.zones;
 
