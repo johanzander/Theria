@@ -1,8 +1,8 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-python:3.11
+ARG BUILD_FROM
 FROM $BUILD_FROM
 
 # Set version labels
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION
 ARG BUILD_DATE
 ARG BUILD_REF
 
@@ -53,12 +53,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Make scripts executable
 RUN chmod a+x /app/run.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8081/api/health', timeout=5)" || exit 1
-
 # Expose the port
 EXPOSE 8081
 
 # Launch application
-CMD ["/bin/bash", "/app/run.sh"]
+CMD ["/usr/bin/with-contenv", "bash", "/app/run.sh"]
