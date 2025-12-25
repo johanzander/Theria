@@ -7,10 +7,10 @@ if [ -f /usr/lib/bashio/bashio.sh ]; then
     # shellcheck disable=SC1091
     source /usr/lib/bashio/bashio.sh
     
-    # Enable Home Assistant API
-    export HA_TOKEN=$(bashio::config 'hassio_token')
+    # Enable Home Assistant API - Use SUPERVISOR_TOKEN environment variable
+    export HA_TOKEN="${SUPERVISOR_TOKEN}"
     export HA_URL="http://supervisor/core"
-    bashio::log.info "Starting Theria..."
+    bashio::log.info "Starting Theria with Supervisor token..."
 else
     echo "WARNING: bashio.sh not found. Using environment variables."
     # Environment variables should already be set by the Home Assistant add-on system
