@@ -19,9 +19,12 @@ from loguru import logger
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Import API router
-from api import router as api_router, ha_client, ZONES
-from core.theria.thermal_learning_service import ThermalLearningService
+from api import ZONES, ha_client
+from api import router as api_router
+
 from core.theria.price_optimizer import PriceOptimizer
+from core.theria.temperature_history_service import TemperatureHistoryService
+from core.theria.thermal_learning_service import ThermalLearningService
 
 # Get ingress prefix for Home Assistant integration
 INGRESS_PREFIX = os.environ.get("INGRESS_PREFIX", "")
@@ -41,7 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Registered routes: {routes}")
 
     # Initialize price optimizer if enabled
-    price_optimizer = None
+    # Note: Price optimizer is also initialized in api.py for endpoint access
     if ha_client:
         try:
             # Load price config from options (in production) or config.yaml (dev)
@@ -64,7 +67,7 @@ async def lifespan(app: FastAPI):
                         if not price_entity:
                             raise ValueError(f"Sensor key '{sensor_key}' not found in sensors config")
 
-                        price_optimizer = PriceOptimizer(
+                        PriceOptimizer(
                             ha_client,
                             price_entity=price_entity,
                             expensive_hours=price_config.get("expensive_hours", 4),
@@ -77,6 +80,7 @@ async def lifespan(app: FastAPI):
 
     # Start thermal learning service if HA client is available
     learning_service = None
+    history_service = None
     if ha_client and ZONES:
         learning_service = ThermalLearningService(
             ha_client,
@@ -86,6 +90,14 @@ async def lifespan(app: FastAPI):
         )
         await learning_service.start()
         logger.info(f"🧠 Thermal learning enabled for {len(ZONES)} zone(s)")
+
+        # Start temperature history collection service
+        history_service = TemperatureHistoryService(
+            ha_client,
+            ZONES,
+            collection_interval_seconds=60  # Collect every minute
+        )
+        await history_service.start()
 
         # Make learning service available to API
         import api
@@ -99,6 +111,8 @@ async def lifespan(app: FastAPI):
     logger.info("Theria shutting down")
     if learning_service:
         await learning_service.stop()
+    if history_service:
+        await history_service.stop()
 
 
 # Create FastAPI application

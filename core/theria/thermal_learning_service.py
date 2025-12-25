@@ -8,11 +8,11 @@ Runs every 15 minutes to collect measurements and update zone models.
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Optional
 
 from .ha_client import HAClient
-from .zone_thermal_learner import ZoneThermalLearner
+from .history import history_tracker
 from .settings import ZoneSettings
+from .zone_thermal_learner import ZoneThermalLearner
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class ThermalLearningService:
         self.outdoor_temp_sensor = outdoor_temp_sensor
 
         # Create learner for each zone
-        self.learners: Dict[str, ZoneThermalLearner] = {}
+        self.learners: dict[str, ZoneThermalLearner] = {}
         for zone in zones:
             self.learners[zone.id] = ZoneThermalLearner(
                 zone_id=zone.id,
@@ -48,7 +48,7 @@ class ThermalLearningService:
                 measurement_interval_minutes=learning_interval_minutes
             )
 
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._running = False
 
     async def start(self):
@@ -139,10 +139,22 @@ class ThermalLearningService:
                         f"(conf {chars.cooling_rate_confidence:.0%})"
                     )
 
+                    # Store thermal characteristics snapshot for historical tracking
+                    history_tracker.add_thermal_snapshot(
+                        zone_id=zone.id,
+                        heating_rate=chars.heating_rate,
+                        heating_rate_confidence=chars.heating_rate_confidence,
+                        heating_samples=chars.heating_samples,
+                        cooling_rate_base=chars.cooling_rate_base,
+                        cooling_rate_confidence=chars.cooling_rate_confidence,
+                        cooling_samples=chars.cooling_samples,
+                        outdoor_temp_coefficient=chars.outdoor_temp_coefficient
+                    )
+
             except Exception as e:
                 logger.error(f"Error learning for zone {zone.id}: {e}", exc_info=True)
 
-    async def _get_outdoor_temp(self) -> Optional[float]:
+    async def _get_outdoor_temp(self) -> float | None:
         """Get current outdoor temperature."""
         try:
             state = self.ha_client.get_state(self.outdoor_temp_sensor)
@@ -153,7 +165,7 @@ class ThermalLearningService:
 
         return None
 
-    async def _get_zone_indoor_temp(self, zone: ZoneSettings) -> Optional[float]:
+    async def _get_zone_indoor_temp(self, zone: ZoneSettings) -> float | None:
         """Get current indoor temperature for zone."""
         # Get temperature from first climate entity
         if not zone.climate_entities:

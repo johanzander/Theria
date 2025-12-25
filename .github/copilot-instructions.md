@@ -14,6 +14,7 @@ The system currently implements:
 
 - **Price Optimizer**: Monitors Nordpool electricity prices and adjusts heating based on expensive/cheap hours
 - **Thermal Learning Service**: Continuously learns zone thermal characteristics (heating/cooling rates, outdoor temp coefficient)
+- **Temperature History Service**: Background collection of temperature and heating power data
 - **Zone Controllers**: Multi-zone support with independent temperature control per zone
 - **History Tracker**: Tracks temperature history and control events for analytics
 - **REST API**: FastAPI endpoints for zone status, temperature control, price info, and thermal characteristics
@@ -33,6 +34,7 @@ Theria/
 │   ├── ha_api_controller.py      # Legacy controller (battery manager pattern)
 │   ├── price_optimizer.py        # Nordpool price-based optimization
 │   ├── thermal_learning_service.py # Continuous thermal characteristic learning
+│   ├── temperature_history_service.py # Background temperature/power collection
 │   ├── zone_thermal_learner.py   # Per-zone thermal model learning
 │   ├── thermal_model.py          # Thermal physics models
 │   ├── history.py                # Temperature & event tracking
@@ -47,7 +49,7 @@ Theria/
 ### Home Assistant Integration
 
 - **Primary deployment**: Home Assistant Supervisor add-on (not standalone Python app)
-- **API communication**: Uses `HomeAssistantAPIController` for REST API calls to HA Core
+- **API communication**: Uses `HAClient` for REST API calls to HA Core
 - **Ingress support**: FastAPI app must respect `INGRESS_PREFIX` environment variable
 - **Sensor access**: All temperature sensors, climate entities, and price data come through HA API
 - **Authentication**: Uses long-lived access token from HA (`HA_TOKEN` env var)
@@ -58,12 +60,6 @@ Theria/
 
 ```bash
 ./dev-start.sh  # Starts FastAPI on port 8081 with hot reload
-```
-
-**Test server**:
-
-```bash
-./test-server.sh  # Runs import tests and endpoint checks
 ```
 
 **Environment setup**:
@@ -90,7 +86,7 @@ See [pyproject.toml](../pyproject.toml) for complete tool configuration.
 **User-facing config**: `config.yaml` (Home Assistant add-on options)
 **Python settings**: [core/theria/settings.py](../core/theria/settings.py) with `@dataclass` patterns
 
-- `SystemSettings.from_ha_config()` loads from config.yaml
+- `ZoneSettings.from_dict()` loads zone config from config.yaml
 - Use `_camel_to_snake()` converter for HA camelCase → Python snake_case
 
 ### Data Models
@@ -155,7 +151,7 @@ See [pyproject.toml](../pyproject.toml) for complete tool configuration.
 
 ## Common Pitfalls
 
-1. **Don't use subprocess or bash for HA API calls** - Use `HomeAssistantAPIController` methods
+1. **Don't use subprocess or bash for HA API calls** - Use `HAClient` methods
 2. **Always include type hints** - mypy strict mode enforces this
 3. **Respect INGRESS_PREFIX** - FastAPI `root_path` must be set for HA ingress
 4. **Don't create tests/ directory yet** - MVP focuses on working implementation first
@@ -196,6 +192,9 @@ The system provides the following REST API endpoints:
 **Thermal Learning:**
 
 - `GET /api/thermal/characteristics` - Learned thermal characteristics for zones
+- `GET /api/thermal/characteristics/history` - Historical thermal characteristics snapshots
+- `GET /api/thermal/measurements` - Recent thermal measurements with predictions
+- `GET /api/zones/{zone_id}/heating_timeline` - Heating power request timeline with aggregation
 
 ## Testing Strategy
 

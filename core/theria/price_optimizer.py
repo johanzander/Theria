@@ -10,7 +10,6 @@ Fetches Nordpool prices and uses hybrid classification (PumpSteer-inspired):
 import logging
 from collections import deque
 from datetime import datetime, timedelta
-from typing import Optional
 
 import numpy as np
 
@@ -179,7 +178,7 @@ class PriceOptimizer:
             if cat in (self.EXPENSIVE, self.VERY_EXPENSIVE, self.EXTREME_EXPENSIVE)
         }
 
-    def get_price_adjustment(self, current_time: Optional[datetime] = None) -> float:
+    def get_price_adjustment(self, current_time: datetime | None = None) -> float:
         """Get temperature adjustment based on current price category.
 
         Args:
@@ -218,7 +217,7 @@ class PriceOptimizer:
         else:
             return 0.0
 
-    def get_current_price(self) -> Optional[float]:
+    def get_current_price(self) -> float | None:
         """Get current electricity price."""
         current_hour = datetime.now().hour
         for entry in self.price_forecast:
@@ -226,7 +225,7 @@ class PriceOptimizer:
                 return entry["price"]
         return None
 
-    def get_current_category(self, current_time: Optional[datetime] = None) -> str:
+    def get_current_category(self, current_time: datetime | None = None) -> str:
         """Get price category for current hour.
 
         Args:

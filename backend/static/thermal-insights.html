@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thermal Learning Insights - Theria</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a202c;
+            min-height: 100vh;
+            padding: 20px;
+            color: #f7fafc;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: #2d3748;
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #f7fafc;
+            margin: 0;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .breadcrumb a {
+            color: #4fd1c5;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        .controls-bar {
+            background: #2d3748;
+            padding: 15px 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .time-range-selector {
+            display: flex;
+            gap: 8px;
+        }
+
+        .range-btn {
+            padding: 8px 16px;
+            border: 2px solid #4fd1c5;
+            background: #2d3748;
+            color: #4fd1c5;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .range-btn:hover {
+            background: #1a202c;
+        }
+
+        .range-btn.active {
+            background: #4fd1c5;
+            color: #1a202c;
+        }
+
+        .refresh-btn {
+            padding: 8px 20px;
+            background: #4fd1c5;
+            color: #1a202c;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            background: #38b2ac;
+        }
+
+        .zone-overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .zone-card {
+            background: #2d3748;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .zone-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #4a5568;
+        }
+
+        .zone-card-header h3 {
+            font-size: 18px;
+            color: #f7fafc;
+        }
+
+        .zone-temp {
+            font-size: 32px;
+            font-weight: 700;
+            color: #4fd1c5;
+        }
+
+        .zone-metrics {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #a0aec0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f7fafc;
+        }
+
+        .confidence-bar {
+            height: 6px;
+            background: linear-gradient(90deg, #e53e3e 0%, #ed8936 40%, #48bb78 70%);
+            border-radius: 3px;
+            margin-top: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .confidence-low { color: #e53e3e; }
+        .confidence-medium { color: #ed8936; }
+        .confidence-high { color: #48bb78; }
+
+        .card {
+            background: #2d3748;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .card h3 {
+            font-size: 20px;
+            color: #f7fafc;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #4a5568;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 350px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #a0aec0;
+            font-size: 16px;
+        }
+
+        .error-card {
+            background: #4a2d32;
+            border-left: 4px solid #e53e3e;
+        }
+
+        .error-card h3 {
+            color: #e53e3e;
+        }
+
+        .warning-banner {
+            background: #4a3b2a;
+            border-left: 4px solid #ed8936;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: start;
+        }
+
+        .warning-icon {
+            font-size: 24px;
+        }
+
+        .warning-content strong {
+            display: block;
+            color: #f6ad55;
+            margin-bottom: 5px;
+        }
+
+        .warning-content p {
+            color: #fbd38d;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .controls-bar {
+                flex-direction: column;
+            }
+
+            .time-range-selector {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .range-btn {
+                flex: 1;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+
+            .chart-container {
+                height: 250px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Thermal Learning Insights</h1>
+            <div class="breadcrumb">
+                <a href="/static/">← Back to Dashboard</a>
+            </div>
+        </div>
+
+        <div class="controls-bar">
+            <div class="time-range-selector">
+                <button class="range-btn" data-range="1h">1h</button>
+                <button class="range-btn" data-range="6h">6h</button>
+                <button class="range-btn active" data-range="24h">24h</button>
+                <button class="range-btn" data-range="7d">7d</button>
+                <button class="range-btn" data-range="30d">30d</button>
+            </div>
+            <button class="refresh-btn" onclick="loadAllData()">🔄 Refresh</button>
+        </div>
+
+        <div id="warning-container"></div>
+
+        <div id="zone-overview" class="zone-overview-grid">
+            <div class="loading">Loading zone data...</div>
+        </div>
+
+        <div class="card">
+            <h3>Temperature & Heating Timeline - All Zones</h3>
+            <div class="chart-container">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Thermal Characteristics Evolution</h3>
+            <div class="chart-container">
+                <canvas id="ratesChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let selectedTimeRange = '24h';
+        let zones = [];
+        let charts = {
+            temp: null,
+            rates: null
+        };
+        let refreshInterval = null;
+
+        // Color palette for zones
+        const ZONE_COLORS = [
+            ['#4fd1c5', '#38b2ac'],
+            ['#b794f4', '#9f7aea'],
+            ['#63b3ed', '#4299e1'],
+            ['#f6ad55', '#ed8936']
+        ];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setupTimeRangeSelector();
+            loadAllData();
+            startAutoRefresh();
+        });
+
+        function setupTimeRangeSelector() {
+            document.querySelectorAll('.range-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    selectedTimeRange = btn.dataset.range;
+                    loadAllData();
+                });
+            });
+        }
+
+        function startAutoRefresh() {
+            // Refresh every 30 seconds
+            refreshInterval = setInterval(() => {
+                loadAllData(true); // Silent refresh
+            }, 30000);
+        }
+
+        function getHoursFromRange(range) {
+            const rangeMap = {
+                '1h': 1,
+                '6h': 6,
+                '24h': 24,
+                '7d': 168,
+                '30d': 720
+            };
+            return rangeMap[range] || 24;
+        }
+
+        async function loadAllData(silent = false) {
+            if (!silent) {
+                document.getElementById('zone-overview').innerHTML = '<div class="loading">Loading zone data...</div>';
+            }
+
+            try {
+                // Load zones list
+                const zonesRes = await fetch('/api/zones');
+                const zonesData = await zonesRes.json();
+                zones = zonesData.zones;
+
+                // Load data for all zones in parallel
+                const hours = getHoursFromRange(selectedTimeRange);
+                await Promise.all([
+                    loadZoneOverviews(),
+                    loadTemperatureChart(hours),
+                    loadThermalRatesChart(hours)
+                ]);
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showError('Failed to load data: ' + error.message);
+            }
+        }
+
+        async function loadZoneOverviews() {
+            const overviewHTML = [];
+
+            for (const zone of zones) {
+                try {
+                    // Get thermal characteristics
+                    const charRes = await fetch(`/api/thermal/characteristics?zone_id=${zone.id}`);
+                    const charData = await charRes.json();
+
+                    // Get zone status
+                    const statusRes = await fetch(`/api/zones/${zone.id}/status`);
+                    const statusData = await statusRes.json();
+
+                    const confidence = charData.overall_confidence || 0;
+                    const confidenceClass = confidence >= 0.7 ? 'confidence-high' :
+                                          confidence >= 0.4 ? 'confidence-medium' : 'confidence-low';
+
+                    overviewHTML.push(`
+                        <div class="zone-card">
+                            <div class="zone-card-header">
+                                <h3>${zone.name}</h3>
+                                <div class="zone-temp">${statusData.average_temperature?.toFixed(1) || 'N/A'}°C</div>
+                            </div>
+                            <div class="zone-metrics">
+                                <div class="metric">
+                                    <span class="metric-label">Heating Rate</span>
+                                    <span class="metric-value">
+                                        ${charData.heating_rate >= 0 ? '+' : ''}${charData.heating_rate?.toFixed(2) || 'N/A'} °C/h
+                                    </span>
+                                    <div class="confidence-bar" style="width: ${(charData.heating_rate_confidence || 0) * 100}%"></div>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Cooling Rate</span>
+                                    <span class="metric-value">
+                                        ${charData.cooling_rate_base?.toFixed(2) || 'N/A'} °C/h
+                                    </span>
+                                    <div class="confidence-bar" style="width: ${(charData.cooling_rate_confidence || 0) * 100}%"></div>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Overall Confidence</span>
+                                    <span class="metric-value ${confidenceClass}">
+                                        ${(confidence * 100).toFixed(0)}%
+                                    </span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Samples</span>
+                                    <span class="metric-value">
+                                        H:${charData.heating_samples || 0} / C:${charData.cooling_samples || 0}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    `);
+
+                    // Show warning if confidence is low
+                    if (confidence < 0.5) {
+                        showWarning(
+                            'Learning in Progress',
+                            `Thermal model confidence for ${zone.name} is ${(confidence * 100).toFixed(0)}%. ` +
+                            `Predictions will improve as more heating/cooling cycles are observed.`
+                        );
+                    }
+
+                } catch (error) {
+                    console.error(`Error loading zone ${zone.id}:`, error);
+                }
+            }
+
+            document.getElementById('zone-overview').innerHTML = overviewHTML.join('');
+        }
+
+        async function loadTemperatureChart(hours) {
+            const datasets = [];
+
+            // Generate fixed time axis from (now - hours) to now, rounded to full hours
+            const now = new Date();
+            const currentMinutes = now.getMinutes();
+            now.setMinutes(0, 0, 0); // Round down to current hour
+
+            // If we're past the hour start, round up to next hour to include current partial hour
+            if (currentMinutes > 0) {
+                now.setHours(now.getHours() + 1);
+            }
+
+            const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+            startTime.setMinutes(0, 0, 0); // Round down to full hour
+
+            // Determine interval based on time range
+            let intervalMinutes;
+            if (hours <= 1) {
+                intervalMinutes = 5; // 5-minute intervals for 1 hour
+            } else if (hours <= 6) {
+                intervalMinutes = 15; // 15-minute intervals for up to 6 hours
+            } else if (hours <= 48) {
+                intervalMinutes = 60; // Hourly for 1-2 days
+            } else if (hours <= 168) {
+                intervalMinutes = 360; // 6-hour intervals for week
+            } else {
+                intervalMinutes = 1440; // Daily for month
+            }
+
+            // Generate time slots and labels
+            const timeSlots = [];
+            const labels = [];
+            for (let t = startTime.getTime(); t <= now.getTime(); t += intervalMinutes * 60 * 1000) {
+                const slotTime = new Date(t);
+                timeSlots.push(slotTime);
+
+                if (hours <= 48) {
+                    // Show hour for short ranges
+                    labels.push(slotTime.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }));
+                } else {
+                    // Show date for longer ranges
+                    labels.push(slotTime.toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' }));
+                }
+            }
+
+            // Collect all data
+            const zoneDataList = [];
+            for (let i = 0; i < zones.length; i++) {
+                const zone = zones[i];
+                try {
+                    // Fetch temperature history
+                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const tempData = await res.json();
+
+                    // Fetch heating power timeline
+                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingData = await heatingRes.json();
+
+                    zoneDataList.push({
+                        zone,
+                        tempData,
+                        heatingData,
+                        colorIndex: i
+                    });
+                } catch (error) {
+                    console.error(`Error loading data for ${zone.id}:`, error);
+                }
+            }
+
+            // Helper to find nearest time slot for a timestamp
+            function findNearestSlot(timestamp) {
+                const time = new Date(timestamp).getTime();
+                let nearestIdx = 0;
+                let minDiff = Math.abs(timeSlots[0].getTime() - time);
+
+                for (let i = 1; i < timeSlots.length; i++) {
+                    const diff = Math.abs(timeSlots[i].getTime() - time);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        nearestIdx = i;
+                    }
+                }
+                return nearestIdx;
+            }
+
+            // Build datasets
+            for (const {zone, tempData, heatingData, colorIndex} of zoneDataList) {
+                // Initialize arrays with nulls for the full time range
+                const tempArray = new Array(timeSlots.length).fill(null);
+                const targetArray = new Array(timeSlots.length).fill(null);
+                const heatingArray = new Array(timeSlots.length).fill(null);
+
+                // Debug logging
+                console.log(`Zone ${zone.name}: Processing ${tempData.history?.length || 0} temp readings, ${heatingData.timeline?.length || 0} heating readings`);
+                console.log('Time range:', startTime.toISOString(), 'to', now.toISOString());
+                console.log('Time slots:', timeSlots.length, 'slots');
+
+                // Map temperature data to nearest time slots
+                if (tempData.history && tempData.history.length > 0) {
+                    tempData.history.forEach(h => {
+                        const idx = findNearestSlot(h.timestamp);
+                        tempArray[idx] = h.current_temp;
+                        if (h.scheduled_temp) {
+                            targetArray[idx] = h.scheduled_temp;
+                        }
+                        // Debug first few mappings
+                        if (tempData.history.indexOf(h) < 3) {
+                            console.log(`  Data point: ${h.timestamp} -> slot ${idx} (${labels[idx]}), temp: ${h.current_temp}`);
+                        }
+                    });
+
+                    // Add temperature dataset
+                    datasets.push({
+                        label: `${zone.name} - Temp`,
+                        data: tempArray,
+                        borderColor: ZONE_COLORS[colorIndex][0],
+                        backgroundColor: `${ZONE_COLORS[colorIndex][0]}20`,
+                        borderWidth: 2.5,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        yAxisID: 'y',
+                        spanGaps: true
+                    });
+
+                    // Add target temp (if available)
+                    if (targetArray.some(v => v !== null)) {
+                        datasets.push({
+                            label: `${zone.name} - Target`,
+                            data: targetArray,
+                            borderColor: ZONE_COLORS[colorIndex][0],
+                            borderWidth: 1.5,
+                            borderDash: [5, 5],
+                            tension: 0,
+                            pointRadius: 0,
+                            fill: false,
+                            yAxisID: 'y',
+                            spanGaps: true
+                        });
+                    }
+                }
+
+                // Map heating power data to nearest time slots
+                if (heatingData.timeline && heatingData.timeline.length > 0) {
+                    heatingData.timeline.forEach(h => {
+                        const idx = findNearestSlot(h.timestamp);
+                        heatingArray[idx] = h.avg_heating_request;
+                    });
+
+                    datasets.push({
+                        label: `${zone.name} - Heating %`,
+                        data: heatingArray,
+                        borderColor: `${ZONE_COLORS[colorIndex][1]}80`,
+                        backgroundColor: `${ZONE_COLORS[colorIndex][1]}30`,
+                        borderWidth: 1.5,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        fill: true,
+                        yAxisID: 'y1',
+                        stepped: 'before',
+                        spanGaps: true
+                    });
+                }
+            }
+
+            const ctx = document.getElementById('tempChart');
+            if (charts.temp) {
+                charts.temp.destroy();
+            }
+
+            charts.temp = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { boxWidth: 12, padding: 8, font: { size: 11 }, color: '#a0aec0' }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        if (context.dataset.yAxisID === 'y1') {
+                                            label += context.parsed.y.toFixed(0) + '%';
+                                        } else {
+                                            label += context.parsed.y.toFixed(1) + '°C';
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            ticks: {
+                                color: '#a0aec0',
+                                autoSkip: true,
+                                maxTicksLimit: 12,
+                                maxRotation: 0,
+                                minRotation: 0
+                            },
+                            grid: { display: false }
+                        },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Temperature (°C)', color: '#a0aec0' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: '#a0aec0' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Heating Request (%)', color: '#a0aec0' },
+                            min: 0,
+                            max: 100,
+                            grid: { display: false },
+                            ticks: {
+                                color: '#a0aec0',
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadThermalRatesChart(hours) {
+            const datasets = [];
+
+            // Generate fixed time axis from (now - hours) to now, rounded to full hours
+            const now = new Date();
+            const currentMinutes = now.getMinutes();
+            now.setMinutes(0, 0, 0); // Round down to current hour
+
+            // If we're past the hour start, round up to next hour to include current partial hour
+            if (currentMinutes > 0) {
+                now.setHours(now.getHours() + 1);
+            }
+
+            const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+            startTime.setMinutes(0, 0, 0); // Round down to full hour
+
+            // Determine interval based on time range
+            let intervalMinutes;
+            if (hours <= 1) {
+                intervalMinutes = 5; // 5-minute intervals for 1 hour
+            } else if (hours <= 6) {
+                intervalMinutes = 15; // 15-minute intervals for up to 6 hours
+            } else if (hours <= 48) {
+                intervalMinutes = 60; // Hourly for 1-2 days
+            } else if (hours <= 168) {
+                intervalMinutes = 360; // 6-hour intervals for week
+            } else {
+                intervalMinutes = 1440; // Daily for month
+            }
+
+            // Generate time slots and labels
+            const timeSlots = [];
+            const labels = [];
+            for (let t = startTime.getTime(); t <= now.getTime(); t += intervalMinutes * 60 * 1000) {
+                const slotTime = new Date(t);
+                timeSlots.push(slotTime);
+
+                if (hours <= 48) {
+                    // Show hour for short ranges
+                    labels.push(slotTime.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }));
+                } else {
+                    // Show date for longer ranges
+                    labels.push(slotTime.toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' }));
+                }
+            }
+
+            // Helper to find nearest time slot for a timestamp
+            function findNearestSlot(timestamp) {
+                const time = new Date(timestamp).getTime();
+                let nearestIdx = 0;
+                let minDiff = Math.abs(timeSlots[0].getTime() - time);
+
+                for (let i = 1; i < timeSlots.length; i++) {
+                    const diff = Math.abs(timeSlots[i].getTime() - time);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        nearestIdx = i;
+                    }
+                }
+                return nearestIdx;
+            }
+
+            // Collect all data
+            const zoneDataList = [];
+            for (let i = 0; i < zones.length; i++) {
+                const zone = zones[i];
+                try {
+                    const res = await fetch(`/api/thermal/characteristics/history?zone_id=${zone.id}&hours=${hours}`);
+                    const data = await res.json();
+
+                    if (data.snapshots && data.snapshots.length > 0) {
+                        zoneDataList.push({ zone, snapshots: data.snapshots, colorIndex: i });
+                    }
+                } catch (error) {
+                    console.error(`Error loading rates chart for ${zone.id}:`, error);
+                }
+            }
+
+            // Build datasets
+            for (const {zone, snapshots, colorIndex} of zoneDataList) {
+                const heatingArray = new Array(timeSlots.length).fill(null);
+                const coolingArray = new Array(timeSlots.length).fill(null);
+                const confidenceArray = new Array(timeSlots.length).fill(null);
+
+                snapshots.forEach(s => {
+                    const idx = findNearestSlot(s.timestamp);
+                    heatingArray[idx] = s.heating_rate;
+                    coolingArray[idx] = s.cooling_rate_base;
+                    confidenceArray[idx] = s.overall_confidence * 100;
+                });
+
+                // Heating rate
+                datasets.push({
+                    label: `${zone.name} - Heating Rate`,
+                    data: heatingArray,
+                    borderColor: '#e53e3e',
+                    backgroundColor: 'rgba(229, 62, 62, 0.1)',
+                    yAxisID: 'y-rate',
+                    borderWidth: 2,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    spanGaps: true
+                });
+
+                // Cooling rate
+                datasets.push({
+                    label: `${zone.name} - Cooling Rate`,
+                    data: coolingArray,
+                    borderColor: '#4fd1c5',
+                    backgroundColor: 'rgba(79, 209, 197, 0.1)',
+                    yAxisID: 'y-rate',
+                    borderWidth: 2,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    spanGaps: true
+                });
+
+                // Confidence (only for first zone to avoid clutter)
+                if (colorIndex === 0) {
+                    datasets.push({
+                        label: 'Overall Confidence',
+                        data: confidenceArray,
+                        borderColor: '#b794f4',
+                        borderDash: [3, 3],
+                        yAxisID: 'y-confidence',
+                        borderWidth: 1.5,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        fill: false,
+                        spanGaps: true
+                    });
+                }
+            }
+
+            const ctx = document.getElementById('ratesChart');
+            if (charts.rates) {
+                charts.rates.destroy();
+            }
+
+            charts.rates = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { boxWidth: 12, padding: 8, font: { size: 11 }, color: '#a0aec0' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            ticks: {
+                                color: '#a0aec0',
+                                autoSkip: true,
+                                maxTicksLimit: 12,
+                                maxRotation: 0,
+                                minRotation: 0
+                            },
+                            grid: { display: false }
+                        },
+                        'y-rate': {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Rate (°C/h)', color: '#a0aec0' },
+                            ticks: { color: '#a0aec0' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        'y-confidence': {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Confidence (%)', color: '#a0aec0' },
+                            min: 0,
+                            max: 100,
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#a0aec0' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function showWarning(title, message) {
+            const container = document.getElementById('warning-container');
+            const existing = container.querySelector('.warning-banner');
+            if (!existing) {
+                container.innerHTML = `
+                    <div class="warning-banner">
+                        <div class="warning-icon">⚠️</div>
+                        <div class="warning-content">
+                            <strong>${title}</strong>
+                            <p>${message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('zone-overview').innerHTML = `
+                <div class="card error-card">
+                    <h3>⚠️ Error</h3>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

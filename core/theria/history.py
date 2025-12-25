@@ -8,7 +8,6 @@ For production, this should use InfluxDB or similar.
 from collections import deque
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
-from typing import Optional
 import threading
 
 
@@ -19,9 +18,9 @@ class TemperatureReading:
     timestamp: str  # ISO format
     zone_id: str
     current_temp: float  # Zone average
-    scheduled_temp: Optional[float]
+    scheduled_temp: float | None
     target_temps: dict[str, float]  # climate_entity -> target_temp
-    current_temps: dict[str, float] = None  # climate_entity -> current_temp (actual reading)
+    current_temps: dict[str, float] | None = None  # climate_entity -> current_temp (actual reading)
 
 
 @dataclass
@@ -32,7 +31,34 @@ class ControlEvent:
     zone_id: str
     action: str  # "set_temperature", "schedule_change", etc.
     details: str
-    temperature: Optional[float] = None
+    temperature: float | None = None
+
+
+@dataclass
+class ThermalCharacteristicsSnapshot:
+    """Snapshot of learned thermal characteristics at a point in time."""
+
+    timestamp: str  # ISO format
+    zone_id: str
+    heating_rate: float  # °C/hour when heating active
+    heating_rate_confidence: float  # 0-1
+    heating_samples: int
+    cooling_rate_base: float  # °C/hour at outdoor temp = 0°C
+    cooling_rate_confidence: float  # 0-1
+    cooling_samples: int
+    outdoor_temp_coefficient: float  # Cooling rate dependency on outdoor temp
+    overall_confidence: float  # min(heating_confidence, cooling_confidence)
+
+
+@dataclass
+class HeatingPowerSnapshot:
+    """Snapshot of heating power request at a point in time."""
+
+    timestamp: str  # ISO format
+    zone_id: str
+    avg_heating_request: float  # Average % across climate entities (0-100)
+    max_heating_request: float  # Maximum % from any climate entity (0-100)
+    heating_active: bool  # Whether any heating was requested
 
 
 class HistoryTracker:
@@ -50,6 +76,8 @@ class HistoryTracker:
         # Use deque for efficient append/pop
         self.temperature_readings: deque[TemperatureReading] = deque(maxlen=10000)
         self.control_events: deque[ControlEvent] = deque(maxlen=1000)
+        self.thermal_snapshots: deque[ThermalCharacteristicsSnapshot] = deque(maxlen=10080)  # 7 days at 1/min
+        self.heating_power_snapshots: deque[HeatingPowerSnapshot] = deque(maxlen=10080)  # 7 days at 1/min
 
         self.lock = threading.Lock()
 
@@ -57,9 +85,9 @@ class HistoryTracker:
         self,
         zone_id: str,
         current_temp: float,
-        scheduled_temp: Optional[float],
+        scheduled_temp: float | None,
         target_temps: dict[str, float],
-        current_temps: Optional[dict[str, float]] = None
+        current_temps: dict[str, float] | None = None
     ):
         """Add a temperature reading.
 
@@ -88,7 +116,7 @@ class HistoryTracker:
         zone_id: str,
         action: str,
         details: str,
-        temperature: Optional[float] = None
+        temperature: float | None = None
     ):
         """Log a control action.
 
@@ -112,8 +140,8 @@ class HistoryTracker:
 
     def get_temperature_history(
         self,
-        zone_id: Optional[str] = None,
-        hours: Optional[int] = None
+        zone_id: str | None = None,
+        hours: int | None = None
     ) -> list[dict]:
         """Get temperature history.
 
@@ -143,8 +171,8 @@ class HistoryTracker:
 
     def get_control_events(
         self,
-        zone_id: Optional[str] = None,
-        hours: Optional[int] = None
+        zone_id: str | None = None,
+        hours: int | None = None
     ) -> list[dict]:
         """Get control events.
 
@@ -172,6 +200,137 @@ class HistoryTracker:
 
         return [asdict(e) for e in events]
 
+    def add_thermal_snapshot(
+        self,
+        zone_id: str,
+        heating_rate: float,
+        heating_rate_confidence: float,
+        heating_samples: int,
+        cooling_rate_base: float,
+        cooling_rate_confidence: float,
+        cooling_samples: int,
+        outdoor_temp_coefficient: float
+    ):
+        """Add a thermal characteristics snapshot.
+
+        Args:
+            zone_id: Zone identifier
+            heating_rate: Heating rate (°C/hour)
+            heating_rate_confidence: Confidence in heating rate (0-1)
+            heating_samples: Number of heating measurements
+            cooling_rate_base: Base cooling rate (°C/hour)
+            cooling_rate_confidence: Confidence in cooling rate (0-1)
+            cooling_samples: Number of cooling measurements
+            outdoor_temp_coefficient: Outdoor temperature coefficient
+        """
+        snapshot = ThermalCharacteristicsSnapshot(
+            timestamp=datetime.utcnow().isoformat(),
+            zone_id=zone_id,
+            heating_rate=heating_rate,
+            heating_rate_confidence=heating_rate_confidence,
+            heating_samples=heating_samples,
+            cooling_rate_base=cooling_rate_base,
+            cooling_rate_confidence=cooling_rate_confidence,
+            cooling_samples=cooling_samples,
+            outdoor_temp_coefficient=outdoor_temp_coefficient,
+            overall_confidence=min(heating_rate_confidence, cooling_rate_confidence)
+        )
+
+        with self.lock:
+            self.thermal_snapshots.append(snapshot)
+
+    def get_thermal_history(
+        self,
+        zone_id: str | None = None,
+        hours: int | None = None
+    ) -> list[dict]:
+        """Get thermal characteristics history.
+
+        Args:
+            zone_id: Filter by zone (None = all zones)
+            hours: How many hours back (None = all available)
+
+        Returns:
+            List of thermal characteristic snapshots as dicts
+        """
+        with self.lock:
+            snapshots = list(self.thermal_snapshots)
+
+        # Filter by zone
+        if zone_id:
+            snapshots = [s for s in snapshots if s.zone_id == zone_id]
+
+        # Filter by time
+        if hours:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            snapshots = [
+                s for s in snapshots
+                if datetime.fromisoformat(s.timestamp) > cutoff
+            ]
+
+        return [asdict(s) for s in snapshots]
+
+    def add_heating_power_snapshot(
+        self,
+        zone_id: str,
+        avg_heating_request: float,
+        max_heating_request: float,
+        heating_active: bool
+    ):
+        """Add a heating power request snapshot.
+
+        Args:
+            zone_id: Zone identifier
+            avg_heating_request: Average heating request % (0-100)
+            max_heating_request: Maximum heating request % (0-100)
+            heating_active: Whether any heating was requested
+        """
+        snapshot = HeatingPowerSnapshot(
+            timestamp=datetime.utcnow().isoformat(),
+            zone_id=zone_id,
+            avg_heating_request=avg_heating_request,
+            max_heating_request=max_heating_request,
+            heating_active=heating_active
+        )
+
+        with self.lock:
+            self.heating_power_snapshots.append(snapshot)
+
+    def get_heating_timeline(
+        self,
+        zone_id: str | None = None,
+        hours: int | None = None,
+        resolution: str = "raw"
+    ) -> list[dict]:
+        """Get heating power request timeline.
+
+        Args:
+            zone_id: Filter by zone (None = all zones)
+            hours: How many hours back (None = all available)
+            resolution: "raw", "5m", "15m", "1h" (aggregation resolution)
+
+        Returns:
+            List of heating power snapshots as dicts
+        """
+        with self.lock:
+            snapshots = list(self.heating_power_snapshots)
+
+        # Filter by zone
+        if zone_id:
+            snapshots = [s for s in snapshots if s.zone_id == zone_id]
+
+        # Filter by time
+        if hours:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            snapshots = [
+                s for s in snapshots
+                if datetime.fromisoformat(s.timestamp) > cutoff
+            ]
+
+        # TODO: Implement aggregation for resolution != "raw"
+        # For MVP, return raw data
+        return [asdict(s) for s in snapshots]
+
     def _cleanup_old_data(self):
         """Remove data older than max_hours."""
         cutoff = datetime.utcnow() - self.max_age
@@ -185,6 +344,17 @@ class HistoryTracker:
         while (self.control_events and
                datetime.fromisoformat(self.control_events[0].timestamp) < cutoff):
             self.control_events.popleft()
+
+        # Clean thermal snapshots (keep 7 days, don't use max_hours)
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        while (self.thermal_snapshots and
+               datetime.fromisoformat(self.thermal_snapshots[0].timestamp) < seven_days_ago):
+            self.thermal_snapshots.popleft()
+
+        # Clean heating power snapshots (keep 7 days)
+        while (self.heating_power_snapshots and
+               datetime.fromisoformat(self.heating_power_snapshots[0].timestamp) < seven_days_ago):
+            self.heating_power_snapshots.popleft()
 
 
 # Global instance

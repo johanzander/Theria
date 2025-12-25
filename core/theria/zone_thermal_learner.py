@@ -8,7 +8,6 @@ This enables accurate prediction for heat capacitor scheduling.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ class ZoneThermalCharacteristics:
     # Sample statistics
     heating_samples: int = 0
     cooling_samples: int = 0
-    last_updated: Optional[datetime] = None
+    last_updated: datetime | None = None
 
     def predict_temp_change(
         self,
@@ -97,10 +96,10 @@ class ZoneThermalLearner:
         self.max_recent_measurements = 100
 
         # Last measurement state
-        self.last_timestamp: Optional[datetime] = None
-        self.last_indoor_temp: Optional[float] = None
-        self.last_outdoor_temp: Optional[float] = None
-        self.last_heating_active: Optional[bool] = None
+        self.last_timestamp: datetime | None = None
+        self.last_indoor_temp: float | None = None
+        self.last_outdoor_temp: float | None = None
+        self.last_heating_active: bool | None = None
 
     def add_measurement(
         self,
@@ -108,7 +107,7 @@ class ZoneThermalLearner:
         indoor_temp: float,
         outdoor_temp: float,
         heating_active: bool
-    ) -> Optional[ThermalMeasurement]:
+    ) -> ThermalMeasurement | None:
         """
         Add new measurement and learn from it.
 
@@ -242,3 +241,52 @@ class ZoneThermalLearner:
             self.characteristics.heating_rate_confidence,
             self.characteristics.cooling_rate_confidence
         )
+
+    def get_recent_measurements(self, limit: int = 100) -> list[ThermalMeasurement]:
+        """Get recent thermal measurements.
+
+        Args:
+            limit: Maximum number of measurements to return
+
+        Returns:
+            List of recent ThermalMeasurement objects (most recent first)
+        """
+        # Return most recent measurements, limited by count
+        measurements = list(self.recent_measurements)
+        return measurements[-limit:] if len(measurements) > limit else measurements
+
+    def get_measurements_with_predictions(self, limit: int = 100) -> list[dict]:
+        """Get recent measurements with prediction errors.
+
+        Args:
+            limit: Maximum number of measurements to return
+
+        Returns:
+            List of dicts with measurement data + predicted values + errors
+        """
+        measurements = self.get_recent_measurements(limit)
+        result = []
+
+        for m in measurements:
+            # Calculate what the model predicted
+            predicted_change = self.characteristics.predict_temp_change(
+                heating_active=m.heating_active,
+                outdoor_temp=m.outdoor_temp,
+                duration_minutes=m.duration_minutes
+            )
+
+            # Calculate prediction error
+            prediction_error = m.temp_change - predicted_change
+
+            result.append({
+                "timestamp": m.timestamp.isoformat(),
+                "indoor_temp": m.indoor_temp,
+                "outdoor_temp": m.outdoor_temp,
+                "heating_active": m.heating_active,
+                "temp_change": m.temp_change,
+                "duration_minutes": m.duration_minutes,
+                "predicted_change": predicted_change,
+                "prediction_error": prediction_error
+            })
+
+        return result

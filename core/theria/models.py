@@ -6,7 +6,6 @@ Minimal data models - will be expanded as features are implemented.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -16,8 +15,8 @@ class ZoneStatus:
     zone_id: str
     timestamp: datetime
     current_temp: float
-    target_temp: Optional[float] = None
-    hvac_mode: Optional[str] = None
+    target_temp: float | None = None
+    hvac_mode: str | None = None
 
 
 # Placeholder for future models

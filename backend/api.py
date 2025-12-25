@@ -184,11 +184,25 @@ async def get_zone_status(zone_id: str):
         valid_temps = [t["temperature"] for t in temperatures if t["temperature"] is not None]
         avg_temp = sum(valid_temps) / len(valid_temps) if valid_temps else None
 
-        # Read climate entity states
+        # Read climate entity states with heating_power_request
         climate_states = []
+        total_heating_request = 0
+        heating_request_count = 0
+
         for climate_entity in zone.climate_entities:
             try:
                 state = ha_client.get_climate_state(climate_entity)
+
+                # Get full state to extract heating_power_request attribute
+                full_state = ha_client.get_state(climate_entity)
+                heating_power_request = full_state.get("attributes", {}).get("heating_power_request")
+
+                # Add heating_power_request to climate state
+                if heating_power_request is not None:
+                    state["heating_power_request"] = heating_power_request
+                    total_heating_request += float(heating_power_request)
+                    heating_request_count += 1
+
                 climate_states.append(state)
             except Exception as e:
                 logger.warning(f"Failed to read {climate_entity}: {e}")
@@ -196,6 +210,23 @@ async def get_zone_status(zone_id: str):
                     "entity_id": climate_entity,
                     "error": str(e)
                 })
+
+        # Calculate average heating power request (if available)
+        avg_heating_request = None
+        max_heating_request = 0.0
+        if heating_request_count > 0:
+            avg_heating_request = total_heating_request / heating_request_count
+            # Find max heating request
+            for state in climate_states:
+                if "heating_power_request" in state:
+                    max_heating_request = max(max_heating_request, state["heating_power_request"])
+
+        # Determine heating status based on heating_power_request
+        is_heating = avg_heating_request > 0 if avg_heating_request is not None else None
+
+        # Note: Temperature and heating power history is collected by the background
+        # TemperatureHistoryService, not by this API endpoint. This ensures data
+        # collection happens continuously regardless of UI access.
 
         # In observation mode - Theria is learning, not controlling
         # Thermostats are controlled by Netatmo app/hub
@@ -205,6 +236,8 @@ async def get_zone_status(zone_id: str):
             "name": zone.name,
             "timestamp": datetime.utcnow().isoformat(),
             "average_temperature": avg_temp,
+            "average_heating_request": avg_heating_request,  # NEW: Average heating power request (0-100)
+            "is_heating": is_heating,  # NEW: Whether zone is currently heating
             "mode": "observation",  # Learning thermal characteristics
             "temperatures": temperatures,
             "climate_states": climate_states,
@@ -212,7 +245,7 @@ async def get_zone_status(zone_id: str):
 
     except Exception as e:
         logger.error(f"Error getting zone status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/api/zones/{zone_id}/set_temperature")
@@ -286,7 +319,7 @@ async def set_zone_temperature(zone_id: str, request: SetTemperatureRequest):
         raise
     except Exception as e:
         logger.error(f"Error setting zone temperature: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/api/status")
@@ -380,8 +413,8 @@ async def get_current_price():
         "is_expensive_hour": price_adjustment < 0,
         "is_cheap_hour": price_adjustment > 0,
         # Legacy fields (for backward compatibility)
-        "expensive_hours": sorted(list(price_optimizer.expensive_hour_set)),
-        "cheap_hours": sorted(list(price_optimizer.cheap_hour_set))
+        "expensive_hours": sorted(price_optimizer.expensive_hour_set),
+        "cheap_hours": sorted(price_optimizer.cheap_hour_set)
     }
 
 
@@ -422,7 +455,7 @@ async def get_price_forecast(hours: int = 24):
 
 
 @router.get("/api/thermal/characteristics")
-async def get_thermal_characteristics(zone_id: str = None):
+async def get_thermal_characteristics(zone_id: str | None = None):
     """Get learned thermal characteristics for zones.
 
     Args:
@@ -476,3 +509,113 @@ async def get_thermal_characteristics(zone_id: str = None):
                 }
 
         return result
+
+
+@router.get("/api/thermal/characteristics/history")
+async def get_thermal_characteristics_history(zone_id: str | None = None, hours: int = 24):
+    """Get historical thermal characteristics snapshots.
+
+    Args:
+        zone_id: Optional zone filter (None = all zones)
+        hours: How many hours of history to retrieve (default: 24, max: 168 for 7d)
+
+    Returns:
+        Thermal characteristics history with snapshots over time
+    """
+    # Limit hours to 7 days max
+    hours = min(hours, 168)
+
+    snapshots = history_tracker.get_thermal_history(zone_id=zone_id, hours=hours)
+
+    return {
+        "zone_id": zone_id,
+        "hours": hours,
+        "count": len(snapshots),
+        "snapshots": snapshots
+    }
+
+
+@router.get("/api/thermal/measurements")
+async def get_thermal_measurements(zone_id: str, hours: int = 24, limit: int = 100):
+    """Get recent thermal measurements with predictions.
+
+    Args:
+        zone_id: Zone identifier (required)
+        hours: How many hours back (default: 24, max: 168 for 7d)
+        limit: Maximum number of measurements (default: 100, max: 1000)
+
+    Returns:
+        Recent measurements with predicted values and errors
+    """
+    if not learning_service:
+        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+
+    # Verify zone exists
+    zone = next((z for z in ZONES if z.id == zone_id), None)
+    if not zone:
+        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
+
+    # Limit parameters
+    hours = min(hours, 168)
+    limit = min(limit, 1000)
+
+    # Get measurements from learner
+    if zone_id not in learning_service.learners:
+        return {
+            "zone_id": zone_id,
+            "measurements": [],
+            "message": "No measurements available yet"
+        }
+
+    learner = learning_service.learners[zone_id]
+    measurements = learner.get_measurements_with_predictions(limit=limit)
+
+    # Filter by time range
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    measurements = [
+        m for m in measurements
+        if datetime.fromisoformat(m["timestamp"]) > cutoff
+    ]
+
+    return {
+        "zone_id": zone_id,
+        "hours": hours,
+        "count": len(measurements),
+        "measurements": measurements
+    }
+
+
+@router.get("/api/zones/{zone_id}/heating_timeline")
+async def get_heating_timeline(zone_id: str, hours: int = 24, resolution: str = "raw"):
+    """Get heating power request timeline.
+
+    Args:
+        zone_id: Zone identifier
+        hours: How many hours back (default: 24, max: 168)
+        resolution: "raw", "5m", "15m", "1h" (default: "raw")
+
+    Returns:
+        Heating power timeline with avg/max request and status
+    """
+    # Verify zone exists
+    zone = next((z for z in ZONES if z.id == zone_id), None)
+    if not zone:
+        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
+
+    # Limit hours
+    hours = min(hours, 168)
+
+    timeline = history_tracker.get_heating_timeline(
+        zone_id=zone_id,
+        hours=hours,
+        resolution=resolution
+    )
+
+    return {
+        "zone_id": zone_id,
+        "hours": hours,
+        "resolution": resolution,
+        "count": len(timeline),
+        "timeline": timeline
+    }
