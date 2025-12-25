@@ -5,10 +5,10 @@ Simple in-memory history for the last 24 hours.
 For production, this should use InfluxDB or similar.
 """
 
-from collections import deque
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
 import threading
+from collections import deque
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 
 
 @dataclass
@@ -21,6 +21,7 @@ class TemperatureReading:
     scheduled_temp: float | None
     target_temps: dict[str, float]  # climate_entity -> target_temp
     current_temps: dict[str, float] | None = None  # climate_entity -> current_temp (actual reading)
+    heating_requests: dict[str, float] | None = None  # climate_entity -> heating_power_request %
 
 
 @dataclass
@@ -87,7 +88,9 @@ class HistoryTracker:
         current_temp: float,
         scheduled_temp: float | None,
         target_temps: dict[str, float],
-        current_temps: dict[str, float] | None = None
+        current_temps: dict[str, float] | None = None,
+        heating_requests: dict[str, float] | None = None,
+        timestamp: datetime | None = None
     ):
         """Add a temperature reading.
 
@@ -97,14 +100,20 @@ class HistoryTracker:
             scheduled_temp: Scheduled target temperature
             target_temps: Dict of climate_entity -> target_temp
             current_temps: Dict of climate_entity -> current_temp (actual readings)
+            heating_requests: Dict of climate_entity -> heating_power_request % (0-100)
+            timestamp: Optional timestamp (defaults to now for real-time readings)
         """
+        # Use provided timestamp for historical backfill, or current time for real-time
+        ts = timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat()
+
         reading = TemperatureReading(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=ts,
             zone_id=zone_id,
             current_temp=current_temp,
             scheduled_temp=scheduled_temp,
             target_temps=target_temps,
-            current_temps=current_temps or {}
+            current_temps=current_temps or {},
+            heating_requests=heating_requests or {}
         )
 
         with self.lock:
@@ -127,7 +136,7 @@ class HistoryTracker:
             temperature: Temperature set (if applicable)
         """
         event = ControlEvent(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             zone_id=zone_id,
             action=action,
             details=details,
@@ -161,7 +170,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             readings = [
                 r for r in readings
                 if datetime.fromisoformat(r.timestamp) > cutoff
@@ -192,7 +201,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             events = [
                 e for e in events
                 if datetime.fromisoformat(e.timestamp) > cutoff
@@ -224,7 +233,7 @@ class HistoryTracker:
             outdoor_temp_coefficient: Outdoor temperature coefficient
         """
         snapshot = ThermalCharacteristicsSnapshot(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             zone_id=zone_id,
             heating_rate=heating_rate,
             heating_rate_confidence=heating_rate_confidence,
@@ -262,7 +271,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             snapshots = [
                 s for s in snapshots
                 if datetime.fromisoformat(s.timestamp) > cutoff
@@ -275,7 +284,8 @@ class HistoryTracker:
         zone_id: str,
         avg_heating_request: float,
         max_heating_request: float,
-        heating_active: bool
+        heating_active: bool,
+        timestamp: datetime | None = None
     ):
         """Add a heating power request snapshot.
 
@@ -284,9 +294,13 @@ class HistoryTracker:
             avg_heating_request: Average heating request % (0-100)
             max_heating_request: Maximum heating request % (0-100)
             heating_active: Whether any heating was requested
+            timestamp: Optional timestamp (defaults to now for real-time snapshots)
         """
+        # Use provided timestamp for historical backfill, or current time for real-time
+        ts = timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat()
+
         snapshot = HeatingPowerSnapshot(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=ts,
             zone_id=zone_id,
             avg_heating_request=avg_heating_request,
             max_heating_request=max_heating_request,
@@ -321,7 +335,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             snapshots = [
                 s for s in snapshots
                 if datetime.fromisoformat(s.timestamp) > cutoff
@@ -333,7 +347,7 @@ class HistoryTracker:
 
     def _cleanup_old_data(self):
         """Remove data older than max_hours."""
-        cutoff = datetime.utcnow() - self.max_age
+        cutoff = datetime.now(timezone.utc) - self.max_age
 
         # Clean temperature readings
         while (self.temperature_readings and
@@ -346,7 +360,7 @@ class HistoryTracker:
             self.control_events.popleft()
 
         # Clean thermal snapshots (keep 7 days, don't use max_hours)
-        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
         while (self.thermal_snapshots and
                datetime.fromisoformat(self.thermal_snapshots[0].timestamp) < seven_days_ago):
             self.thermal_snapshots.popleft()

@@ -30,9 +30,13 @@ fi
 # Check if port 8081 is in use and kill the process
 if lsof -ti :8081 >/dev/null 2>&1 ; then
     echo "⚠️  Port 8081 is already in use. Stopping existing process..."
-    lsof -ti :8081 | xargs kill -9 2>/dev/null || true
-    sleep 1
+    PID=$(lsof -ti :8081)
+    echo "   Killing PID: $PID"
+    kill -9 $PID 2>/dev/null || true
+    sleep 2
     echo "✓ Stopped existing processes on port 8081"
+else
+    echo "✓ Port 8081 is available"
 fi
 
 # Activate virtual environment

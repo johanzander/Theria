@@ -7,9 +7,12 @@ Runs independently of UI - collects data every minute regardless of whether anyo
 
 import asyncio
 import logging
-import requests
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta
+
+import requests
+import yaml
 
 from .ha_client import HAClient
 from .history import history_tracker
@@ -38,6 +41,39 @@ class TemperatureHistoryService:
 
         self._task: asyncio.Task | None = None
         self._running = False
+
+        # Load InfluxDB configuration (optional)
+        self.influxdb_config = self._load_influxdb_config()
+        self.influxdb_enabled = self.influxdb_config.get("enabled", False)
+
+    def _load_influxdb_config(self) -> dict:
+        """Load InfluxDB configuration from options.json or config.yaml."""
+        config = {}
+
+        try:
+            # Try Home Assistant options.json first (production)
+            if os.path.exists("/data/options.json"):
+                import json
+                with open("/data/options.json") as f:
+                    options = json.load(f)
+                    config = options.get("influxdb", {})
+                    logger.debug("Loaded InfluxDB config from options.json")
+        except Exception as e:
+            logger.debug(f"Could not load options.json: {e}")
+
+        # Fallback to config.yaml (development)
+        if not config:
+            try:
+                config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+                if os.path.exists(config_path):
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                        config = yaml_config.get("options", {}).get("influxdb", {})
+                        logger.debug("Loaded InfluxDB config from config.yaml")
+            except Exception as e:
+                logger.debug(f"Could not load config.yaml: {e}")
+
+        return config
 
     async def start(self):
         """Start the temperature history collection service."""
@@ -104,14 +140,19 @@ class TemperatureHistoryService:
 
                 avg_temp = sum(valid_temps) / len(valid_temps)
 
-                # Read climate entity states for target temps
+                # Read climate entity states for target temps and heating requests
                 target_temps = {}
                 current_temps = {}
+                heating_requests = {}
                 for climate_entity in zone.climate_entities:
                     try:
-                        state = self.ha_client.get_climate_state(climate_entity)
-                        target_temps[climate_entity] = state.get("target_temperature")
-                        current_temps[climate_entity] = state.get("current_temperature")
+                        full_state = self.ha_client.get_state(climate_entity)
+                        attributes = full_state.get("attributes", {})
+                        target_temps[climate_entity] = attributes.get("temperature")
+                        current_temps[climate_entity] = attributes.get("current_temperature")
+                        heating_power = attributes.get("heating_power_request")
+                        if heating_power is not None:
+                            heating_requests[climate_entity] = heating_power
                     except Exception as e:
                         logger.warning(f"Failed to read {climate_entity}: {e}")
 
@@ -121,7 +162,8 @@ class TemperatureHistoryService:
                     current_temp=avg_temp,
                     scheduled_temp=None,  # No scheduler in current implementation
                     target_temps=target_temps,
-                    current_temps=current_temps
+                    current_temps=current_temps,
+                    heating_requests=heating_requests
                 )
 
                 logger.debug(f"Zone {zone.id}: Stored temp reading {avg_temp:.1f}°C")
@@ -168,12 +210,24 @@ class TemperatureHistoryService:
                 logger.error(f"Error collecting heating power for zone {zone.id}: {e}", exc_info=True)
 
     async def _backfill_history(self):
-        """Backfill historical data from Home Assistant on startup."""
-        # Calculate time range - get last 24 hours of history
-        end_time = datetime.now()
-        start_time = end_time - timedelta(hours=24)
+        """Backfill historical data on startup.
 
-        logger.info(f"Fetching historical data from {start_time} to {end_time}")
+        Default: Uses HA Recorder (7 days) - works out of the box
+        Optional: Uses InfluxDB (30 days) - if configured for longer history
+        """
+        end_time = datetime.now()
+
+        # Determine backfill source and time range
+        if self.influxdb_enabled:
+            start_time = end_time - timedelta(days=30)
+            source = "InfluxDB"
+            use_influxdb = True
+            logger.info(f"📊 Backfilling from InfluxDB (30 days): {start_time} to {end_time}")
+        else:
+            start_time = end_time - timedelta(days=7)
+            source = "HA Recorder"
+            use_influxdb = False
+            logger.info(f"📊 Backfilling from HA Recorder (7 days): {start_time} to {end_time}")
 
         for zone in self.zones:
             try:
@@ -182,11 +236,18 @@ class TemperatureHistoryService:
 
                 for sensor_entity in zone.temp_sensors:
                     try:
-                        history_data = self._fetch_ha_history(
-                            sensor_entity,
-                            start_time,
-                            end_time
-                        )
+                        if use_influxdb:
+                            history_data = self._fetch_influxdb_history(
+                                sensor_entity,
+                                start_time,
+                                end_time
+                            )
+                        else:
+                            history_data = self._fetch_ha_history(
+                                sensor_entity,
+                                start_time,
+                                end_time
+                            )
 
                         if history_data:
                             sensor_histories[sensor_entity] = history_data
@@ -199,11 +260,19 @@ class TemperatureHistoryService:
                 climate_histories = {}
                 for climate_entity in zone.climate_entities:
                     try:
-                        history_data = self._fetch_ha_history(
-                            climate_entity,
-                            start_time,
-                            end_time
-                        )
+                        if use_influxdb:
+                            history_data = self._fetch_influxdb_history(
+                                climate_entity,
+                                start_time,
+                                end_time,
+                                domain="climate"
+                            )
+                        else:
+                            history_data = self._fetch_ha_history(
+                                climate_entity,
+                                start_time,
+                                end_time
+                            )
 
                         if history_data:
                             climate_histories[climate_entity] = history_data
@@ -229,13 +298,24 @@ class TemperatureHistoryService:
         logger.info("✅ Historical data backfill complete")
 
     def _fetch_ha_history(self, entity_id: str, start_time: datetime, end_time: datetime) -> list:
-        """Fetch historical data for an entity from Home Assistant."""
+        """Fetch historical data for an entity from Home Assistant Recorder.
+
+        Uses the built-in HA History API (/api/history/period) which queries
+        the recorder database (SQLite/PostgreSQL/MySQL).
+
+        Args:
+            entity_id: Entity ID (e.g., 'sensor.outdoor', 'climate.living_room')
+            start_time: Start of time range
+            end_time: End of time range
+
+        Returns:
+            List of state change dictionaries
+        """
         try:
             # Format timestamps for HA API (ISO format)
             start_iso = start_time.isoformat()
 
-            # Use HA client to get history
-            # Note: We'll need to add this method to HAClient or use direct HTTP
+            # Query HA History API
             url = f"{self.ha_client.base_url}/api/history/period/{start_iso}"
             params = {
                 "filter_entity_id": entity_id,
@@ -261,6 +341,104 @@ class TemperatureHistoryService:
             logger.warning(f"Failed to fetch HA history for {entity_id}: {e}")
             return []
 
+    def _fetch_influxdb_history(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        domain: str = "sensor"
+    ) -> list:
+        """Fetch historical data for an entity from InfluxDB.
+
+        Args:
+            entity_id: Full entity ID (e.g., 'sensor.outdoor', 'climate.living_room')
+            start_time: Start of time range
+            end_time: End of time range
+            domain: Entity domain ('sensor' or 'climate')
+
+        Returns:
+            List of state change dictionaries compatible with HA History API format
+        """
+        try:
+            from .influxdb_helper import get_sensor_timeseries
+
+            # Extract sensor name from entity_id (remove domain prefix)
+            sensor_name = entity_id.replace(f"{domain}.", "")
+
+            # Determine field name based on domain
+            if domain == "climate":
+                # For climate, we'll fetch both current and target temperature
+                # First fetch current_temperature
+                result_current = get_sensor_timeseries(
+                    sensor_name=sensor_name,
+                    start_time=start_time,
+                    stop_time=end_time,
+                    domain=domain,
+                    field_name="current_temperature"
+                )
+
+                # Then fetch target temperature
+                result_target = get_sensor_timeseries(
+                    sensor_name=sensor_name,
+                    start_time=start_time,
+                    stop_time=end_time,
+                    domain=domain,
+                    field_name="temperature"
+                )
+
+                # Convert to HA History API format
+                history_data = []
+
+                # Merge both datasets by timestamp
+                if result_current.get("status") == "success":
+                    for timestamp, value in result_current.get("data", []):
+                        history_data.append({
+                            "last_changed": timestamp.isoformat(),
+                            "last_updated": timestamp.isoformat(),
+                            "state": str(value),
+                            "attributes": {"current_temperature": value}
+                        })
+
+                # Add target temperature data
+                if result_target.get("status") == "success":
+                    target_map = {ts: val for ts, val in result_target.get("data", [])}
+                    for entry in history_data:
+                        ts = datetime.fromisoformat(entry["last_changed"])
+                        if ts in target_map:
+                            entry["attributes"]["temperature"] = target_map[ts]
+
+                return history_data
+
+            else:
+                # For sensors, fetch the "value" field
+                result = get_sensor_timeseries(
+                    sensor_name=sensor_name,
+                    start_time=start_time,
+                    stop_time=end_time,
+                    domain=domain,
+                    field_name="value"
+                )
+
+                if result.get("status") != "success":
+                    logger.warning(f"InfluxDB query failed for {entity_id}: {result.get('message')}")
+                    return []
+
+                # Convert to HA History API format
+                history_data = []
+                for timestamp, value in result.get("data", []):
+                    history_data.append({
+                        "last_changed": timestamp.isoformat(),
+                        "last_updated": timestamp.isoformat(),
+                        "state": str(value),
+                        "attributes": {}
+                    })
+
+                return history_data
+
+        except Exception as e:
+            logger.error(f"Failed to fetch InfluxDB history for {entity_id}: {e}", exc_info=True)
+            return []
+
     def _aggregate_and_store_history(
         self,
         zone,
@@ -271,7 +449,7 @@ class TemperatureHistoryService:
     ) -> int:
         """Aggregate historical sensor data and store in history tracker."""
         # Group all state changes by time bucket (1-minute intervals)
-        time_buckets = defaultdict(lambda: {"temps": [], "targets": {}, "currents": {}})
+        time_buckets = defaultdict(lambda: {"temps": [], "targets": {}, "currents": {}, "heating_requests": {}})
 
         # Process sensor temperature history
         for entity_id, history in sensor_histories.items():
@@ -288,6 +466,8 @@ class TemperatureHistoryService:
                         try:
                             temp = float(state_value)
                             time_buckets[bucket_time]["temps"].append(temp)
+                            # Also store individual sensor temps for visualization
+                            time_buckets[bucket_time]["currents"][entity_id] = temp
                         except (ValueError, TypeError):
                             pass
 
@@ -308,33 +488,79 @@ class TemperatureHistoryService:
                         # Get target and current temperature from attributes
                         target_temp = attributes.get("temperature")
                         current_temp = attributes.get("current_temperature")
+                        heating_request = attributes.get("heating_power_request")
 
                         if target_temp is not None:
                             time_buckets[bucket_time]["targets"][entity_id] = float(target_temp)
                         if current_temp is not None:
                             time_buckets[bucket_time]["currents"][entity_id] = float(current_temp)
+                        if heating_request is not None:
+                            time_buckets[bucket_time]["heating_requests"][entity_id] = float(heating_request)
 
                 except Exception as e:
                     logger.debug(f"Error processing climate history: {e}")
+
+        # Forward-fill target, current temps, and heating requests across all buckets
+        # This ensures we have the last known values even when they don't change
+        last_targets = {}
+        last_currents = {}
+        last_heating_requests = {}
+
+        for bucket_time in sorted(time_buckets.keys()):
+            bucket_data = time_buckets[bucket_time]
+
+            # Update last known values
+            if bucket_data["targets"]:
+                last_targets.update(bucket_data["targets"])
+            if bucket_data["currents"]:
+                last_currents.update(bucket_data["currents"])
+            if bucket_data["heating_requests"]:
+                last_heating_requests.update(bucket_data["heating_requests"])
+
+            # Apply forward-filled values to this bucket
+            bucket_data["targets"] = dict(last_targets)
+            bucket_data["currents"] = dict(last_currents)
+            bucket_data["heating_requests"] = dict(last_heating_requests)
 
         # Store aggregated data in history tracker
         stored_count = 0
         for bucket_time in sorted(time_buckets.keys()):
             bucket_data = time_buckets[bucket_time]
 
-            # Calculate average temperature for this bucket
-            temps = bucket_data["temps"]
-            if temps:
-                avg_temp = sum(temps) / len(temps)
+            # Calculate average temperature from forward-filled current temps
+            # This ensures the average matches what's displayed on charts
+            current_temps_dict = bucket_data["currents"]
+            if current_temps_dict:
+                temps_list = list(current_temps_dict.values())
+                avg_temp = sum(temps_list) / len(temps_list)
 
-                # Store in history tracker
+                # Store in history tracker with historical timestamp
                 history_tracker.add_temperature_reading(
                     zone_id=zone.id,
                     current_temp=avg_temp,
                     scheduled_temp=None,
                     target_temps=bucket_data["targets"],
-                    current_temps=bucket_data["currents"]
+                    current_temps=bucket_data["currents"],
+                    heating_requests=bucket_data["heating_requests"],
+                    timestamp=bucket_time
                 )
+
+                # Store heating power snapshot if we have heating request data
+                heating_requests = bucket_data["heating_requests"]
+                if heating_requests:
+                    request_values = list(heating_requests.values())
+                    avg_heating_request = sum(request_values) / len(request_values)
+                    max_heating_request = max(request_values)
+                    heating_active = any(r > 0 for r in request_values)
+
+                    # Store with historical timestamp (history_tracker is imported at module level)
+                    history_tracker.add_heating_power_snapshot(
+                        zone_id=zone.id,
+                        avg_heating_request=avg_heating_request,
+                        max_heating_request=max_heating_request,
+                        heating_active=heating_active,
+                        timestamp=bucket_time
+                    )
 
                 stored_count += 1
 

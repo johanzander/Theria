@@ -306,10 +306,47 @@
             <div class="loading">Loading zone data...</div>
         </div>
 
+        <!-- Per-Climate Entity Charts -->
+        <div id="climate-charts-container">
+            <div class="loading">Loading climate entity charts...</div>
+        </div>
+
+        <!-- Zone Aggregate Chart -->
         <div class="card">
-            <h3>Temperature & Heating Timeline - All Zones</h3>
+            <h3>Zone Aggregate - All Sensors</h3>
             <div class="chart-container">
-                <canvas id="tempChart"></canvas>
+                <canvas id="zoneAggregateChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Main Heating System Chart -->
+        <div class="card">
+            <h3>Main Heating System</h3>
+            <div class="chart-container">
+                <canvas id="mainHeatingChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Heat Carrier System Efficiency -->
+        <div class="card">
+            <h3>⚡ Heat Carrier Delta Temperature (Efficiency Indicator)</h3>
+            <p style="color: #a0aec0; font-size: 14px; margin-bottom: 15px;">
+                Delta = Forward - Return. <strong style="color: #48bb78;">Optimal: 6-8°C</strong> = efficient heat delivery.
+                Delta &lt;6°C = system at capacity limit.
+            </p>
+            <div class="chart-container">
+                <canvas id="heatCarrierDeltaChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🔧 Compressor Performance vs Delta</h3>
+            <p style="color: #a0aec0; font-size: 14px; margin-bottom: 15px;">
+                <strong style="color: #f6ad55;">High compressor speed + good delta (6-8°C) = wasteful operation.</strong>
+                Consider lowering setpoint.
+            </p>
+            <div class="chart-container">
+                <canvas id="compressorDeltaChart"></canvas>
             </div>
         </div>
 
@@ -326,7 +363,11 @@
         let selectedTimeRange = '24h';
         let zones = [];
         let charts = {
-            temp: null,
+            climate: {},  // climate_entity_id -> Chart instance
+            aggregate: null,
+            mainHeating: null,
+            heatCarrierDelta: null,
+            compressorDelta: null,
             rates: null
         };
         let refreshInterval = null;
@@ -343,7 +384,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             setupTimeRangeSelector();
             loadAllData();
-            startAutoRefresh();
+            // Auto-refresh disabled for better analysis experience
+            // startAutoRefresh();
         });
 
         function setupTimeRangeSelector() {
@@ -390,7 +432,10 @@
                 const hours = getHoursFromRange(selectedTimeRange);
                 await Promise.all([
                     loadZoneOverviews(),
-                    loadTemperatureChart(hours),
+                    loadClimateEntityCharts(hours),
+                    loadZoneAggregateChart(hours),
+                    loadMainHeatingChart(hours),
+                    loadHeatCarrierChart(hours),
                     loadThermalRatesChart(hours)
                 ]);
 
@@ -469,6 +514,897 @@
             }
 
             document.getElementById('zone-overview').innerHTML = overviewHTML.join('');
+        }
+
+        async function loadClimateEntityCharts(hours) {
+            const container = document.getElementById('climate-charts-container');
+            container.innerHTML = '<div class="loading">Loading climate entity charts...</div>';
+
+            // Collect all climate entities across all zones
+            const climateCharts = [];
+            for (const zone of zones) {
+                try {
+                    // Fetch temperature history
+                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const tempData = await res.json();
+
+                    if (!tempData.history || tempData.history.length === 0) continue;
+
+                    // Extract unique climate entities from the data (filter out sensors)
+                    const climateEntities = new Set();
+                    tempData.history.forEach(h => {
+                        if (h.current_temps) {
+                            Object.keys(h.current_temps).forEach(entity => {
+                                // Only include actual climate entities, not sensors
+                                if (entity.startsWith('climate.')) {
+                                    climateEntities.add(entity);
+                                }
+                            });
+                        }
+                    });
+
+                    // Create a chart for each climate entity
+                    for (const climateEntity of climateEntities) {
+                        const currentTempData = [];
+                        const targetTempData = [];
+                        const heatingData_mapped = [];
+
+                        // Map temperature data and heating requests with timestamps
+                        tempData.history.forEach(h => {
+                            const ts = new Date(h.timestamp);
+                            if (h.current_temps && h.current_temps[climateEntity] !== undefined) {
+                                currentTempData.push({ x: ts, y: h.current_temps[climateEntity] });
+                            }
+                            if (h.target_temps && h.target_temps[climateEntity] !== undefined) {
+                                targetTempData.push({ x: ts, y: h.target_temps[climateEntity] });
+                            }
+                            // Use individual entity's heating request, not zone average!
+                            if (h.heating_requests && h.heating_requests[climateEntity] !== undefined) {
+                                heatingData_mapped.push({ x: ts, y: h.heating_requests[climateEntity] });
+                            }
+                        });
+
+                        climateCharts.push({
+                            zone: zone.name,
+                            entity: climateEntity,
+                            entityName: climateEntity.replace('climate.', ''),
+                            currentTempData,
+                            targetTempData,
+                            heatingData: heatingData_mapped
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error loading climate charts for ${zone.id}:`, error);
+                }
+            }
+
+            // Generate HTML for all climate entity charts
+            let chartsHTML = '';
+            for (const chartData of climateCharts) {
+                const canvasId = `climate-chart-${chartData.entity.replace(/\./g, '-')}`;
+                chartsHTML += `
+                    <div class="card">
+                        <h3>${chartData.zone} - ${chartData.entityName}</h3>
+                        <div class="chart-container">
+                            <canvas id="${canvasId}"></canvas>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = chartsHTML || '<div class="card"><p>No climate entity data available</p></div>';
+
+            // Create Chart.js instances for each climate entity
+            for (const chartData of climateCharts) {
+                const canvasId = `climate-chart-${chartData.entity.replace(/\./g, '-')}`;
+                const ctx = document.getElementById(canvasId);
+                if (!ctx) continue;
+
+                // Destroy existing chart if any
+                if (charts.climate[chartData.entity]) {
+                    charts.climate[chartData.entity].destroy();
+                }
+
+                const datasets = [
+                    {
+                        label: 'Current Temp',
+                        data: chartData.currentTempData,
+                        borderColor: '#4fd1c5',
+                        backgroundColor: 'rgba(79, 209, 197, 0.1)',
+                        borderWidth: 2.5,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Target Temp',
+                        data: chartData.targetTempData,
+                        borderColor: '#4fd1c5',
+                        borderWidth: 1.5,
+                        borderDash: [5, 5],
+                        tension: 0,
+                        pointRadius: 0,
+                        fill: false,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Heating Request',
+                        data: chartData.heatingData,
+                        borderColor: 'rgba(56, 178, 172, 0.8)',
+                        backgroundColor: 'rgba(56, 178, 172, 0.3)',
+                        borderWidth: 1.5,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        fill: true,
+                        yAxisID: 'y1',
+                        stepped: 'before'
+                    }
+                ];
+
+                charts.climate[chartData.entity] = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: { boxWidth: 12, padding: 8, font: { size: 11 }, color: '#a0aec0' }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) label += ': ';
+                                        if (context.parsed.y !== null) {
+                                            if (context.dataset.yAxisID === 'y1') {
+                                                label += context.parsed.y.toFixed(0) + '%';
+                                            } else {
+                                                label += context.parsed.y.toFixed(1) + '°C';
+                                            }
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: hours <= 48 ? 'hour' : 'day',
+                                    displayFormats: {
+                                        hour: 'HH:mm',
+                                        day: 'MMM dd'
+                                    },
+                                    tooltipFormat: 'PPpp'
+                                },
+                                ticks: {
+                                    color: '#a0aec0',
+                                    maxRotation: 0,
+                                    minRotation: 0,
+                                    maxTicksLimit: 12
+                                },
+                                grid: { display: false }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: 'Temperature (°C)', color: '#a0aec0' },
+                                suggestedMin: 15,
+                                suggestedMax: 25,
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                ticks: { color: '#a0aec0' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                title: { display: true, text: 'Heating Request (%)', color: '#a0aec0' },
+                                min: 0,
+                                max: 100,
+                                grid: { display: false },
+                                ticks: {
+                                    color: '#a0aec0',
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        async function loadZoneAggregateChart(hours) {
+            const datasets = [];
+
+            // Collect data for all zones
+            for (let zoneIdx = 0; zoneIdx < zones.length; zoneIdx++) {
+                const zone = zones[zoneIdx];
+                try {
+                    // Fetch temperature history
+                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const tempData = await res.json();
+
+                    // Fetch heating power timeline
+                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingData = await heatingRes.json();
+
+                    if (!tempData.history || tempData.history.length === 0) continue;
+
+                    // Zone average temperature
+                    const zoneAvgData = tempData.history.map(h => ({
+                        x: new Date(h.timestamp),
+                        y: h.current_temp
+                    }));
+
+                    datasets.push({
+                        label: `${zone.name} - Average`,
+                        data: zoneAvgData,
+                        borderColor: ZONE_COLORS[zoneIdx][0],
+                        backgroundColor: `${ZONE_COLORS[zoneIdx][0]}30`,
+                        borderWidth: 3,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        yAxisID: 'y'
+                    });
+
+                    // Individual sensor temperatures
+                    const sensorDatasets = {};
+                    tempData.history.forEach(h => {
+                        if (h.current_temps) {
+                            Object.entries(h.current_temps).forEach(([entity, temp]) => {
+                                if (!sensorDatasets[entity]) {
+                                    sensorDatasets[entity] = [];
+                                }
+                                sensorDatasets[entity].push({ x: new Date(h.timestamp), y: temp });
+                            });
+                        }
+                    });
+
+                    Object.entries(sensorDatasets).forEach(([entity, data]) => {
+                        const entityName = entity.replace('climate.', '').replace('sensor.', '');
+                        datasets.push({
+                            label: `${zone.name} - ${entityName}`,
+                            data: data,
+                            borderColor: `${ZONE_COLORS[zoneIdx][0]}80`,
+                            borderWidth: 1.5,
+                            tension: 0.3,
+                            pointRadius: 0,
+                            fill: false,
+                            yAxisID: 'y'
+                        });
+                    });
+
+                    // Heating activity overlay
+                    if (heatingData.timeline && heatingData.timeline.length > 0) {
+                        const heatingDataMapped = heatingData.timeline.map(h => ({
+                            x: new Date(h.timestamp),
+                            y: h.avg_heating_request
+                        }));
+
+                        datasets.push({
+                            label: `${zone.name} - Heating %`,
+                            data: heatingDataMapped,
+                            borderColor: `${ZONE_COLORS[zoneIdx][1]}80`,
+                            backgroundColor: `${ZONE_COLORS[zoneIdx][1]}30`,
+                            borderWidth: 1.5,
+                            tension: 0.2,
+                            pointRadius: 0,
+                            fill: true,
+                            yAxisID: 'y1',
+                            stepped: 'before'
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error loading zone aggregate for ${zone.id}:`, error);
+                }
+            }
+
+            const ctx = document.getElementById('zoneAggregateChart');
+            if (charts.aggregate) {
+                charts.aggregate.destroy();
+            }
+
+            charts.aggregate = new Chart(ctx, {
+                type: 'line',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { boxWidth: 12, padding: 8, font: { size: 10 }, color: '#a0aec0' }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) {
+                                        if (context.dataset.yAxisID === 'y1') {
+                                            label += context.parsed.y.toFixed(0) + '%';
+                                        } else {
+                                            label += context.parsed.y.toFixed(1) + '°C';
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: hours <= 6 ? 'hour' : hours <= 48 ? 'day' : 'week',
+                                displayFormats: {
+                                    hour: 'HH:mm',
+                                    day: 'MMM dd',
+                                    week: 'MMM dd'
+                                }
+                            },
+                            ticks: {
+                                color: '#a0aec0',
+                                maxRotation: 0,
+                                minRotation: 0
+                            },
+                            grid: { display: false }
+                        },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Temperature (°C)', color: '#a0aec0' },
+                            suggestedMin: 15,
+                            suggestedMax: 25,
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: '#a0aec0' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Heating Request (%)', color: '#a0aec0' },
+                            min: 0,
+                            max: 100,
+                            grid: { display: false },
+                            ticks: {
+                                color: '#a0aec0',
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadMainHeatingChart(hours) {
+            try {
+                // Fetch historical data for the three sensors
+                const [setpointRes, forwardRes, valveRes] = await Promise.all([
+                    fetch(`/api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.radiator_forward&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
+                ]);
+
+                const setpointData = await setpointRes.json();
+                const forwardData = await forwardRes.json();
+                const valveData = await valveRes.json();
+
+                // Parse sensor data into time series
+                const setpointSeries = setpointData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: parseFloat(h.state)
+                }));
+
+                const forwardSeries = forwardData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: parseFloat(h.state)
+                }));
+
+                // For valve: OFF = heating (1), ON = not heating (0)
+                const heatingStatusSeries = valveData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: h.state === 'off' ? 100 : 0  // Show as percentage for visibility
+                }));
+
+                const datasets = [
+                    {
+                        label: 'Radiator Forward',
+                        data: forwardSeries,
+                        borderColor: '#e53e3e',
+                        backgroundColor: 'rgba(229, 62, 62, 0.1)',
+                        borderWidth: 2.5,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Setpoint',
+                        data: setpointSeries,
+                        borderColor: '#e53e3e',
+                        borderWidth: 1.5,
+                        borderDash: [5, 5],
+                        tension: 0,
+                        pointRadius: 0,
+                        fill: false,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Heating Active',
+                        data: heatingStatusSeries,
+                        borderColor: 'rgba(56, 178, 172, 0.8)',
+                        backgroundColor: 'rgba(56, 178, 172, 0.3)',
+                        borderWidth: 1.5,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        fill: true,
+                        yAxisID: 'y1',
+                        stepped: 'before'
+                    }
+                ];
+
+                const ctx = document.getElementById('mainHeatingChart');
+                if (charts.mainHeating) {
+                    charts.mainHeating.destroy();
+                }
+
+                charts.mainHeating = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: { boxWidth: 12, padding: 8, font: { size: 11 }, color: '#a0aec0' }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) label += ': ';
+                                        if (context.parsed.y !== null) {
+                                            if (context.dataset.yAxisID === 'y1') {
+                                                label += context.parsed.y > 0 ? 'Active' : 'Inactive';
+                                            } else {
+                                                label += context.parsed.y.toFixed(1) + '°C';
+                                            }
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: hours <= 48 ? 'hour' : 'day',
+                                    displayFormats: {
+                                        hour: 'HH:mm',
+                                        day: 'MMM dd'
+                                    },
+                                    tooltipFormat: 'PPpp'
+                                },
+                                ticks: {
+                                    color: '#a0aec0',
+                                    maxRotation: 0,
+                                    minRotation: 0,
+                                    maxTicksLimit: 12
+                                },
+                                grid: { display: false }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: 'Temperature (°C)', color: '#a0aec0' },
+                                suggestedMin: 15,
+                                suggestedMax: 25,
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                ticks: { color: '#a0aec0' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                title: { display: true, text: 'Heating Status', color: '#a0aec0' },
+                                min: 0,
+                                max: 100,
+                                grid: { display: false },
+                                ticks: {
+                                    color: '#a0aec0',
+                                    callback: function(value) {
+                                        return value > 0 ? 'Active' : '';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading main heating chart:', error);
+            }
+        }
+
+        // Helper function to calculate 5-minute moving average
+        function calculateMovingAverage(data, windowMinutes = 5) {
+            if (data.length === 0) return [];
+
+            const result = [];
+            const windowMs = windowMinutes * 60 * 1000;
+
+            for (let i = 0; i < data.length; i++) {
+                const currentTime = data[i].x.getTime();
+                const windowStart = currentTime - windowMs;
+
+                // Collect values within the window
+                const windowValues = [];
+                for (let j = 0; j <= i; j++) {
+                    if (data[j].x.getTime() >= windowStart) {
+                        windowValues.push(data[j].y);
+                    }
+                }
+
+                // Calculate average
+                const avg = windowValues.reduce((sum, val) => sum + val, 0) / windowValues.length;
+                result.push({ x: data[i].x, y: avg });
+            }
+
+            return result;
+        }
+
+        async function loadHeatCarrierChart(hours) {
+            try {
+                // Fetch all required sensor data in parallel
+                const [forwardRes, returnRes, setpointRes, compressorRes, valveRes] = await Promise.all([
+                    fetch(`/api/sensor/history?entity_id=sensor.heat_carrier_forwrd&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.heat_carrier_return&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.compressor_speed_2&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
+                ]);
+
+                const forwardData = await forwardRes.json();
+                const returnData = await returnRes.json();
+                const setpointData = await setpointRes.json();
+                const compressorData = await compressorRes.json();
+                const valveData = await valveRes.json();
+
+                // Convert to Chart.js format
+                const forwardSeries = forwardData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: parseFloat(h.state)
+                })).filter(p => !isNaN(p.y));
+
+                const returnSeries = returnData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: parseFloat(h.state)
+                })).filter(p => !isNaN(p.y));
+
+                const setpointSeries = setpointData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: parseFloat(h.state)
+                })).filter(p => !isNaN(p.y));
+
+                const compressorSeries = compressorData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: parseFloat(h.state)
+                })).filter(p => !isNaN(p.y));
+
+                const valveSeries = valveData.history.map(h => ({
+                    x: new Date(h.timestamp),
+                    y: h.state === 'off' ? 1 : 0  // OFF = heating mode (1), ON = hot water (0)
+                }));
+
+                // Apply 5-minute moving average to reduce noise
+                const forwardAvg = calculateMovingAverage(forwardSeries, 5);
+                const returnAvg = calculateMovingAverage(returnSeries, 5);
+
+                // Calculate delta temperature (forward - return)
+                const deltaSeries = [];
+                for (let i = 0; i < Math.min(forwardAvg.length, returnAvg.length); i++) {
+                    const forwardPoint = forwardAvg[i];
+                    const returnPoint = returnAvg.find(r =>
+                        Math.abs(r.x.getTime() - forwardPoint.x.getTime()) < 60000
+                    );
+
+                    if (returnPoint) {
+                        deltaSeries.push({
+                            x: forwardPoint.x,
+                            y: forwardPoint.y - returnPoint.y
+                        });
+                    }
+                }
+
+                // Chart 1: Delta Temperature & Efficiency
+                const ctx1 = document.getElementById('heatCarrierDeltaChart');
+                if (charts.heatCarrierDelta) {
+                    charts.heatCarrierDelta.destroy();
+                }
+
+                // Custom plugin to highlight optimal delta range and heating mode
+                const deltaZonePlugin = {
+                    id: 'deltaZone',
+                    beforeDatasetsDraw: (chart) => {
+                        const ctx = chart.ctx;
+                        const chartArea = chart.chartArea;
+                        const yScale = chart.scales.y;
+                        const xScale = chart.scales.x;
+
+                        if (!yScale || !xScale) return;
+
+                        ctx.save();
+
+                        // Draw heating mode background (light cyan when valve OFF = heating)
+                        valveSeries.forEach((point, idx) => {
+                            if (point.y === 1 && idx < valveSeries.length - 1) {
+                                const x1 = xScale.getPixelForValue(point.x);
+                                const x2 = xScale.getPixelForValue(valveSeries[idx + 1].x);
+                                ctx.fillStyle = 'rgba(56, 178, 172, 0.08)';
+                                ctx.fillRect(x1, chartArea.top, x2 - x1, chartArea.bottom - chartArea.top);
+                            }
+                        });
+
+                        // Draw optimal delta zone (6-8°C)
+                        const y1 = yScale.getPixelForValue(6);
+                        const y2 = yScale.getPixelForValue(8);
+                        ctx.fillStyle = 'rgba(72, 187, 120, 0.15)';
+                        ctx.fillRect(chartArea.left, y2, chartArea.right - chartArea.left, y1 - y2);
+
+                        // Draw zone label
+                        ctx.fillStyle = '#48bb78';
+                        ctx.font = 'bold 12px sans-serif';
+                        ctx.textAlign = 'right';
+                        ctx.fillText('Optimal (6-8°C)', chartArea.right - 10, y2 + 18);
+
+                        ctx.restore();
+                    }
+                };
+
+                charts.heatCarrierDelta = new Chart(ctx1, {
+                    type: 'line',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'Forward Temp (5min avg)',
+                                data: forwardAvg,
+                                borderColor: '#e53e3e',
+                                borderWidth: 2.5,
+                                pointRadius: 0,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Return Temp (5min avg)',
+                                data: returnAvg,
+                                borderColor: '#3182ce',
+                                borderWidth: 2.5,
+                                pointRadius: 0,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Delta (Δ = Forward - Return)',
+                                data: deltaSeries,
+                                borderColor: '#38a169',
+                                backgroundColor: 'rgba(56, 161, 105, 0.3)',
+                                borderWidth: 3.5,
+                                pointRadius: 0,
+                                fill: true,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Setpoint',
+                                data: setpointSeries,
+                                borderColor: '#e53e3e',
+                                borderDash: [5, 5],
+                                borderWidth: 2,
+                                pointRadius: 0,
+                                yAxisID: 'y'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: { boxWidth: 15, padding: 10, font: { size: 11 }, color: '#a0aec0' }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) label += ': ';
+                                        if (context.parsed.y !== null) {
+                                            label += context.parsed.y.toFixed(1) + '°C';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: hours <= 48 ? 'hour' : 'day',
+                                    displayFormats: {
+                                        hour: 'HH:mm',
+                                        day: 'MMM dd'
+                                    }
+                                },
+                                ticks: {
+                                    color: '#a0aec0',
+                                    maxRotation: 0,
+                                    maxTicksLimit: 12
+                                },
+                                grid: { display: false }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: 'Temperature (°C)', color: '#a0aec0', font: { size: 12, weight: 'bold' } },
+                                suggestedMin: 0,
+                                suggestedMax: 50,
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                ticks: { color: '#a0aec0' }
+                            }
+                        }
+                    },
+                    plugins: [deltaZonePlugin]
+                });
+
+                // Chart 2: Compressor Performance vs Delta
+                const ctx2 = document.getElementById('compressorDeltaChart');
+                if (charts.compressorDelta) {
+                    charts.compressorDelta.destroy();
+                }
+
+                // Plugin for heating mode background
+                const heatingModePlugin = {
+                    id: 'heatingMode',
+                    beforeDatasetsDraw: (chart) => {
+                        const ctx = chart.ctx;
+                        const chartArea = chart.chartArea;
+                        const xScale = chart.scales.x;
+
+                        if (!xScale) return;
+
+                        ctx.save();
+                        // Draw heating mode background
+                        valveSeries.forEach((point, idx) => {
+                            if (point.y === 1 && idx < valveSeries.length - 1) {
+                                const x1 = xScale.getPixelForValue(point.x);
+                                const x2 = xScale.getPixelForValue(valveSeries[idx + 1].x);
+                                ctx.fillStyle = 'rgba(56, 178, 172, 0.08)';
+                                ctx.fillRect(x1, chartArea.top, x2 - x1, chartArea.bottom - chartArea.top);
+                            }
+                        });
+                        ctx.restore();
+                    }
+                };
+
+                charts.compressorDelta = new Chart(ctx2, {
+                    type: 'line',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'Compressor Speed',
+                                data: compressorSeries,
+                                borderColor: '#9f7aea',
+                                backgroundColor: 'rgba(159, 122, 234, 0.2)',
+                                borderWidth: 3,
+                                pointRadius: 0,
+                                stepped: 'before',
+                                fill: true,
+                                yAxisID: 'y1'
+                            },
+                            {
+                                label: 'Delta Temperature',
+                                data: deltaSeries,
+                                borderColor: '#38a169',
+                                borderWidth: 3,
+                                pointRadius: 0,
+                                yAxisID: 'y'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: { boxWidth: 15, padding: 10, font: { size: 11 }, color: '#a0aec0' }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) label += ': ';
+                                        if (context.parsed.y !== null) {
+                                            if (context.dataset.yAxisID === 'y1') {
+                                                label += context.parsed.y.toFixed(0) + '%';
+                                            } else {
+                                                label += context.parsed.y.toFixed(1) + '°C';
+                                            }
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: hours <= 48 ? 'hour' : 'day',
+                                    displayFormats: {
+                                        hour: 'HH:mm',
+                                        day: 'MMM dd'
+                                    }
+                                },
+                                ticks: {
+                                    color: '#a0aec0',
+                                    maxRotation: 0,
+                                    maxTicksLimit: 12
+                                },
+                                grid: { display: false }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: 'Delta Temp (°C)', color: '#38a169', font: { size: 12, weight: 'bold' } },
+                                suggestedMin: 0,
+                                suggestedMax: 15,
+                                grid: { color: 'rgba(56, 161, 105, 0.1)' },
+                                ticks: { color: '#38a169' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                title: { display: true, text: 'Compressor Speed (%)', color: '#9f7aea', font: { size: 12, weight: 'bold' } },
+                                min: 0,
+                                max: 100,
+                                grid: { display: false },
+                                ticks: {
+                                    color: '#9f7aea',
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    plugins: [heatingModePlugin]
+                });
+
+            } catch (error) {
+                console.error('Error loading heat carrier charts:', error);
+            }
         }
 
         async function loadTemperatureChart(hours) {

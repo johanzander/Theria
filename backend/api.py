@@ -619,3 +619,75 @@ async def get_heating_timeline(zone_id: str, hours: int = 24, resolution: str = 
         "count": len(timeline),
         "timeline": timeline
     }
+
+
+@router.get("/api/sensor/history")
+async def get_sensor_history(entity_id: str, hours: int = 24):
+    """Get historical data for any sensor or binary_sensor.
+
+    Args:
+        entity_id: Full entity ID (e.g., 'sensor.heating_setpoint', 'binary_sensor.switch_valve_1')
+        hours: How many hours back (default: 24)
+
+    Returns:
+        Historical state changes with timestamps and values
+    """
+    from datetime import datetime, timedelta
+    import requests
+
+    # Limit hours
+    hours = min(hours, 168)
+
+    # Calculate time range
+    end_time = datetime.now()
+    start_time = end_time - timedelta(hours=hours)
+
+    # Fetch from HA history API
+    try:
+        url = f"{ha_client.base_url}/api/history/period/{start_time.isoformat()}"
+        params = {
+            "filter_entity_id": entity_id,
+            "end_time": end_time.isoformat()
+        }
+
+        response = requests.get(
+            url,
+            headers=ha_client.headers,
+            params=params,
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                history = data[0]  # First array contains our entity's history
+
+                # Format the data
+                formatted_history = []
+                for state_change in history:
+                    timestamp = state_change.get("last_changed") or state_change.get("last_updated")
+                    state = state_change.get("state")
+
+                    if timestamp and state not in ("unknown", "unavailable", None):
+                        formatted_history.append({
+                            "timestamp": timestamp,
+                            "state": state
+                        })
+
+                return {
+                    "entity_id": entity_id,
+                    "hours": hours,
+                    "count": len(formatted_history),
+                    "history": formatted_history
+                }
+
+        return {
+            "entity_id": entity_id,
+            "hours": hours,
+            "count": 0,
+            "history": []
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to fetch sensor history for {entity_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch sensor history: {str(e)}")
