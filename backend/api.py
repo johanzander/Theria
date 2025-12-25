@@ -621,6 +621,121 @@ async def get_heating_timeline(zone_id: str, hours: int = 24, resolution: str = 
     }
 
 
+@router.get("/api/thermal/entity/{entity_id}")
+async def get_entity_thermal(entity_id: str, timeframe: str = "24h"):
+    """Get thermal characteristics for a specific climate entity.
+
+    Args:
+        entity_id: Climate entity ID (e.g., "climate.vantsidan")
+        timeframe: Timeframe for rates: "1h", "6h", "24h", "7d" (default: "24h")
+
+    Returns:
+        Per-entity thermal characteristics across all timeframes
+    """
+    if not learning_service:
+        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+
+    # Find entity in learning service
+    if entity_id not in learning_service.entity_learners:
+        raise HTTPException(status_code=404, detail=f"Entity {entity_id} not found in thermal learning")
+
+    learner = learning_service.entity_learners[entity_id]
+
+    # Get all timeframes
+    all_timeframes = learner.get_all_timeframes()
+
+    # Build response with all timeframes
+    result = {
+        "entity_id": entity_id,
+        "timeframes": {}
+    }
+
+    for tf, chars in all_timeframes.items():
+        result["timeframes"][tf] = {
+            "heating_rate": chars.heating_rate,
+            "cooling_rate": chars.cooling_rate,
+            "heating_samples": chars.heating_samples,
+            "cooling_samples": chars.cooling_samples,
+            "heating_confidence": chars.heating_confidence,
+            "cooling_confidence": chars.cooling_confidence,
+            "overall_confidence": chars.overall_confidence
+        }
+
+    return result
+
+
+@router.get("/api/thermal/periods/{zone_id}")
+async def get_thermal_periods(zone_id: str, hours: int = 24):
+    """Get detected heating and cooling periods for a zone.
+
+    Args:
+        zone_id: Zone ID (e.g., "butik")
+        hours: Hours of history to retrieve (default: 24)
+
+    Returns:
+        List of detected periods with timestamps, temperatures, and rates
+    """
+    if not learning_service:
+        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+
+    # Get all entity learners for this zone
+    zone_periods = []
+
+    for entity_id, learner in learning_service.entity_learners.items():
+        # Check if this entity belongs to the zone (simple check based on entity_id)
+        # TODO: Use proper zone mapping from settings
+        periods = learner.get_periods(hours=hours)
+        zone_periods.extend(periods)
+
+    # Sort by start time
+    zone_periods.sort(key=lambda p: p["start_time"])
+
+    return {
+        "zone_id": zone_id,
+        "hours": hours,
+        "periods": zone_periods
+    }
+
+
+@router.get("/api/thermal/zone/{zone_id}/comparison")
+async def get_zone_entity_comparison(zone_id: str, timeframe: str = "24h"):
+    """Compare thermal performance across a zone's climate entities.
+
+    Args:
+        zone_id: Zone identifier
+        timeframe: Timeframe to compare: "1h", "6h", "24h", "7d" (default: "24h")
+
+    Returns:
+        Comparison of all entities in the zone with insights
+    """
+    if not learning_service:
+        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+
+    # Verify zone exists
+    zone = next((z for z in ZONES if z.id == zone_id), None)
+    if not zone:
+        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
+
+    # Get aggregator for this zone
+    if zone_id not in learning_service.zone_aggregators:
+        raise HTTPException(status_code=404, detail=f"No thermal data for zone {zone_id}")
+
+    aggregator = learning_service.zone_aggregators[zone_id]
+
+    # Validate timeframe
+    valid_timeframes = ["1h", "6h", "24h", "7d"]
+    if timeframe not in valid_timeframes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {valid_timeframes}"
+        )
+
+    # Get comparison data
+    comparison = aggregator.get_comparison(timeframe)
+
+    return comparison
+
+
 @router.get("/api/sensor/history")
 async def get_sensor_history(entity_id: str, hours: int = 24):
     """Get historical data for any sensor or binary_sensor.

@@ -96,6 +96,10 @@ async def lifespan(app: FastAPI):
         )
         await history_service.start()
 
+        # Connect history service to learning service and bootstrap
+        learning_service.history_service = history_service
+        await learning_service.bootstrap_from_history()
+
         # Make learning service available to API
         import api
         api.learning_service = learning_service

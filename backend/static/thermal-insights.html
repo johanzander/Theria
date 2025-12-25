@@ -6,6 +6,7 @@
     <title>Thermal Learning Insights - Theria</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -380,6 +381,68 @@
             ['#f6ad55', '#ed8936']
         ];
 
+        // Helper function to create period annotations for charts
+        async function getPeriodAnnotations(zoneId, hours, timestamps, entityId) {
+            try {
+                const res = await fetch(`api/thermal/periods/${zoneId}?hours=${hours}`);
+                const data = await res.json();
+
+                if (!data.periods || data.periods.length === 0) return {};
+
+                const annotations = {};
+
+                // Filter periods to only this entity
+                const entityPeriods = data.periods.filter(p => p.entity_id === entityId);
+
+                entityPeriods.forEach((period, idx) => {
+                    const isHeating = period.type === 'heating';
+                    const backgroundColor = isHeating ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)';  // Increased opacity
+                    const borderColor = isHeating ? 'rgba(239, 68, 68, 0.5)' : 'rgba(59, 130, 246, 0.5)';  // Increased opacity
+
+                    // Parse period timestamps
+                    const periodStart = new Date(period.start_time);
+                    const periodEnd = new Date(period.end_time);
+
+                    // Background shading for period (using ISO strings for time axis)
+                    annotations[`period_${idx}`] = {
+                        type: 'box',
+                        xMin: periodStart.toISOString(),
+                        xMax: periodEnd.toISOString(),
+                        yMin: 0,
+                        yMax: 30,
+                        backgroundColor: backgroundColor,
+                        borderWidth: 0,
+                        xScaleID: 'x',
+                        yScaleID: 'y'
+                    };
+
+                    // Label with rate
+                    const rateText = `${period.rate >= 0 ? '+' : ''}${period.rate.toFixed(2)}°C/h`;
+                    const midTime = new Date((periodStart.getTime() + periodEnd.getTime()) / 2);
+                    annotations[`period_label_${idx}`] = {
+                        type: 'label',
+                        xValue: midTime.toISOString(),
+                        yValue: 22,  // Lower position in temperature range
+                        xScaleID: 'x',
+                        yScaleID: 'y',
+                        backgroundColor: borderColor,
+                        content: [rateText],
+                        font: {
+                            size: 10
+                        },
+                        color: '#fff',
+                        padding: 4,
+                        borderRadius: 4
+                    };
+                });
+
+                return annotations;
+            } catch (error) {
+                console.error('Failed to fetch periods:', error);
+                return {};
+            }
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             setupTimeRangeSelector();
@@ -566,11 +629,13 @@
 
                         climateCharts.push({
                             zone: zone.name,
+                            zoneId: zone.id,  // Add zone ID for period fetching
                             entity: climateEntity,
                             entityName: climateEntity.replace('climate.', ''),
                             currentTempData,
                             targetTempData,
-                            heatingData: heatingData_mapped
+                            heatingData: heatingData_mapped,
+                            timestamps: currentTempData.map(d => d.x)  // Extract timestamps
                         });
                     }
                 } catch (error) {
@@ -624,6 +689,7 @@
                         borderWidth: 1.5,
                         borderDash: [5, 5],
                         tension: 0,
+                        stepped: 'before',  // Draw as step function
                         pointRadius: 0,
                         fill: false,
                         yAxisID: 'y'
@@ -642,6 +708,9 @@
                     }
                 ];
 
+                // Fetch period annotations for this specific entity
+                const periodAnnotations = await getPeriodAnnotations(chartData.zoneId, hours, chartData.timestamps, chartData.entity);
+
                 charts.climate[chartData.entity] = new Chart(ctx, {
                     type: 'line',
                     data: { datasets: datasets },
@@ -653,6 +722,9 @@
                                 display: true,
                                 position: 'top',
                                 labels: { boxWidth: 12, padding: 8, font: { size: 11 }, color: '#a0aec0' }
+                            },
+                            annotation: {
+                                annotations: periodAnnotations
                             },
                             tooltip: {
                                 mode: 'index',

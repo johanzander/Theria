@@ -236,11 +236,29 @@ class ZoneThermalLearner:
         return self.characteristics
 
     def get_confidence(self) -> float:
-        """Get overall confidence in learned parameters (0-1)."""
-        return min(
-            self.characteristics.heating_rate_confidence,
-            self.characteristics.cooling_rate_confidence
+        """Get overall confidence in learned parameters (0-1).
+
+        Returns weighted average of heating and cooling confidence.
+        If we only have one type of sample, that's still useful confidence.
+        """
+        heating_conf = self.characteristics.heating_rate_confidence
+        cooling_conf = self.characteristics.cooling_rate_confidence
+        heating_samples = self.characteristics.heating_samples
+        cooling_samples = self.characteristics.cooling_samples
+
+        total_samples = heating_samples + cooling_samples
+
+        if total_samples == 0:
+            return 0.0
+
+        # Weighted average based on number of samples
+        # This way we show confidence even if we only have heating OR cooling data
+        weighted_conf = (
+            (heating_conf * heating_samples + cooling_conf * cooling_samples)
+            / total_samples
         )
+
+        return weighted_conf
 
     def get_recent_measurements(self, limit: int = 100) -> list[ThermalMeasurement]:
         """Get recent thermal measurements.
