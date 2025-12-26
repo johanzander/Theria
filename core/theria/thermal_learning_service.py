@@ -7,7 +7,7 @@ Runs every 15 minutes to collect measurements and update zone models.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .entity_thermal_learner import ClimateEntityThermalLearner, ZoneThermalAggregator
 from .ha_client import HAClient
@@ -124,7 +124,7 @@ class ThermalLearningService:
 
     async def _collect_measurements(self):
         """Collect measurements for all climate entities and update learners."""
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
         # Get outdoor temperature
         outdoor_temp = await self._get_outdoor_temp()

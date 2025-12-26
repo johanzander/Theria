@@ -27,14 +27,22 @@ if [[ "$HA_TOKEN" == "your_long_lived_access_token_here" ]]; then
   exit 1
 fi
 
-# Check if port 8081 is in use and kill the process
+# Check if port 8081 is in use and kill ALL related processes
 if lsof -ti :8081 >/dev/null 2>&1 ; then
-    echo "⚠️  Port 8081 is already in use. Stopping existing process..."
-    PID=$(lsof -ti :8081)
-    echo "   Killing PID: $PID"
-    kill -9 $PID 2>/dev/null || true
+    echo "⚠️  Port 8081 is already in use. Stopping all Theria processes..."
+    # Kill uvicorn, watchmedo, and any dev-start processes
+    pkill -9 -f "uvicorn.*app:app" 2>/dev/null || true
+    pkill -9 -f "watchmedo" 2>/dev/null || true
+    pkill -9 -f "dev-start" 2>/dev/null || true
     sleep 2
-    echo "✓ Stopped existing processes on port 8081"
+    # Double-check port is free
+    if lsof -ti :8081 >/dev/null 2>&1 ; then
+        PID=$(lsof -ti :8081)
+        echo "   Force killing remaining PID: $PID"
+        kill -9 $PID 2>/dev/null || true
+        sleep 1
+    fi
+    echo "✓ Stopped all existing processes on port 8081"
 else
     echo "✓ Port 8081 is available"
 fi

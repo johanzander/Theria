@@ -189,18 +189,42 @@ async def root(request: Request):
     return HTMLResponse(content=html_content)
 
 
-@app.get("/thermal-insights")
-@app.get("/thermal-insights.html")
-async def thermal_insights(request: Request):
-    """Thermal insights page with proper base path."""
+@app.get("/zone-insights")
+@app.get("/zone-insights.html")
+async def zone_insights(request: Request):
+    """Zone insights page (Butik zone) with proper base path."""
     from fastapi.responses import HTMLResponse
     
     # Get ingress path from Home Assistant header
     ingress_path = request.headers.get("X-Ingress-Path", "")
-    logger.info(f"Serving thermal-insights with X-Ingress-Path: '{ingress_path}'")
+    logger.info(f"Serving zone-insights with X-Ingress-Path: '{ingress_path}'")
     
-    # Read thermal-insights.html
-    insights_path = os.path.join(static_dir, "thermal-insights.html")
+    # Read zone-insights.html
+    insights_path = os.path.join(static_dir, "zone-insights.html")
+    with open(insights_path) as f:
+        html_content = f.read()
+    
+    # Inject base tag if ingress path exists
+    if ingress_path:
+        base_tag = f'<base href="{ingress_path}/">'
+        html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+        logger.info(f"Injected base tag: {base_tag}")
+    
+    return HTMLResponse(content=html_content)
+
+
+@app.get("/system-insights")
+@app.get("/system-insights.html")
+async def system_insights(request: Request):
+    """System insights page (main heating system) with proper base path."""
+    from fastapi.responses import HTMLResponse
+    
+    # Get ingress path from Home Assistant header
+    ingress_path = request.headers.get("X-Ingress-Path", "")
+    logger.info(f"Serving system-insights with X-Ingress-Path: '{ingress_path}'")
+    
+    # Read system-insights.html
+    insights_path = os.path.join(static_dir, "system-insights.html")
     with open(insights_path) as f:
         html_content = f.read()
     
