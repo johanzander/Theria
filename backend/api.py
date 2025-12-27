@@ -5,9 +5,9 @@ Theria API Endpoints
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 
@@ -335,22 +335,72 @@ async def get_status():
 
 
 @router.get("/api/zones/{zone_id}/history")
-async def get_zone_history(zone_id: str, hours: int = 24):
+async def get_zone_history(
+    zone_id: str,
+    hours: int = None,
+    from_ms: int = Query(None, alias="from"),  # Unix timestamp in ms (Grafana-style)
+    to: int = None,                             # Unix timestamp in ms
+    start_date: str = None,  # Legacy support
+    end_date: str = None     # Legacy support
+):
     """Get temperature history for a zone.
 
     Args:
         zone_id: Zone identifier
         hours: How many hours of history to retrieve (default: 24)
+        from_ms: Start time as Unix timestamp in milliseconds (preferred)
+        to: End time as Unix timestamp in milliseconds (preferred)
+        start_date: Start date in YYYY-MM-DD format (legacy)
+        end_date: End date in YYYY-MM-DD format (legacy)
 
     Returns:
         List of temperature readings with timestamps
     """
+    from datetime import datetime
+
     # Verify zone exists
     zone = next((z for z in ZONES if z.id == zone_id), None)
     if not zone:
         raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
 
+    # INDUSTRY STANDARD: Accept Unix timestamps (like Grafana/Kibana)
+    if from_ms is not None and to is not None:
+        # Unix timestamps in milliseconds - convert to UTC timezone-aware datetime
+        start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+        # Calculate hours from start_dt to NOW (not just the range duration)
+        # This ensures we fetch enough historical data
+        now_utc = datetime.now(timezone.utc)
+        hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
+    elif start_date and end_date:
+        # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
+        start_dt = datetime.fromisoformat(start_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        end_dt = datetime.fromisoformat(end_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
+    elif hours is None:
+        hours = 24
+        start_dt = None
+        end_dt = None
+    else:
+        start_dt = None
+        end_dt = None
+
     history = history_tracker.get_temperature_history(zone_id=zone_id, hours=hours)
+
+    # Filter to date range if specified (compare timezone-aware datetimes)
+    if start_dt and end_dt:
+        filtered_history = []
+        for h in history:
+            ts_str = h["timestamp"]
+            if ts_str.endswith('Z'):
+                ts_str = ts_str[:-1] + '+00:00'
+            try:
+                ts = datetime.fromisoformat(ts_str)  # Keep timezone-aware
+                if start_dt <= ts < end_dt:
+                    filtered_history.append(h)
+            except ValueError:
+                continue
+        history = filtered_history
 
     return {
         "zone_id": zone_id,
@@ -587,30 +637,81 @@ async def get_thermal_measurements(zone_id: str, hours: int = 24, limit: int = 1
 
 
 @router.get("/api/zones/{zone_id}/heating_timeline")
-async def get_heating_timeline(zone_id: str, hours: int = 24, resolution: str = "raw"):
+async def get_heating_timeline(
+    zone_id: str,
+    hours: int = None,
+    resolution: str = "raw",
+    from_ms: int = Query(None, alias="from"),  # Unix timestamp in ms (Grafana-style)
+    to: int = None,                             # Unix timestamp in ms
+    start_date: str = None,  # Legacy support
+    end_date: str = None     # Legacy support
+):
     """Get heating power request timeline.
 
     Args:
         zone_id: Zone identifier
         hours: How many hours back (default: 24, max: 168)
         resolution: "raw", "5m", "15m", "1h" (default: "raw")
+        from_ms: Start time as Unix timestamp in milliseconds (preferred)
+        to: End time as Unix timestamp in milliseconds (preferred)
+        start_date: Start date in YYYY-MM-DD format (legacy)
+        end_date: End date in YYYY-MM-DD format (legacy)
 
     Returns:
         Heating power timeline with avg/max request and status
     """
+    from datetime import datetime
+
     # Verify zone exists
     zone = next((z for z in ZONES if z.id == zone_id), None)
     if not zone:
         raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
 
+    # INDUSTRY STANDARD: Accept Unix timestamps (like Grafana/Kibana)
+    if from_ms is not None and to is not None:
+        # Unix timestamps in milliseconds - convert to UTC timezone-aware datetime
+        start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+        # Calculate hours from start_dt to NOW (not just the range duration)
+        # This ensures we fetch enough historical data
+        now_utc = datetime.now(timezone.utc)
+        hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
+    elif start_date and end_date:
+        # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
+        start_dt = datetime.fromisoformat(start_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        end_dt = datetime.fromisoformat(end_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
+    elif hours is None:
+        hours = 24
+        start_dt = None
+        end_dt = None
+    else:
+        start_dt = None
+        end_dt = None
+
     # Limit hours
-    hours = min(hours, 168)
+    hours = min(hours, 744)  # Increased limit for month view
 
     timeline = history_tracker.get_heating_timeline(
         zone_id=zone_id,
         hours=hours,
         resolution=resolution
     )
+
+    # Filter to date range if specified (compare timezone-aware datetimes)
+    if start_dt and end_dt:
+        filtered_timeline = []
+        for item in timeline:
+            ts_str = item["timestamp"]
+            if ts_str.endswith('Z'):
+                ts_str = ts_str[:-1] + '+00:00'
+            try:
+                ts = datetime.fromisoformat(ts_str)  # Keep timezone-aware
+                if start_dt <= ts < end_dt:
+                    filtered_timeline.append(item)
+            except ValueError:
+                continue
+        timeline = filtered_timeline
 
     return {
         "zone_id": zone_id,
@@ -806,3 +907,309 @@ async def get_sensor_history(entity_id: str, hours: int = 24):
     except Exception as e:
         logger.error(f"Failed to fetch sensor history for {entity_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch sensor history: {str(e)}")
+
+
+# =============================================================================
+# UNIFIED CHART DATA ENDPOINT (Phase 1)
+# =============================================================================
+
+def _build_chartjs_datasets(history: list, zone: ZoneSettings) -> list:
+    """
+    Convert temperature history to Chart.js datasets.
+
+    Returns format: [{label, data: [{x, y}], borderColor, ...}, ...]
+    Eliminates frontend transformation - backend returns ready-to-render format.
+    """
+    datasets = []
+
+    # Create dataset for each climate entity
+    for entity_id in zone.climate_entities:
+        # Collect data points for each series
+        current_temps = []
+        target_temps = []
+        heating_data = []
+
+        for reading in history:
+            ts = reading["timestamp"]
+
+            # Current temperature
+            if reading.get("current_temps", {}).get(entity_id) is not None:
+                current_temps.append({"x": ts, "y": reading["current_temps"][entity_id]})
+
+            # Target temperature
+            if reading.get("target_temps", {}).get(entity_id) is not None:
+                target_temps.append({"x": ts, "y": reading["target_temps"][entity_id]})
+
+            # Heating request percentage
+            if reading.get("heating_requests", {}).get(entity_id) is not None:
+                heating_data.append({"x": ts, "y": reading["heating_requests"][entity_id]})
+
+        entity_name = entity_id.replace('climate.', '')
+
+        # Current temperature dataset
+        datasets.append({
+            "label": f"{entity_name} - Current",
+            "data": current_temps,
+            "borderColor": "#4fd1c5",
+            "borderWidth": 2,
+            "tension": 0.1,
+            "pointRadius": 0,
+            "yAxisID": "y"
+        })
+
+        # Target temperature dataset
+        datasets.append({
+            "label": f"{entity_name} - Target",
+            "data": target_temps,
+            "borderColor": "#4fd1c5",
+            "borderWidth": 1.5,
+            "borderDash": [5, 5],
+            "stepped": "before",  # Step function for setpoint changes
+            "pointRadius": 0,
+            "yAxisID": "y"
+        })
+
+        # Heating percentage dataset
+        datasets.append({
+            "label": f"{entity_name} - Heating %",
+            "data": heating_data,
+            "backgroundColor": "rgba(239, 68, 68, 0.2)",
+            "borderColor": "rgba(239, 68, 68, 0.5)",
+            "borderWidth": 1,
+            "fill": True,
+            "stepped": "before",  # Step function - heating is binary/percentage, not smooth
+            "tension": 0,  # No curve interpolation
+            "pointRadius": 0,
+            "yAxisID": "y1"
+        })
+
+    return datasets
+
+
+def _build_chartjs_annotations(periods: list) -> dict:
+    """
+    Convert thermal periods to Chart.js annotations.
+
+    Returns format: {period_0: {type: 'box', ...}, period_label_0: {...}, ...}
+    Pre-builds Chart.js annotation objects on backend - zero frontend work.
+
+    Note: Includes entity_id in annotation metadata for frontend filtering.
+    """
+    annotations = {}
+
+    for idx, period in enumerate(periods):
+        is_heating = period["type"] == "heating"
+        # Much more subtle opacity for background shading
+        bg_color = "rgba(239, 68, 68, 0.08)" if is_heating else "rgba(59, 130, 246, 0.08)"
+        border_color = "rgba(239, 68, 68, 0.6)" if is_heating else "rgba(59, 130, 246, 0.6)"
+
+        # Extract entity name for filtering (e.g., "climate.vantsidan" -> "vantsidan")
+        entity_name = period["entity_id"].replace("climate.", "")
+
+        # Background shading for period - subtle overlay in temperature range
+        annotations[f"period_{entity_name}_{idx}"] = {
+            "type": "box",
+            "xMin": period["start_time"],
+            "xMax": period["end_time"],
+            "yMin": 15,  # Temperature range instead of 0
+            "yMax": 25,  # Temperature range instead of 30
+            "backgroundColor": bg_color,
+            "borderWidth": 0,
+            "xScaleID": "x",
+            "yScaleID": "y",
+            "entity_id": period["entity_id"]  # Add for frontend filtering
+        }
+
+        # Rate label
+        rate_text = f"{period['rate']:+.2f}°C/h"
+
+        # Calculate midpoint for label placement
+        from datetime import datetime
+        start = datetime.fromisoformat(period["start_time"].replace('Z', '+00:00'))
+        end = datetime.fromisoformat(period["end_time"].replace('Z', '+00:00'))
+        mid_timestamp = start + (end - start) / 2
+
+        annotations[f"period_label_{entity_name}_{idx}"] = {
+            "type": "label",
+            "xValue": mid_timestamp.isoformat(),
+            "yValue": 22,
+            "backgroundColor": border_color,
+            "content": [rate_text],
+            "font": {"size": 10},
+            "color": "#fff",
+            "padding": 4,
+            "borderRadius": 4,
+            "position": "start",
+            "xScaleID": "x",
+            "yScaleID": "y",
+            "entity_id": period["entity_id"]  # Add for frontend filtering
+        }
+
+    return annotations
+
+
+@router.get("/api/zones/{zone_id}/chart_data")
+async def get_zone_chart_data(
+    zone_id: str,
+    hours: int = None,
+    from_ms: int = Query(None, alias="from"),  # Unix timestamp in ms (Grafana-style)
+    to: int = None,                             # Unix timestamp in ms
+    start_date: str = None,  # Legacy support
+    end_date: str = None     # Legacy support
+):
+    """
+    Unified endpoint that returns EVERYTHING a Chart.js chart needs.
+
+    Returns complete chart configuration:
+    - datasets: Chart.js-ready data in [{x, y}] format
+    - annotations: Chart.js annotation objects (heating/cooling periods)
+    - scales: Chart.js scale configuration
+
+    Frontend can render directly without any transformation!
+    Eliminates N+1 queries - ONE call gets all data.
+
+    Args:
+        zone_id: Zone identifier (e.g., "butik")
+        hours: Hours of history to retrieve (default: 24)
+        start_date: Start date in YYYY-MM-DD format (optional)
+        end_date: End date in YYYY-MM-DD format (optional)
+
+    Returns:
+        Complete Chart.js chart configuration
+    """
+    from datetime import datetime, timedelta
+
+    # Find zone
+    zone = next((z for z in ZONES if z.id == zone_id), None)
+    if not zone:
+        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
+
+    try:
+        # INDUSTRY STANDARD: Accept Unix timestamps (like Grafana/Kibana)
+        if from_ms is not None and to is not None:
+            # Unix timestamps in milliseconds - convert to UTC timezone-aware datetime
+            start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
+            end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+            # Calculate hours from start_dt to NOW (not just the range duration)
+            # This ensures we fetch enough historical data
+            now_utc = datetime.now(timezone.utc)
+            hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
+        elif start_date and end_date:
+            # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
+            start_dt = datetime.fromisoformat(start_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            end_dt = datetime.fromisoformat(end_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
+        elif hours is None:
+            hours = 24  # Default
+            start_dt = None
+            end_dt = None
+        else:
+            start_dt = None
+            end_dt = None
+
+        # Step 1: Get temperature history (reuse existing code)
+        history = history_tracker.get_temperature_history(zone_id=zone_id, hours=hours)
+
+        # Filter history to exact date range if specified (compare timezone-aware datetimes)
+        if start_dt and end_dt:
+            filtered_history = []
+            for h in history:
+                # Parse timestamp (handle both 'Z' and '+00:00' timezone formats)
+                ts_str = h["timestamp"]
+                if ts_str.endswith('Z'):
+                    ts_str = ts_str[:-1] + '+00:00'
+                try:
+                    ts = datetime.fromisoformat(ts_str)  # Keep timezone-aware
+                    # Use >= and < for half-open interval [start_dt, end_dt)
+                    if start_dt <= ts < end_dt:
+                        filtered_history.append(h)
+                except ValueError:
+                    continue  # Skip malformed timestamps
+            history = filtered_history
+
+        # Step 2: Get thermal periods from entity learners
+        periods = []
+        if learning_service:
+            for entity_id in zone.climate_entities:
+                if entity_id in learning_service.entity_learners:
+                    learner = learning_service.entity_learners[entity_id]
+                    entity_periods = learner.get_periods(hours=hours)
+                    periods.extend(entity_periods)
+
+        # Step 3: Transform to Chart.js format
+        datasets = _build_chartjs_datasets(history, zone)
+        annotations = _build_chartjs_annotations(periods)
+
+        # Build x-axis scale configuration
+        x_scale = {
+            "type": "time",
+            "time": {
+                "unit": "hour" if hours <= 48 else "day",
+                "displayFormats": {
+                    "hour": "HH:mm",
+                    "day": "MMM dd"
+                },
+                "tooltipFormat": "PPpp"
+            },
+            "ticks": {
+                "color": "#a0aec0",
+                "maxRotation": 0,
+                "minRotation": 0,
+                "maxTicksLimit": 12
+            },
+            "grid": {"display": False}
+        }
+
+        # Add explicit time bounds when a specific date range is selected
+        # This ensures the x-axis shows the full requested range even if data is sparse
+        if start_dt and end_dt:
+            x_scale["min"] = start_dt.isoformat()
+            x_scale["max"] = end_dt.isoformat()
+
+        return {
+            "zone_id": zone_id,
+            "time_range_hours": hours,
+            "datasets": datasets,
+            "annotations": annotations,
+            "scales": {
+                "x": x_scale,
+                "y": {
+                    "type": "linear",
+                    "position": "left",
+                    "title": {
+                        "display": True,
+                        "text": "Temperature (°C)",
+                        "color": "#a0aec0"
+                    },
+                    "suggestedMin": 15,
+                    "suggestedMax": 25,
+                    "grid": {"color": "rgba(255, 255, 255, 0.1)"},
+                    "ticks": {"color": "#a0aec0"}
+                },
+                "y1": {
+                    "type": "linear",
+                    "position": "right",
+                    "title": {
+                        "display": True,
+                        "text": "Heating Request (%)",
+                        "color": "#a0aec0"
+                    },
+                    "min": 0,
+                    "max": 100,
+                    "grid": {"display": False},
+                    "ticks": {
+                        "color": "#a0aec0"
+                    }
+                }
+            },
+            "metadata": {
+                "source": "history_tracker",
+                "data_points": len(history),
+                "period_count": len(periods)
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to build chart data for {zone_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to build chart data: {str(e)}")

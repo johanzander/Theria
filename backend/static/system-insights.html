@@ -7,6 +7,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -116,6 +119,32 @@
 
         .refresh-btn:hover {
             background: #38b2ac;
+        }
+
+        .custom-range-wrapper {
+            flex: 1;
+            max-width: 300px;
+        }
+
+        .custom-range-input {
+            width: 100%;
+            padding: 8px 16px;
+            border: 2px solid #4fd1c5;
+            background: #2d3748;
+            color: #4fd1c5;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .custom-range-input:hover {
+            background: #1a202c;
+        }
+
+        .custom-range-input::placeholder {
+            color: #4fd1c580;
         }
 
         .zone-overview-grid {
@@ -294,11 +323,13 @@
 
         <div class="controls-bar">
             <div class="time-range-selector">
-                <button class="range-btn" data-range="1h">1h</button>
-                <button class="range-btn" data-range="6h">6h</button>
-                <button class="range-btn active" data-range="24h">24h</button>
-                <button class="range-btn" data-range="7d">7d</button>
-                <button class="range-btn" data-range="30d">30d</button>
+                <button class="range-btn active" data-range="today">Today</button>
+                <button class="range-btn" data-range="yesterday">Yesterday</button>
+                <button class="range-btn" data-range="week">Week</button>
+                <button class="range-btn" data-range="month">Month</button>
+            </div>
+            <div class="custom-range-wrapper">
+                <input type="text" id="customDateRange" class="custom-range-input" placeholder="Select custom date range..." readonly>
             </div>
             <button class="refresh-btn" onclick="loadAllData()">🔄 Refresh</button>
         </div>
@@ -340,7 +371,8 @@
 
     <script>
         // Global state
-        let selectedTimeRange = '24h';
+        let selectedTimeRange = 'today';  // Changed from '24h' to 'today'
+        let customDateRange = null;  // For custom date range picker
         let zones = [];
         let charts = {
             climate: {},  // climate_entity_id -> Chart instance
@@ -363,7 +395,7 @@
         // Helper function to create period annotations for charts
         async function getPeriodAnnotations(zoneId, hours, timestamps, entityId) {
             try {
-                const res = await fetch(`api/thermal/periods/${zoneId}?hours=${hours}`);
+                const res = await fetch(`/api/thermal/periods/${zoneId}?hours=${hours}`);
                 const data = await res.json();
 
                 if (!data.periods || data.periods.length === 0) return {};
@@ -430,14 +462,109 @@
             // startAutoRefresh();
         });
 
+        function buildChartDataUrl(hours) {
+            const now = new Date();
+            let url = '/api/zones/{zone_id}/chart_data?';
+
+            // INDUSTRY STANDARD: Calculate absolute Unix timestamps (like Grafana)
+            let fromMs, toMs;
+
+            if (customDateRange && customDateRange.start && customDateRange.end) {
+                // Custom date range
+                const from = new Date(customDateRange.start);
+                from.setHours(0, 0, 0, 0);
+                const to = new Date(customDateRange.end);
+                to.setHours(23, 59, 59, 999);
+                fromMs = from.getTime();
+                toMs = to.getTime();
+            } else if (selectedTimeRange === 'today') {
+                // Today: start of day to now (in user's timezone)
+                const todayStart = new Date(now);
+                todayStart.setHours(0, 0, 0, 0);
+                fromMs = todayStart.getTime();
+                toMs = now.getTime();
+            } else if (selectedTimeRange === 'yesterday') {
+                // Yesterday: full day (in user's timezone)
+                const yesterdayStart = new Date(now);
+                yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+                yesterdayStart.setHours(0, 0, 0, 0);
+                const yesterdayEnd = new Date(yesterdayStart);
+                yesterdayEnd.setHours(23, 59, 59, 999);
+                fromMs = yesterdayStart.getTime();
+                toMs = yesterdayEnd.getTime();
+            } else if (selectedTimeRange === 'week') {
+                // This week: Monday to now (in user's timezone)
+                const dayOfWeek = now.getDay();
+                const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                const monday = new Date(now);
+                monday.setDate(monday.getDate() - daysToMonday);
+                monday.setHours(0, 0, 0, 0);
+                fromMs = monday.getTime();
+                toMs = now.getTime();
+            } else if (selectedTimeRange === 'month') {
+                // This month: 1st to now (in user's timezone)
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                monthStart.setHours(0, 0, 0, 0);
+                fromMs = monthStart.getTime();
+                toMs = now.getTime();
+            } else {
+                // Fallback: last N hours
+                fromMs = now.getTime() - (hours * 60 * 60 * 1000);
+                toMs = now.getTime();
+            }
+
+            // Send Unix timestamps (milliseconds since epoch)
+            url += `from=${fromMs}&to=${toMs}`;
+            return url;
+        }
+
+        function getHoursFromRange(range) {
+            // Simple, fixed hours for each range
+            const rangeMap = {
+                'today': 48,        // 2 days to ensure we get all of today
+                'yesterday': 48,    // 2 days to ensure we get all of yesterday
+                'week': 168,        // 7 days
+                'month': 744        // 31 days
+            };
+
+            if (customDateRange && customDateRange.start && customDateRange.end) {
+                const diffMs = customDateRange.end - customDateRange.start;
+                const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+                return diffHours + 24; // Add buffer
+            }
+
+            return rangeMap[range] || 48;
+        }
+
         function setupTimeRangeSelector() {
+            // Setup preset range buttons
             document.querySelectorAll('.range-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     selectedTimeRange = btn.dataset.range;
+                    customDateRange = null;  // Clear custom range
                     loadAllData();
                 });
+            });
+
+            // Setup custom date range picker
+            flatpickr('#customDateRange', {
+                mode: 'range',
+                dateFormat: 'Y-m-d',
+                theme: 'dark',
+                onChange: function(selectedDates, dateStr, instance) {
+                    if (selectedDates.length === 2) {
+                        customDateRange = {
+                            start: selectedDates[0],
+                            end: selectedDates[1]
+                        };
+                        // Deactivate preset buttons
+                        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+                        selectedTimeRange = 'custom';
+                        loadAllData();
+                    }
+                }
             });
         }
 
@@ -462,7 +589,7 @@
         async function loadAllData(silent = false) {
             try {
                 // Load zones list
-                const zonesRes = await fetch('api/zones');
+                const zonesRes = await fetch('/api/zones');
                 const zonesData = await zonesRes.json();
                 zones = zonesData.zones;
 
@@ -484,11 +611,55 @@
 
         async function loadMainHeatingChart(hours) {
             try {
+                // Calculate time bounds for x-axis (same logic as buildChartDataUrl)
+                const now = new Date();
+                let xAxisMin, xAxisMax;
+
+                if (customDateRange && customDateRange.start && customDateRange.end) {
+                    const from = new Date(customDateRange.start);
+                    from.setHours(0, 0, 0, 0);
+                    const to = new Date(customDateRange.end);
+                    to.setHours(23, 59, 59, 999);
+                    xAxisMin = from.toISOString();
+                    xAxisMax = to.toISOString();
+                } else if (selectedTimeRange === 'today') {
+                    const todayStart = new Date(now);
+                    todayStart.setHours(0, 0, 0, 0);
+                    xAxisMin = todayStart.toISOString();
+                    xAxisMax = now.toISOString();
+                } else if (selectedTimeRange === 'yesterday') {
+                    const yesterdayStart = new Date(now);
+                    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+                    yesterdayStart.setHours(0, 0, 0, 0);
+                    const yesterdayEnd = new Date(yesterdayStart);
+                    yesterdayEnd.setHours(23, 59, 59, 999);
+                    xAxisMin = yesterdayStart.toISOString();
+                    xAxisMax = yesterdayEnd.toISOString();
+                } else if (selectedTimeRange === 'week') {
+                    const dayOfWeek = now.getDay();
+                    const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                    const monday = new Date(now);
+                    monday.setDate(monday.getDate() - daysToMonday);
+                    monday.setHours(0, 0, 0, 0);
+                    xAxisMin = monday.toISOString();
+                    xAxisMax = now.toISOString();
+                } else if (selectedTimeRange === 'month') {
+                    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                    monthStart.setHours(0, 0, 0, 0);
+                    xAxisMin = monthStart.toISOString();
+                    xAxisMax = now.toISOString();
+                } else {
+                    // Fallback: use hours-based range
+                    const fromTime = new Date(now.getTime() - (hours * 60 * 60 * 1000));
+                    xAxisMin = fromTime.toISOString();
+                    xAxisMax = now.toISOString();
+                }
+
                 // Fetch historical data for the three sensors
                 const [setpointRes, forwardRes, valveRes] = await Promise.all([
-                    fetch(`api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
-                    fetch(`api/sensor/history?entity_id=sensor.radiator_forward&hours=${hours}`),
-                    fetch(`api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
+                    fetch(`/api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.radiator_forward&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
                 ]);
 
                 const setpointData = await setpointRes.json();
@@ -596,6 +767,8 @@
                                     },
                                     tooltipFormat: 'PPpp'
                                 },
+                                min: xAxisMin,  // Set explicit time bounds
+                                max: xAxisMax,  // Set explicit time bounds
                                 ticks: {
                                     color: '#a0aec0',
                                     maxRotation: 0,
@@ -664,13 +837,57 @@
 
         async function loadHeatCarrierChart(hours) {
             try {
+                // Calculate time bounds for x-axis (same logic as buildChartDataUrl)
+                const now = new Date();
+                let xAxisMin, xAxisMax;
+
+                if (customDateRange && customDateRange.start && customDateRange.end) {
+                    const from = new Date(customDateRange.start);
+                    from.setHours(0, 0, 0, 0);
+                    const to = new Date(customDateRange.end);
+                    to.setHours(23, 59, 59, 999);
+                    xAxisMin = from.toISOString();
+                    xAxisMax = to.toISOString();
+                } else if (selectedTimeRange === 'today') {
+                    const todayStart = new Date(now);
+                    todayStart.setHours(0, 0, 0, 0);
+                    xAxisMin = todayStart.toISOString();
+                    xAxisMax = now.toISOString();
+                } else if (selectedTimeRange === 'yesterday') {
+                    const yesterdayStart = new Date(now);
+                    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+                    yesterdayStart.setHours(0, 0, 0, 0);
+                    const yesterdayEnd = new Date(yesterdayStart);
+                    yesterdayEnd.setHours(23, 59, 59, 999);
+                    xAxisMin = yesterdayStart.toISOString();
+                    xAxisMax = yesterdayEnd.toISOString();
+                } else if (selectedTimeRange === 'week') {
+                    const dayOfWeek = now.getDay();
+                    const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                    const monday = new Date(now);
+                    monday.setDate(monday.getDate() - daysToMonday);
+                    monday.setHours(0, 0, 0, 0);
+                    xAxisMin = monday.toISOString();
+                    xAxisMax = now.toISOString();
+                } else if (selectedTimeRange === 'month') {
+                    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                    monthStart.setHours(0, 0, 0, 0);
+                    xAxisMin = monthStart.toISOString();
+                    xAxisMax = now.toISOString();
+                } else {
+                    // Fallback: use hours-based range
+                    const fromTime = new Date(now.getTime() - (hours * 60 * 60 * 1000));
+                    xAxisMin = fromTime.toISOString();
+                    xAxisMax = now.toISOString();
+                }
+
                 // Fetch all required sensor data in parallel
                 const [forwardRes, returnRes, setpointRes, compressorRes, valveRes] = await Promise.all([
-                    fetch(`api/sensor/history?entity_id=sensor.heat_carrier_forwrd&hours=${hours}`),
-                    fetch(`api/sensor/history?entity_id=sensor.heat_carrier_return&hours=${hours}`),
-                    fetch(`api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
-                    fetch(`api/sensor/history?entity_id=sensor.compressor_speed_2&hours=${hours}`),
-                    fetch(`api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
+                    fetch(`/api/sensor/history?entity_id=sensor.heat_carrier_forwrd&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.heat_carrier_return&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.heating_setpoint&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=sensor.compressor_speed_2&hours=${hours}`),
+                    fetch(`/api/sensor/history?entity_id=binary_sensor.switch_valve_1&hours=${hours}`)
                 ]);
 
                 const forwardData = await forwardRes.json();
@@ -843,8 +1060,11 @@
                                     displayFormats: {
                                         hour: 'HH:mm',
                                         day: 'MMM dd'
-                                    }
+                                    },
+                                    tooltipFormat: 'PPpp'
                                 },
+                                min: xAxisMin,  // Set explicit time bounds
+                                max: xAxisMax,  // Set explicit time bounds
                                 ticks: {
                                     color: '#a0aec0',
                                     maxRotation: 0,
@@ -957,8 +1177,11 @@
                                     displayFormats: {
                                         hour: 'HH:mm',
                                         day: 'MMM dd'
-                                    }
+                                    },
+                                    tooltipFormat: 'PPpp'
                                 },
+                                min: xAxisMin,  // Set explicit time bounds
+                                max: xAxisMax,  // Set explicit time bounds
                                 ticks: {
                                     color: '#a0aec0',
                                     maxRotation: 0,
@@ -1051,11 +1274,11 @@
                 const zone = zones[i];
                 try {
                     // Fetch temperature history
-                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
+                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
 
                     // Fetch heating power timeline
-                    const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
                     const heatingData = await heatingRes.json();
 
                     zoneDataList.push({

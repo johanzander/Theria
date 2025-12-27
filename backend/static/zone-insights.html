@@ -7,6 +7,14 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <!-- Flatpickr for advanced date picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+    <!-- Fonts for premium card design -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -125,70 +133,328 @@
             margin-bottom: 20px;
         }
 
+        /* PREMIUM ZONE CARD DESIGN */
         .zone-card {
-            background: #2d3748;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            background: linear-gradient(135deg, #2d3748 0%, #1e2836 100%);
+            border-radius: 20px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(79, 209, 197, 0.1);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .zone-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg,
+                transparent 0%,
+                #4fd1c5 50%,
+                transparent 100%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .zone-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(79, 209, 197, 0.3);
+            box-shadow:
+                0 8px 30px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(79, 209, 197, 0.1),
+                0 0 60px rgba(79, 209, 197, 0.1);
+        }
+
+        .zone-card:hover::before {
+            opacity: 1;
+        }
+
+        .zone-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                radial-gradient(circle at 20% 80%, rgba(79, 209, 197, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(79, 209, 197, 0.03) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .zone-card > * {
+            position: relative;
+            z-index: 1;
         }
 
         .zone-card-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #4a5568;
+            justify-content: space-between;
+            margin-bottom: 20px;
         }
 
         .zone-card-header h3 {
+            font-family: 'Rajdhani', sans-serif;
             font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
             color: #f7fafc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .zone-temp {
-            font-size: 32px;
+        .zone-card-header h3::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #4fd1c5;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #4fd1c5;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.9); }
+        }
+
+        .zone-content {
+            display: grid;
+            grid-template-columns: 160px 1fr;
+            gap: 20px;
+            align-items: stretch;
+        }
+
+        .temp-gauge {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .gauge-container {
+            position: relative;
+            width: 140px;
+            height: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .gauge-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+
+        .gauge-bg {
+            fill: none;
+            stroke: rgba(79, 209, 197, 0.1);
+            stroke-width: 8;
+        }
+
+        .gauge-progress {
+            fill: none;
+            stroke: url(#gaugeGradient);
+            stroke-width: 8;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
+            filter: drop-shadow(0 0 8px rgba(79, 209, 197, 0.6));
+        }
+
+        .temp-display {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+        }
+
+        .current-temp {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 48px;
             font-weight: 700;
-            color: #4fd1c5;
+            line-height: 1;
+            background: linear-gradient(135deg, #4fd1c5 0%, #38b2ac 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -2px;
+        }
+
+        .temp-unit {
+            font-size: 20px;
+            opacity: 0.7;
+        }
+
+        .temp-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #a0aec0;
+            margin-top: 4px;
+            font-weight: 600;
         }
 
         .zone-metrics {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 12px;
         }
 
         .metric {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
+            background: rgba(26, 32, 44, 0.5);
+            border-radius: 12px;
+            padding: 12px;
+            border: 1px solid rgba(79, 209, 197, 0.08);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--metric-color, #4fd1c5);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .metric:hover {
+            background: rgba(26, 32, 44, 0.8);
+            border-color: rgba(79, 209, 197, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .metric:hover::before {
+            opacity: 1;
         }
 
         .metric-label {
-            font-size: 12px;
-            color: #a0aec0;
-            font-weight: 600;
+            font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            color: #718096;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+        }
+
+        .metric-icon {
+            width: 12px;
+            height: 12px;
+            opacity: 0.6;
         }
 
         .metric-value {
-            font-size: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
             font-weight: 600;
             color: #f7fafc;
+            line-height: 1.2;
+        }
+
+        .metric-value-small {
+            font-size: 16px;
+        }
+
+        .metric-target { --metric-color: #4fd1c5; }
+        .metric-heating { --metric-color: #f56565; }
+        .metric-cooling { --metric-color: #4299e1; }
+        .metric-samples { --metric-color: #9f7aea; }
+
+        .rate-arrow {
+            display: inline-block;
+            margin-right: 2px;
+            font-size: 16px;
+        }
+
+        .heating-arrow { color: #f56565; }
+        .cooling-arrow { color: #4299e1; }
+
+        .confidence-metric {
+            grid-column: 1 / -1;
+            background: rgba(26, 32, 44, 0.5);
+            border-radius: 12px;
+            padding: 12px;
+            border: 1px solid rgba(79, 209, 197, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .confidence-label-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .confidence-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #718096;
+            font-weight: 600;
+        }
+
+        .confidence-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1;
         }
 
         .confidence-bar {
-            height: 6px;
-            background: linear-gradient(90deg, #e53e3e 0%, #ed8936 40%, #48bb78 70%);
-            border-radius: 3px;
-            margin-top: 4px;
-            transition: width 0.3s ease;
+            flex: 1;
+            height: 8px;
+            background: rgba(79, 209, 197, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
         }
 
-        .confidence-low { color: #e53e3e; }
-        .confidence-medium { color: #ed8936; }
-        .confidence-high { color: #48bb78; }
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--confidence-color) 0%, var(--confidence-color-light) 100%);
+            border-radius: 4px;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 10px var(--confidence-color);
+        }
+
+        .confidence-low {
+            --confidence-color: #e53e3e;
+            --confidence-color-light: #fc8181;
+            color: #e53e3e;
+        }
+
+        .confidence-medium {
+            --confidence-color: #ed8936;
+            --confidence-color-light: #f6ad55;
+            color: #ed8936;
+        }
+
+        .confidence-high {
+            --confidence-color: #48bb78;
+            --confidence-color-light: #68d391;
+            color: #48bb78;
+        }
 
         .card {
             background: #2d3748;
@@ -254,6 +520,168 @@
             line-height: 1.5;
         }
 
+        /* Custom date range picker styles - Premium Design */
+        .custom-range-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .custom-range-input {
+            padding: 8px 16px;
+            border: 2px solid #4fd1c5;
+            background: #2d3748;
+            color: #4fd1c5;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 220px;
+            text-align: center;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .custom-range-input::before {
+            content: '📅';
+            font-size: 14px;
+        }
+
+        .custom-range-input:hover {
+            background: #1a202c;
+        }
+
+        .custom-range-input.active {
+            background: #4fd1c5;
+            color: #1a202c;
+        }
+
+        .custom-range-input:focus {
+            outline: none;
+        }
+
+        /* Flatpickr dark theme customization - Premium */
+        .flatpickr-calendar {
+            background: linear-gradient(135deg, #2d3748 0%, #1e2836 100%);
+            border: 1px solid rgba(79, 209, 197, 0.3);
+            border-radius: 16px;
+            box-shadow:
+                0 12px 40px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(79, 209, 197, 0.1),
+                0 0 60px rgba(79, 209, 197, 0.15);
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+        }
+
+        .flatpickr-months {
+            background: linear-gradient(180deg, #1a202c 0%, #2d3748 100%);
+            border-bottom: 1px solid rgba(79, 209, 197, 0.2);
+            padding: 12px;
+        }
+
+        .flatpickr-current-month {
+            font-size: 16px;
+            font-weight: 600;
+            color: #4fd1c5;
+        }
+
+        .flatpickr-current-month .flatpickr-monthDropdown-months,
+        .flatpickr-current-month input.cur-year {
+            background: rgba(26, 32, 44, 0.6);
+            color: #4fd1c5;
+            border: 1px solid rgba(79, 209, 197, 0.2);
+            border-radius: 6px;
+            font-weight: 600;
+            padding: 4px 8px;
+        }
+
+        .flatpickr-current-month .flatpickr-monthDropdown-months:hover,
+        .flatpickr-current-month input.cur-year:hover {
+            background: rgba(79, 209, 197, 0.1);
+        }
+
+        .flatpickr-weekdays {
+            background: transparent;
+            margin-top: 8px;
+        }
+
+        .flatpickr-weekday {
+            color: #4fd1c5;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .flatpickr-days {
+            border: none;
+        }
+
+        .flatpickr-day {
+            color: #f7fafc;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            font-weight: 500;
+            border: 1px solid transparent;
+        }
+
+        .flatpickr-day.today {
+            border-color: rgba(79, 209, 197, 0.5);
+            font-weight: 700;
+        }
+
+        .flatpickr-day.selected,
+        .flatpickr-day.startRange,
+        .flatpickr-day.endRange {
+            background: linear-gradient(135deg, #4fd1c5 0%, #38b2ac 100%);
+            border-color: #4fd1c5;
+            color: #1a202c;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(79, 209, 197, 0.4);
+        }
+
+        .flatpickr-day.inRange {
+            background: rgba(79, 209, 197, 0.15);
+            border-color: rgba(79, 209, 197, 0.15);
+            color: #f7fafc;
+            box-shadow: none;
+        }
+
+        .flatpickr-day:hover:not(.selected):not(.startRange):not(.endRange) {
+            background: rgba(79, 209, 197, 0.25);
+            border-color: rgba(79, 209, 197, 0.4);
+        }
+
+        .flatpickr-day.prevMonthDay,
+        .flatpickr-day.nextMonthDay {
+            color: #4a5568;
+        }
+
+        .flatpickr-day.disabled {
+            color: #2d3748;
+        }
+
+        /* Month navigation arrows */
+        .flatpickr-months .flatpickr-prev-month,
+        .flatpickr-months .flatpickr-next-month {
+            fill: #4fd1c5;
+            transition: all 0.2s ease;
+        }
+
+        .flatpickr-months .flatpickr-prev-month:hover,
+        .flatpickr-months .flatpickr-next-month:hover {
+            fill: #38b2ac;
+            transform: scale(1.1);
+        }
+
+        .flatpickr-months .flatpickr-prev-month:hover svg,
+        .flatpickr-months .flatpickr-next-month:hover svg {
+            fill: #38b2ac;
+        }
+
         @media (max-width: 768px) {
             .header {
                 flex-direction: column;
@@ -294,11 +722,13 @@
 
         <div class="controls-bar">
             <div class="time-range-selector">
-                <button class="range-btn" data-range="1h">1h</button>
-                <button class="range-btn" data-range="6h">6h</button>
-                <button class="range-btn active" data-range="24h">24h</button>
-                <button class="range-btn" data-range="7d">7d</button>
-                <button class="range-btn" data-range="30d">30d</button>
+                <button class="range-btn active" data-range="today">Today</button>
+                <button class="range-btn" data-range="yesterday">Yesterday</button>
+                <button class="range-btn" data-range="week">Week</button>
+                <button class="range-btn" data-range="month">Month</button>
+            </div>
+            <div class="custom-range-wrapper">
+                <input type="text" id="customDateRange" class="custom-range-input" placeholder="Select custom date range..." readonly>
             </div>
             <button class="refresh-btn" onclick="loadAllData()">🔄 Refresh</button>
         </div>
@@ -325,7 +755,8 @@
 
     <script>
         // Global state
-        let selectedTimeRange = '24h';
+        let selectedTimeRange = 'today';
+        let customDateRange = null;  // {start: Date, end: Date}
         let zones = [];
         let charts = {
             climate: {},  // climate_entity_id -> Chart instance
@@ -336,6 +767,7 @@
             rates: null
         };
         let refreshInterval = null;
+        let datePickerInstance = null;
 
         // Color palette for zones
         const ZONE_COLORS = [
@@ -345,71 +777,10 @@
             ['#f6ad55', '#ed8936']
         ];
 
-        // Helper function to create period annotations for charts
-        async function getPeriodAnnotations(zoneId, hours, timestamps, entityId) {
-            try {
-                const res = await fetch(`api/thermal/periods/${zoneId}?hours=${hours}`);
-                const data = await res.json();
-
-                if (!data.periods || data.periods.length === 0) return {};
-
-                const annotations = {};
-
-                // Filter periods to only this entity
-                const entityPeriods = data.periods.filter(p => p.entity_id === entityId);
-
-                entityPeriods.forEach((period, idx) => {
-                    const isHeating = period.type === 'heating';
-                    const backgroundColor = isHeating ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)';  // Increased opacity
-                    const borderColor = isHeating ? 'rgba(239, 68, 68, 0.5)' : 'rgba(59, 130, 246, 0.5)';  // Increased opacity
-
-                    // Parse period timestamps
-                    const periodStart = new Date(period.start_time);
-                    const periodEnd = new Date(period.end_time);
-
-                    // Background shading for period (using ISO strings for time axis)
-                    annotations[`period_${idx}`] = {
-                        type: 'box',
-                        xMin: periodStart.toISOString(),
-                        xMax: periodEnd.toISOString(),
-                        yMin: 0,
-                        yMax: 30,
-                        backgroundColor: backgroundColor,
-                        borderWidth: 0,
-                        xScaleID: 'x',
-                        yScaleID: 'y'
-                    };
-
-                    // Label with rate
-                    const rateText = `${period.rate >= 0 ? '+' : ''}${period.rate.toFixed(2)}°C/h`;
-                    const midTime = new Date((periodStart.getTime() + periodEnd.getTime()) / 2);
-                    annotations[`period_label_${idx}`] = {
-                        type: 'label',
-                        xValue: midTime.toISOString(),
-                        yValue: 22,  // Lower position in temperature range
-                        xScaleID: 'x',
-                        yScaleID: 'y',
-                        backgroundColor: borderColor,
-                        content: [rateText],
-                        font: {
-                            size: 10
-                        },
-                        color: '#fff',
-                        padding: 4,
-                        borderRadius: 4
-                    };
-                });
-
-                return annotations;
-            } catch (error) {
-                console.error('Failed to fetch periods:', error);
-                return {};
-            }
-        }
-
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             setupTimeRangeSelector();
+            setupCustomDatePicker();
             loadAllData();
             // Auto-refresh disabled for better analysis experience
             // startAutoRefresh();
@@ -421,8 +792,55 @@
                     document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     selectedTimeRange = btn.dataset.range;
+                    customDateRange = null;  // Clear custom range
+                    document.getElementById('customDateRange').classList.remove('active');
+                    document.getElementById('customDateRange').value = '';
                     loadAllData();
                 });
+            });
+        }
+
+        function setupCustomDatePicker() {
+            const input = document.getElementById('customDateRange');
+
+            datePickerInstance = flatpickr(input, {
+                mode: 'range',
+                dateFormat: 'Y-m-d',
+                maxDate: 'today',
+                defaultDate: null,
+                theme: 'dark',
+                onChange: function(selectedDates, dateStr, instance) {
+                    if (selectedDates.length === 2) {
+                        // Range selected
+                        customDateRange = {
+                            start: selectedDates[0],
+                            end: selectedDates[1]
+                        };
+
+                        // Deactivate preset buttons
+                        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+                        input.classList.add('active');
+
+                        // Format display with nice formatting
+                        const options = { month: 'short', day: 'numeric' };
+                        const startStr = selectedDates[0].toLocaleDateString('en-US', options);
+                        const endStr = selectedDates[1].toLocaleDateString('en-US', options);
+                        const year = selectedDates[1].getFullYear();
+                        input.value = `${startStr} - ${endStr}, ${year}`;
+
+                        // Reload data
+                        loadAllData();
+                    }
+                },
+                onOpen: function() {
+                    // Suggest last 7 days as default if nothing selected
+                    if (!customDateRange) {
+                        const end = new Date();
+                        const start = new Date();
+                        start.setDate(start.getDate() - 7);
+                        datePickerInstance.setDate([start, end], false);
+                    }
+                }
             });
         }
 
@@ -433,15 +851,80 @@
             }, 30000);
         }
 
+        function buildChartDataUrl(hours) {
+            const now = new Date();
+            let url = '/api/zones/{zone_id}/chart_data?';
+
+            // INDUSTRY STANDARD: Calculate absolute Unix timestamps (like Grafana)
+            let fromMs, toMs;
+
+            if (customDateRange && customDateRange.start && customDateRange.end) {
+                // Custom date range
+                const from = new Date(customDateRange.start);
+                from.setHours(0, 0, 0, 0);
+                const to = new Date(customDateRange.end);
+                to.setHours(23, 59, 59, 999);
+                fromMs = from.getTime();
+                toMs = to.getTime();
+            } else if (selectedTimeRange === 'today') {
+                // Today: start of day to now (in user's timezone)
+                const todayStart = new Date(now);
+                todayStart.setHours(0, 0, 0, 0);
+                fromMs = todayStart.getTime();
+                toMs = now.getTime();
+            } else if (selectedTimeRange === 'yesterday') {
+                // Yesterday: full day (in user's timezone)
+                const yesterdayStart = new Date(now);
+                yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+                yesterdayStart.setHours(0, 0, 0, 0);
+                const yesterdayEnd = new Date(yesterdayStart);
+                yesterdayEnd.setHours(23, 59, 59, 999);
+                fromMs = yesterdayStart.getTime();
+                toMs = yesterdayEnd.getTime();
+            } else if (selectedTimeRange === 'week') {
+                // This week: Monday to now (in user's timezone)
+                const dayOfWeek = now.getDay();
+                const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                const monday = new Date(now);
+                monday.setDate(monday.getDate() - daysToMonday);
+                monday.setHours(0, 0, 0, 0);
+                fromMs = monday.getTime();
+                toMs = now.getTime();
+            } else if (selectedTimeRange === 'month') {
+                // This month: 1st to now (in user's timezone)
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                monthStart.setHours(0, 0, 0, 0);
+                fromMs = monthStart.getTime();
+                toMs = now.getTime();
+            } else {
+                // Fallback: last N hours
+                fromMs = now.getTime() - (hours * 60 * 60 * 1000);
+                toMs = now.getTime();
+            }
+
+            // Send Unix timestamps (milliseconds since epoch)
+            url += `from=${fromMs}&to=${toMs}`;
+            return url;
+        }
+
         function getHoursFromRange(range) {
+            // Simple, fixed hours for each range - no complex calculations
+            // This ensures all charts query enough data to cover the period
             const rangeMap = {
-                '1h': 1,
-                '6h': 6,
-                '24h': 24,
-                '7d': 168,
-                '30d': 720
+                'today': 48,        // 2 days to ensure we get all of today
+                'yesterday': 48,    // 2 days to ensure we get all of yesterday
+                'week': 168,        // 7 days
+                'month': 744        // 31 days
             };
-            return rangeMap[range] || 24;
+
+            // Custom date range
+            if (customDateRange && customDateRange.start && customDateRange.end) {
+                const diffMs = customDateRange.end - customDateRange.start;
+                const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+                return diffHours + 24; // Add buffer
+            }
+
+            return rangeMap[range] || 48;
         }
 
         async function loadAllData(silent = false) {
@@ -451,7 +934,7 @@
 
             try {
                 // Load zones list
-                const zonesRes = await fetch('api/zones');
+                const zonesRes = await fetch('/api/zones');
                 const zonesData = await zonesRes.json();
                 zones = zonesData.zones;
 
@@ -475,62 +958,132 @@
             for (const zone of zones) {
                 try {
                     // Get thermal characteristics
-                    const charRes = await fetch(`api/thermal/characteristics?zone_id=${zone.id}`);
+                    const charRes = await fetch(`/api/thermal/characteristics?zone_id=${zone.id}`);
                     const charData = await charRes.json();
 
                     // Get zone status
-                    const statusRes = await fetch(`api/zones/${zone.id}/status`);
+                    const statusRes = await fetch(`/api/zones/${zone.id}/status`);
                     const statusData = await statusRes.json();
 
                     const confidence = charData.overall_confidence || 0;
                     const confidenceClass = confidence >= 0.7 ? 'confidence-high' :
                                           confidence >= 0.4 ? 'confidence-medium' : 'confidence-low';
 
+                    // Get target temperature from first climate entity
+                    const targetTemp = statusData.climate_states?.[0]?.target_temperature;
+                    const currentTemp = statusData.average_temperature || 0;
+
+                    // Calculate gauge stroke-dashoffset (circumference = 264)
+                    const gaugeOffset = 264 * (1 - confidence);
+
+                    // Determine gauge gradient based on confidence
+                    const gaugeGradientId = `gaugeGradient_${zone.id}`;
+                    let gradientStops = '';
+                    if (confidence >= 0.7) {
+                        gradientStops = '<stop offset="0%" style="stop-color:#4fd1c5;stop-opacity:1" /><stop offset="100%" style="stop-color:#38b2ac;stop-opacity:1" />';
+                    } else if (confidence >= 0.4) {
+                        gradientStops = '<stop offset="0%" style="stop-color:#ed8936;stop-opacity:1" /><stop offset="100%" style="stop-color:#f6ad55;stop-opacity:1" />';
+                    } else {
+                        gradientStops = '<stop offset="0%" style="stop-color:#e53e3e;stop-opacity:1" /><stop offset="100%" style="stop-color:#fc8181;stop-opacity:1" />';
+                    }
+
                     overviewHTML.push(`
                         <div class="zone-card">
                             <div class="zone-card-header">
                                 <h3>${zone.name}</h3>
-                                <div class="zone-temp">${statusData.average_temperature?.toFixed(1) || 'N/A'}°C</div>
                             </div>
-                            <div class="zone-metrics">
-                                <div class="metric">
-                                    <span class="metric-label">Heating Rate</span>
-                                    <span class="metric-value">
-                                        ${charData.heating_rate >= 0 ? '+' : ''}${charData.heating_rate?.toFixed(2) || 'N/A'} °C/h
-                                    </span>
-                                    <div class="confidence-bar" style="width: ${(charData.heating_rate_confidence || 0) * 100}%"></div>
+
+                            <div class="zone-content">
+                                <!-- Left: Temperature Gauge -->
+                                <div class="temp-gauge">
+                                    <div class="gauge-container">
+                                        <svg class="gauge-svg" viewBox="0 0 100 100">
+                                            <defs>
+                                                <linearGradient id="${gaugeGradientId}" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                    ${gradientStops}
+                                                </linearGradient>
+                                            </defs>
+                                            <circle class="gauge-bg" cx="50" cy="50" r="42" />
+                                            <circle class="gauge-progress" cx="50" cy="50" r="42"
+                                                    stroke-dasharray="264"
+                                                    stroke-dashoffset="${gaugeOffset}"
+                                                    style="stroke: url(#${gaugeGradientId})" />
+                                        </svg>
+
+                                        <div class="temp-display">
+                                            <div class="current-temp">
+                                                ${currentTemp.toFixed(1)}<span class="temp-unit">°</span>
+                                            </div>
+                                            <div class="temp-label">Current</div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="metric">
-                                    <span class="metric-label">Cooling Rate</span>
-                                    <span class="metric-value">
-                                        ${charData.cooling_rate_base?.toFixed(2) || 'N/A'} °C/h
-                                    </span>
-                                    <div class="confidence-bar" style="width: ${(charData.cooling_rate_confidence || 0) * 100}%"></div>
-                                </div>
-                                <div class="metric">
-                                    <span class="metric-label">Overall Confidence</span>
-                                    <span class="metric-value ${confidenceClass}">
-                                        ${(confidence * 100).toFixed(0)}%
-                                    </span>
-                                </div>
-                                <div class="metric">
-                                    <span class="metric-label">Samples</span>
-                                    <span class="metric-value">
-                                        H:${charData.heating_samples || 0} / C:${charData.cooling_samples || 0}
-                                    </span>
+
+                                <!-- Right: Metrics Grid -->
+                                <div class="zone-metrics">
+                                    <!-- Target Temperature -->
+                                    <div class="metric metric-target">
+                                        <div class="metric-label">
+                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M12 2v20M17 7l-5-5-5 5"/>
+                                            </svg>
+                                            Target
+                                        </div>
+                                        <div class="metric-value">${targetTemp?.toFixed(1) || 'N/A'}°</div>
+                                    </div>
+
+                                    <!-- Heating Rate -->
+                                    <div class="metric metric-heating">
+                                        <div class="metric-label">
+                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 2c.6 0 1 .4 1 1v3c0 .6-.4 1-1 1s-1-.4-1-1V3c0-.6.4-1 1-1zm0 15c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z"/>
+                                            </svg>
+                                            Heating
+                                        </div>
+                                        <div class="metric-value metric-value-small">
+                                            <span class="rate-arrow heating-arrow">↑</span>${charData.heating_rate >= 0 ? '+' : ''}${charData.heating_rate?.toFixed(2) || 'N/A'}°/h
+                                        </div>
+                                    </div>
+
+                                    <!-- Samples -->
+                                    <div class="metric metric-samples">
+                                        <div class="metric-label">
+                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                                                <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                                            </svg>
+                                            Samples
+                                        </div>
+                                        <div class="metric-value metric-value-small">H:${charData.heating_samples || 0} C:${charData.cooling_samples || 0}</div>
+                                    </div>
+
+                                    <!-- Cooling Rate -->
+                                    <div class="metric metric-cooling">
+                                        <div class="metric-label">
+                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z"/>
+                                            </svg>
+                                            Cooling
+                                        </div>
+                                        <div class="metric-value metric-value-small">
+                                            <span class="rate-arrow cooling-arrow">↓</span>${charData.cooling_rate_base?.toFixed(2) || 'N/A'}°/h
+                                        </div>
+                                    </div>
+
+                                    <!-- Confidence (full width) -->
+                                    <div class="confidence-metric">
+                                        <div class="confidence-label-group">
+                                            <div class="confidence-label">Confidence</div>
+                                            <div class="confidence-value ${confidenceClass}">${(confidence * 100).toFixed(0)}%</div>
+                                        </div>
+                                        <div class="confidence-bar">
+                                            <div class="confidence-fill ${confidenceClass}" style="width: ${(confidence * 100).toFixed(0)}%;"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     `);
-
-                    // Show warning if confidence is low
-                    if (confidence < 0.5) {
-                        showWarning(
-                            'Learning in Progress',
-                            `Thermal model confidence for ${zone.name} is ${(confidence * 100).toFixed(0)}%. ` +
-                            `Predictions will improve as more heating/cooling cycles are observed.`
-                        );
-                    }
 
                 } catch (error) {
                     console.error(`Error loading zone ${zone.id}:`, error);
@@ -544,59 +1097,51 @@
             const container = document.getElementById('climate-charts-container');
             container.innerHTML = '<div class="loading">Loading climate entity charts...</div>';
 
-            // Collect all climate entities across all zones
+            // Build API URL with date range if applicable
+            const apiUrl = buildChartDataUrl(hours);
+
+            // Collect all climate entities across all zones using unified endpoint
             const climateCharts = [];
             for (const zone of zones) {
                 try {
-                    // Fetch temperature history
-                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
-                    const tempData = await res.json();
+                    // ONE API call gets EVERYTHING: datasets + annotations!
+                    const res = await fetch(apiUrl.replace('{zone_id}', zone.id));
+                    const chartData = await res.json();
 
-                    if (!tempData.history || tempData.history.length === 0) continue;
+                    if (!chartData.datasets || chartData.datasets.length === 0) continue;
 
-                    // Extract unique climate entities from the data (filter out sensors)
-                    const climateEntities = new Set();
-                    tempData.history.forEach(h => {
-                        if (h.current_temps) {
-                            Object.keys(h.current_temps).forEach(entity => {
-                                // Only include actual climate entities, not sensors
-                                if (entity.startsWith('climate.')) {
-                                    climateEntities.add(entity);
-                                }
-                            });
-                        }
+                    // Extract entity names from dataset labels (backend returns "entityname - Current", etc.)
+                    const entities = new Set();
+                    chartData.datasets.forEach(ds => {
+                        const match = ds.label.match(/^(\w+) - /);
+                        if (match) entities.add(match[1]);
                     });
 
-                    // Create a chart for each climate entity
-                    for (const climateEntity of climateEntities) {
-                        const currentTempData = [];
-                        const targetTempData = [];
-                        const heatingData_mapped = [];
+                    // Separate datasets and annotations by entity
+                    for (const entityName of entities) {
+                        const entityId = `climate.${entityName.toLowerCase()}`;
 
-                        // Map temperature data and heating requests with timestamps
-                        tempData.history.forEach(h => {
-                            const ts = new Date(h.timestamp);
-                            if (h.current_temps && h.current_temps[climateEntity] !== undefined) {
-                                currentTempData.push({ x: ts, y: h.current_temps[climateEntity] });
-                            }
-                            if (h.target_temps && h.target_temps[climateEntity] !== undefined) {
-                                targetTempData.push({ x: ts, y: h.target_temps[climateEntity] });
-                            }
-                            // Use individual entity's heating request, not zone average!
-                            if (h.heating_requests && h.heating_requests[climateEntity] !== undefined) {
-                                heatingData_mapped.push({ x: ts, y: h.heating_requests[climateEntity] });
+                        // Filter datasets for THIS entity (all matching this entity name prefix)
+                        const entityDatasets = chartData.datasets.filter(ds =>
+                            ds.label.startsWith(entityName + ' - ')
+                        );
+
+                        // Filter annotations for THIS entity using entity_id field
+                        const entityAnnotations = {};
+                        Object.entries(chartData.annotations).forEach(([key, annotation]) => {
+                            if (annotation.entity_id === entityId) {
+                                entityAnnotations[key] = annotation;
                             }
                         });
 
                         climateCharts.push({
                             zone: zone.name,
-                            zoneId: zone.id,  // Add zone ID for period fetching
-                            entity: climateEntity,
-                            entityName: climateEntity.replace('climate.', ''),
-                            currentTempData,
-                            targetTempData,
-                            heatingData: heatingData_mapped,
-                            timestamps: currentTempData.map(d => d.x)  // Extract timestamps
+                            zoneId: zone.id,
+                            entity: entityId,
+                            entityName: entityName,
+                            datasets: entityDatasets,
+                            annotations: entityAnnotations,
+                            scales: chartData.scales
                         });
                     }
                 } catch (error) {
@@ -620,7 +1165,7 @@
 
             container.innerHTML = chartsHTML || '<div class="card"><p>No climate entity data available</p></div>';
 
-            // Create Chart.js instances for each climate entity
+            // Create Chart.js instances for each climate entity - ZERO transformation needed!
             for (const chartData of climateCharts) {
                 const canvasId = `climate-chart-${chartData.entity.replace(/\./g, '-')}`;
                 const ctx = document.getElementById(canvasId);
@@ -631,50 +1176,18 @@
                     charts.climate[chartData.entity].destroy();
                 }
 
-                const datasets = [
-                    {
-                        label: 'Current Temp',
-                        data: chartData.currentTempData,
-                        borderColor: '#4fd1c5',
-                        backgroundColor: 'rgba(79, 209, 197, 0.1)',
-                        borderWidth: 2.5,
-                        tension: 0.3,
-                        pointRadius: 0,
-                        pointHoverRadius: 5,
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: 'Target Temp',
-                        data: chartData.targetTempData,
-                        borderColor: '#4fd1c5',
-                        borderWidth: 1.5,
-                        borderDash: [5, 5],
-                        tension: 0,
-                        stepped: 'before',  // Draw as step function
-                        pointRadius: 0,
-                        fill: false,
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: 'Heating Request',
-                        data: chartData.heatingData,
-                        borderColor: 'rgba(56, 178, 172, 0.8)',
-                        backgroundColor: 'rgba(56, 178, 172, 0.3)',
-                        borderWidth: 1.5,
-                        tension: 0.2,
-                        pointRadius: 0,
-                        fill: true,
-                        yAxisID: 'y1',
-                        stepped: 'before'
-                    }
-                ];
-
-                // Fetch period annotations for this specific entity
-                const periodAnnotations = await getPeriodAnnotations(chartData.zoneId, hours, chartData.timestamps, chartData.entity);
+                // Use backend-provided datasets and annotations directly
+                // Add ticks callback for y1 axis (can't be serialized in JSON)
+                const scales = chartData.scales;
+                if (scales.y1 && scales.y1.ticks) {
+                    scales.y1.ticks.callback = function(value) {
+                        return value + '%';
+                    };
+                }
 
                 charts.climate[chartData.entity] = new Chart(ctx, {
                     type: 'line',
-                    data: { datasets: datasets },
+                    data: { datasets: chartData.datasets },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
@@ -685,7 +1198,7 @@
                                 labels: { boxWidth: 12, padding: 8, font: { size: 11 }, color: '#a0aec0' }
                             },
                             annotation: {
-                                annotations: periodAnnotations
+                                annotations: chartData.annotations
                             },
                             tooltip: {
                                 mode: 'index',
@@ -706,49 +1219,7 @@
                                 }
                             }
                         },
-                        scales: {
-                            x: {
-                                type: 'time',
-                                time: {
-                                    unit: hours <= 48 ? 'hour' : 'day',
-                                    displayFormats: {
-                                        hour: 'HH:mm',
-                                        day: 'MMM dd'
-                                    },
-                                    tooltipFormat: 'PPpp'
-                                },
-                                ticks: {
-                                    color: '#a0aec0',
-                                    maxRotation: 0,
-                                    minRotation: 0,
-                                    maxTicksLimit: 12
-                                },
-                                grid: { display: false }
-                            },
-                            y: {
-                                type: 'linear',
-                                position: 'left',
-                                title: { display: true, text: 'Temperature (°C)', color: '#a0aec0' },
-                                suggestedMin: 15,
-                                suggestedMax: 25,
-                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                                ticks: { color: '#a0aec0' }
-                            },
-                            y1: {
-                                type: 'linear',
-                                position: 'right',
-                                title: { display: true, text: 'Heating Request (%)', color: '#a0aec0' },
-                                min: 0,
-                                max: 100,
-                                grid: { display: false },
-                                ticks: {
-                                    color: '#a0aec0',
-                                    callback: function(value) {
-                                        return value + '%';
-                                    }
-                                }
-                            }
-                        }
+                        scales: scales
                     }
                 });
             }
@@ -757,16 +1228,64 @@
         async function loadZoneAggregateChart(hours) {
             const datasets = [];
 
+            // Build URL with same date range logic as charts
+            const baseUrl = buildChartDataUrl(hours);
+            const urlParams = baseUrl.split('?')[1]; // Extract query params
+
+            // Calculate time bounds for x-axis (same logic as buildChartDataUrl)
+            const now = new Date();
+            let xAxisMin, xAxisMax;
+
+            if (customDateRange && customDateRange.start && customDateRange.end) {
+                const from = new Date(customDateRange.start);
+                from.setHours(0, 0, 0, 0);
+                const to = new Date(customDateRange.end);
+                to.setHours(23, 59, 59, 999);
+                xAxisMin = from.toISOString();
+                xAxisMax = to.toISOString();
+            } else if (selectedTimeRange === 'today') {
+                const todayStart = new Date(now);
+                todayStart.setHours(0, 0, 0, 0);
+                xAxisMin = todayStart.toISOString();
+                xAxisMax = now.toISOString();
+            } else if (selectedTimeRange === 'yesterday') {
+                const yesterdayStart = new Date(now);
+                yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+                yesterdayStart.setHours(0, 0, 0, 0);
+                const yesterdayEnd = new Date(yesterdayStart);
+                yesterdayEnd.setHours(23, 59, 59, 999);
+                xAxisMin = yesterdayStart.toISOString();
+                xAxisMax = yesterdayEnd.toISOString();
+            } else if (selectedTimeRange === 'week') {
+                const dayOfWeek = now.getDay();
+                const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                const monday = new Date(now);
+                monday.setDate(monday.getDate() - daysToMonday);
+                monday.setHours(0, 0, 0, 0);
+                xAxisMin = monday.toISOString();
+                xAxisMax = now.toISOString();
+            } else if (selectedTimeRange === 'month') {
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                monthStart.setHours(0, 0, 0, 0);
+                xAxisMin = monthStart.toISOString();
+                xAxisMax = now.toISOString();
+            } else {
+                // Fallback: use hours-based range
+                const fromTime = new Date(now.getTime() - (hours * 60 * 60 * 1000));
+                xAxisMin = fromTime.toISOString();
+                xAxisMax = now.toISOString();
+            }
+
             // Collect data for all zones
             for (let zoneIdx = 0; zoneIdx < zones.length; zoneIdx++) {
                 const zone = zones[zoneIdx];
                 try {
-                    // Fetch temperature history
-                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
+                    // Fetch temperature history with same date range
+                    const res = await fetch(`/api/zones/${zone.id}/history?${urlParams}`);
                     const tempData = await res.json();
 
-                    // Fetch heating power timeline
-                    const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    // Fetch heating power timeline with same date range
+                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?${urlParams}`);
                     const heatingData = await heatingRes.json();
 
                     if (!tempData.history || tempData.history.length === 0) continue;
@@ -802,12 +1321,34 @@
                         }
                     });
 
-                    Object.entries(sensorDatasets).forEach(([entity, data]) => {
+                    // Predefined color palette for maximum sensor distinction
+                    // Each sensor gets a completely different color (not variations of base color)
+                    function getSensorColor(index) {
+                        const sensorColorPalette = [
+                            '#4fd1c5',  // Teal (original zone color)
+                            '#f6ad55',  // Orange
+                            '#b794f4',  // Purple
+                            '#68d391',  // Lime/Green
+                            '#fc8181',  // Pink/Red
+                            '#63b3ed',  // Sky Blue
+                            '#fbd38d',  // Yellow
+                            '#f687b3'   // Hot Pink
+                        ];
+                        return sensorColorPalette[index % sensorColorPalette.length];
+                    }
+
+                    // Assign distinct colors to each sensor
+                    const sensorEntities = Object.keys(sensorDatasets);
+                    Object.entries(sensorDatasets).forEach(([entity, data], sensorIdx) => {
                         const entityName = entity.replace('climate.', '').replace('sensor.', '');
+
+                        // Get distinct color for this sensor from predefined palette
+                        const sensorColor = getSensorColor(sensorIdx);
+
                         datasets.push({
                             label: `${zone.name} - ${entityName}`,
                             data: data,
-                            borderColor: `${ZONE_COLORS[zoneIdx][0]}80`,
+                            borderColor: sensorColor,
                             borderWidth: 1.5,
                             tension: 0.3,
                             pointRadius: 0,
@@ -881,17 +1422,20 @@
                         x: {
                             type: 'time',
                             time: {
-                                unit: hours <= 6 ? 'hour' : hours <= 48 ? 'day' : 'week',
+                                unit: hours <= 48 ? 'hour' : 'day',  // Match backend logic
                                 displayFormats: {
                                     hour: 'HH:mm',
-                                    day: 'MMM dd',
-                                    week: 'MMM dd'
-                                }
+                                    day: 'MMM dd'
+                                },
+                                tooltipFormat: 'PPpp'
                             },
+                            min: xAxisMin,  // Set explicit time bounds
+                            max: xAxisMax,  // Set explicit time bounds
                             ticks: {
                                 color: '#a0aec0',
                                 maxRotation: 0,
-                                minRotation: 0
+                                minRotation: 0,
+                                maxTicksLimit: 12
                             },
                             grid: { display: false }
                         },
@@ -978,11 +1522,11 @@
                 const zone = zones[i];
                 try {
                     // Fetch temperature history
-                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
+                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
 
                     // Fetch heating power timeline
-                    const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
                     const heatingData = await heatingRes.json();
 
                     zoneDataList.push({
