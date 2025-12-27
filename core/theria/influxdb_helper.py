@@ -194,7 +194,8 @@ def get_sensor_timeseries(
     stop_time: datetime,
     timezone: str = "Europe/Stockholm",
     domain: str = "sensor",
-    field_name: str = None
+    field_name: str = None,
+    parse_as_string: bool = False
 ) -> dict:
     """Get time series data for a single sensor or climate entity.
 
@@ -205,6 +206,7 @@ def get_sensor_timeseries(
         timezone: Local timezone (default: Europe/Stockholm)
         domain: Entity domain ('sensor' or 'climate')
         field_name: Specific field to fetch (optional, auto-detected if not provided)
+        parse_as_string: If True, parse values as strings instead of floats (for state fields)
 
     Returns:
         dict: {
@@ -277,7 +279,7 @@ def get_sensor_timeseries(
             }
 
         # Parse CSV response
-        timeseries_data = _parse_timeseries_response(response.text, local_tz)
+        timeseries_data = _parse_timeseries_response(response.text, local_tz, parse_as_string)
 
         if not timeseries_data:
             return {"status": "error", "message": "No valid data points found"}
@@ -297,12 +299,13 @@ def get_sensor_timeseries(
         return {"status": "error", "message": f"Unexpected error: {e!s}"}
 
 
-def _parse_timeseries_response(response_text: str, local_tz: ZoneInfo) -> list:
+def _parse_timeseries_response(response_text: str, local_tz: ZoneInfo, parse_as_string: bool = False) -> list:
     """Parse InfluxDB CSV response to extract time series data.
 
     Args:
         response_text: CSV response from InfluxDB
         local_tz: Timezone to convert timestamps to
+        parse_as_string: If True, keep values as strings instead of converting to float
 
     Returns:
         List of (timestamp, value) tuples sorted by timestamp
@@ -323,7 +326,12 @@ def _parse_timeseries_response(response_text: str, local_tz: ZoneInfo) -> list:
 
             # Extract timestamp and value
             timestamp_str = parts[5].strip()  # _time is the 6th column (index 5)
-            value = float(parts[6].strip())  # _value is the 7th column (index 6)
+
+            # Parse value as string or float based on parameter
+            if parse_as_string:
+                value = parts[6].strip()  # Keep as string
+            else:
+                value = float(parts[6].strip())  # Convert to float
 
             # Parse timestamp and convert to local timezone
             timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))

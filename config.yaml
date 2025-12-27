@@ -1,6 +1,6 @@
 name: "Theria"
 description: "Smart heating optimization using electricity price-based heat capacitor strategy"
-version: "0.2.0"
+version: "0.3.0"
 slug: "theria"
 init: false
 arch:
@@ -28,9 +28,12 @@ options:
     outdoor_temp: "sensor.outdoor"  # H60 outdoor temperature sensor
 
   influxdb:
-    url: "http://homeassistant.local:8086/api/v2/query"
-    username: "your_db_username_here"
-    password: "your_db_password_here"
+    enabled: true
+    # Credentials are read from .env file (HA_DB_URL, HA_DB_USER_NAME, HA_DB_PASSWORD)
+    # Leave blank to use environment variables
+    url: ""
+    username: ""
+    password: ""
 
   price_optimization:
     enabled: true
@@ -42,6 +45,7 @@ options:
   zones:
     - id: "butik"
       name: "Butik"
+      icon: "🏪"
       climate_entities:
         - "climate.vantsidan"
         - "climate.klippsidan"
@@ -54,14 +58,30 @@ options:
       allowed_deviation: 1.0  # Allowed temperature variation for savings (±°C)
       enabled: true
 
+    - id: "first_floor"
+      name: "First Floor"
+      icon: "🏠"
+      climate_entities:
+        - "climate.lk_bibliotek_thermostat"
+        - "climate.lk_vardagsrum_thermostat"
+      temp_sensors:
+        - "sensor.lk_bibliotek_temperature"
+        - "sensor.lk_vardagsrum_temperature"
+        - "sensor.sonoff_a480045bf5_temperature"
+        - "sensor.gastrum_temperature_2"
+      comfort_target: 22.0  # Target comfort temperature (°C)
+      allowed_deviation: 1.0  # Allowed temperature variation for savings (±°C)
+      enabled: true
+
 schema:
   sensors:
     nordpool_price: str?
     outdoor_temp: str?
   influxdb:
-    url: str
-    username: str
-    password: str
+    enabled: bool?
+    url: str?
+    username: str?
+    password: str?
   price_optimization:
     enabled: bool?
     price_sensor: str?
@@ -71,6 +91,7 @@ schema:
   zones:
     - id: str
       name: str
+      icon: str?
       climate_entities:
         - str
       temp_sensors:

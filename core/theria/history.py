@@ -90,7 +90,8 @@ class HistoryTracker:
         target_temps: dict[str, float],
         current_temps: dict[str, float] | None = None,
         heating_requests: dict[str, float] | None = None,
-        timestamp: datetime | None = None
+        timestamp: datetime | None = None,
+        skip_cleanup: bool = False
     ):
         """Add a temperature reading.
 
@@ -102,6 +103,7 @@ class HistoryTracker:
             current_temps: Dict of climate_entity -> current_temp (actual readings)
             heating_requests: Dict of climate_entity -> heating_power_request % (0-100)
             timestamp: Optional timestamp (defaults to now for real-time readings)
+            skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
         # Use provided timestamp for historical backfill, or current time for real-time
         ts = timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat()
@@ -118,7 +120,8 @@ class HistoryTracker:
 
         with self.lock:
             self.temperature_readings.append(reading)
-            self._cleanup_old_data()
+            if not skip_cleanup:
+                self._cleanup_old_data()
 
     def add_control_event(
         self,
@@ -285,7 +288,8 @@ class HistoryTracker:
         avg_heating_request: float,
         max_heating_request: float,
         heating_active: bool,
-        timestamp: datetime | None = None
+        timestamp: datetime | None = None,
+        skip_cleanup: bool = False
     ):
         """Add a heating power request snapshot.
 
@@ -295,6 +299,7 @@ class HistoryTracker:
             max_heating_request: Maximum heating request % (0-100)
             heating_active: Whether any heating was requested
             timestamp: Optional timestamp (defaults to now for real-time snapshots)
+            skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
         # Use provided timestamp for historical backfill, or current time for real-time
         ts = timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat()
@@ -309,6 +314,8 @@ class HistoryTracker:
 
         with self.lock:
             self.heating_power_snapshots.append(snapshot)
+            if not skip_cleanup:
+                self._cleanup_old_data()
 
     def get_heating_timeline(
         self,
@@ -372,4 +379,5 @@ class HistoryTracker:
 
 
 # Global instance
-history_tracker = HistoryTracker(max_hours=24)
+# Increased from 24h to 720h (30 days) to support InfluxDB historical backfill
+history_tracker = HistoryTracker(max_hours=720)

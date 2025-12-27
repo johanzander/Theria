@@ -13,7 +13,6 @@ from .entity_thermal_learner import ClimateEntityThermalLearner, ZoneThermalAggr
 from .ha_client import HAClient
 from .history import history_tracker
 from .settings import ZoneSettings
-from .zone_thermal_learner import ZoneThermalLearner
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +62,6 @@ class ThermalLearningService:
                 entity_learners=zone_entity_learners
             )
 
-        # Keep old zone learners for backward compatibility during migration
-        self.learners: dict[str, ZoneThermalLearner] = {}
-        for zone in zones:
-            self.learners[zone.id] = ZoneThermalLearner(
-                zone_id=zone.id,
-                learning_rate=0.1,
-                measurement_interval_minutes=learning_interval_minutes
-            )
-
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -83,7 +73,7 @@ class ThermalLearningService:
 
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info(f"🧠 Thermal learning service started for {len(self.learners)} zone(s)")
+        logger.info(f"🧠 Thermal learning service started for {len(self.zones)} zone(s), {len(self.entity_learners)} entities")
         logger.info(f"   Learning interval: {self.learning_interval_minutes} minutes")
 
     async def bootstrap_from_history(self):
@@ -136,46 +126,7 @@ class ThermalLearningService:
 
         # Process each zone
         for zone in self.zones:
-            # V1 (old): Zone-level learning for backward compatibility
-            old_learner = self.learners[zone.id]
-
-            try:
-                # Get zone average indoor temperature
-                indoor_temp = await self._get_zone_indoor_temp(zone)
-                if indoor_temp is None:
-                    logger.warning(f"Zone {zone.id}: Failed to get indoor temp")
-                    continue
-
-                # Determine if heating is active
-                heating_active = await self._is_zone_heating(zone)
-
-                # Add measurement to old learner
-                measurement = old_learner.add_measurement(
-                    timestamp=timestamp,
-                    indoor_temp=indoor_temp,
-                    outdoor_temp=outdoor_temp,
-                    heating_active=heating_active
-                )
-
-                if measurement:
-                    chars = old_learner.get_characteristics()
-
-                    # Store thermal characteristics snapshot for historical tracking
-                    history_tracker.add_thermal_snapshot(
-                        zone_id=zone.id,
-                        heating_rate=chars.heating_rate,
-                        heating_rate_confidence=chars.heating_rate_confidence,
-                        heating_samples=chars.heating_samples,
-                        cooling_rate_base=chars.cooling_rate_base,
-                        cooling_rate_confidence=chars.cooling_rate_confidence,
-                        cooling_samples=chars.cooling_samples,
-                        outdoor_temp_coefficient=chars.outdoor_temp_coefficient
-                    )
-
-            except Exception as e:
-                logger.error(f"Error learning for zone {zone.id} (old): {e}", exc_info=True)
-
-            # V2 (new): Per-entity learning
+            # Per-entity learning
             for entity_id in zone.climate_entities:
                 try:
                     entity_learner = self.entity_learners[entity_id]
@@ -243,79 +194,7 @@ class ThermalLearningService:
         outdoor_history = await self._get_outdoor_temp_history_from_ha(bootstrap_hours)
 
         for zone in self.zones:
-            # V1: Bootstrap old zone-level learner
-            learner = self.learners[zone.id]
-
-            try:
-                # Get zone temperature history
-                zone_history = history_tracker.get_temperature_history(
-                    zone_id=zone.id,
-                    hours=bootstrap_hours
-                )
-
-                if not zone_history or not outdoor_history:
-                    logger.warning(f"Zone {zone.id}: No historical data available for bootstrap")
-                    continue
-
-                # Process historical readings for zone-level
-                heating_count = 0
-                cooling_count = 0
-
-                for i in range(1, len(zone_history)):
-                    prev_reading = zone_history[i - 1]
-                    curr_reading = zone_history[i]
-
-                    # Get timestamps
-                    curr_timestamp = self._get_timestamp(curr_reading)
-                    if curr_timestamp is None:
-                        continue
-
-                    # Get outdoor temp at this time (find closest match)
-                    outdoor_temp = self._find_closest_outdoor_temp(
-                        curr_timestamp,
-                        outdoor_history
-                    )
-
-                    if outdoor_temp is None:
-                        continue
-
-                    # Calculate indoor temp (average of climate entities)
-                    prev_indoor = self._calculate_zone_temp(prev_reading)
-                    curr_indoor = self._calculate_zone_temp(curr_reading)
-
-                    if prev_indoor is None or curr_indoor is None:
-                        continue
-
-                    # Determine if heating was active (check heating_power_request)
-                    heating_requests = self._get_heating_requests(prev_reading)
-                    heating_active = any(v > 0 for v in heating_requests.values()) if heating_requests else False
-
-                    # Add measurement to old learner
-                    measurement = learner.add_measurement(
-                        timestamp=curr_timestamp,
-                        indoor_temp=curr_indoor,
-                        outdoor_temp=outdoor_temp,
-                        heating_active=heating_active
-                    )
-
-                    if measurement:
-                        if heating_active:
-                            heating_count += 1
-                        else:
-                            cooling_count += 1
-
-                chars = learner.get_characteristics()
-                logger.info(
-                    f"Zone {zone.id} (V1): Bootstrapped with {heating_count} heating + "
-                    f"{cooling_count} cooling samples → "
-                    f"Heat: {chars.heating_rate:+.2f}°C/h ({chars.heating_rate_confidence:.0%}), "
-                    f"Cool: {chars.cooling_rate_base:+.2f}°C/h ({chars.cooling_rate_confidence:.0%})"
-                )
-
-            except Exception as e:
-                logger.error(f"Error bootstrapping zone {zone.id} (V1): {e}", exc_info=True)
-
-            # V2: Bootstrap new entity-level learners
+            # Bootstrap entity-level learners
             for entity_id in zone.climate_entities:
                 try:
                     entity_learner = self.entity_learners[entity_id]
@@ -766,21 +645,3 @@ class ThermalLearningService:
 
         return False
 
-    def get_zone_characteristics(self, zone_id: str):
-        """Get learned characteristics for a zone."""
-        if zone_id not in self.learners:
-            return None
-
-        learner = self.learners[zone_id]
-        return {
-            "characteristics": learner.get_characteristics(),
-            "confidence": learner.get_confidence(),
-            "recent_measurements": len(learner.recent_measurements)
-        }
-
-    def get_all_characteristics(self):
-        """Get learned characteristics for all zones."""
-        return {
-            zone_id: self.get_zone_characteristics(zone_id)
-            for zone_id in self.learners
-        }

@@ -712,7 +712,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🏪 Butik Zone Insights</h1>
+            <h1 id="page-title">Zone Insights</h1>
             <div class="breadcrumb">
                 <a href="./">← Dashboard</a>
                 <span style="color: #4a5568;">|</span>
@@ -721,15 +721,8 @@
         </div>
 
         <div class="controls-bar">
-            <div class="time-range-selector">
-                <button class="range-btn active" data-range="today">Today</button>
-                <button class="range-btn" data-range="yesterday">Yesterday</button>
-                <button class="range-btn" data-range="week">Week</button>
-                <button class="range-btn" data-range="month">Month</button>
-            </div>
-            <div class="custom-range-wrapper">
-                <input type="text" id="customDateRange" class="custom-range-input" placeholder="Select custom date range..." readonly>
-            </div>
+            <!-- Date picker will be injected here by TheriaDatePicker -->
+            <div id="date-picker-container"></div>
             <button class="refresh-btn" onclick="loadAllData()">🔄 Refresh</button>
         </div>
 
@@ -753,10 +746,16 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { TheriaDatePicker } from '/static/js/date-picker.js';
+        import { loadNavigation } from '/static/js/navigation.js';
+
+        // Extract zone_id from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const zoneId = urlParams.get('zone_id') || 'butik';  // Default to butik for backward compatibility
+
         // Global state
-        let selectedTimeRange = 'today';
-        let customDateRange = null;  // {start: Date, end: Date}
+        let currentZone = null;  // Will be loaded from API
         let zones = [];
         let charts = {
             climate: {},  // climate_entity_id -> Chart instance
@@ -767,7 +766,7 @@
             rates: null
         };
         let refreshInterval = null;
-        let datePickerInstance = null;
+        let datePicker = null;
 
         // Color palette for zones
         const ZONE_COLORS = [
@@ -778,71 +777,47 @@
         ];
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            setupTimeRangeSelector();
-            setupCustomDatePicker();
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load zone metadata first
+            await loadZoneMetadata();
+
+            // Load dynamic navigation
+            await loadNavigation('zone', zoneId);
+
+            // Initialize date picker with callback
+            datePicker = new TheriaDatePicker('date-picker-container', {
+                onRangeChange: () => loadAllData()
+            });
+
             loadAllData();
             // Auto-refresh disabled for better analysis experience
             // startAutoRefresh();
         });
 
-        function setupTimeRangeSelector() {
-            document.querySelectorAll('.range-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    selectedTimeRange = btn.dataset.range;
-                    customDateRange = null;  // Clear custom range
-                    document.getElementById('customDateRange').classList.remove('active');
-                    document.getElementById('customDateRange').value = '';
-                    loadAllData();
-                });
-            });
-        }
+        // Load zone metadata from API
+        async function loadZoneMetadata() {
+            try {
+                const res = await fetch('api/zones');
+                const data = await res.json();
+                zones = data.zones;
 
-        function setupCustomDatePicker() {
-            const input = document.getElementById('customDateRange');
+                currentZone = zones.find(z => z.id === zoneId);
 
-            datePickerInstance = flatpickr(input, {
-                mode: 'range',
-                dateFormat: 'Y-m-d',
-                maxDate: 'today',
-                defaultDate: null,
-                theme: 'dark',
-                onChange: function(selectedDates, dateStr, instance) {
-                    if (selectedDates.length === 2) {
-                        // Range selected
-                        customDateRange = {
-                            start: selectedDates[0],
-                            end: selectedDates[1]
-                        };
-
-                        // Deactivate preset buttons
-                        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
-                        input.classList.add('active');
-
-                        // Format display with nice formatting
-                        const options = { month: 'short', day: 'numeric' };
-                        const startStr = selectedDates[0].toLocaleDateString('en-US', options);
-                        const endStr = selectedDates[1].toLocaleDateString('en-US', options);
-                        const year = selectedDates[1].getFullYear();
-                        input.value = `${startStr} - ${endStr}, ${year}`;
-
-                        // Reload data
-                        loadAllData();
-                    }
-                },
-                onOpen: function() {
-                    // Suggest last 7 days as default if nothing selected
-                    if (!customDateRange) {
-                        const end = new Date();
-                        const start = new Date();
-                        start.setDate(start.getDate() - 7);
-                        datePickerInstance.setDate([start, end], false);
-                    }
+                if (!currentZone) {
+                    showError(`Zone "${zoneId}" not found in configuration. Available zones: ${zones.map(z => z.id).join(', ')}`);
+                    return;
                 }
-            });
+
+                // Update page title and header dynamically
+                document.title = `${currentZone.name} Zone Insights - Theria`;
+                document.getElementById('page-title').innerHTML = `${currentZone.icon || '📊'} ${currentZone.name} Zone Insights`;
+
+            } catch (error) {
+                console.error('Error loading zone metadata:', error);
+                showError('Failed to load zone configuration: ' + error.message);
+            }
         }
+
 
         function startAutoRefresh() {
             // Refresh every 30 seconds
@@ -851,95 +826,19 @@
             }, 30000);
         }
 
-        function buildChartDataUrl(hours) {
-            const now = new Date();
-            let url = '/api/zones/{zone_id}/chart_data?';
-
-            // INDUSTRY STANDARD: Calculate absolute Unix timestamps (like Grafana)
-            let fromMs, toMs;
-
-            if (customDateRange && customDateRange.start && customDateRange.end) {
-                // Custom date range
-                const from = new Date(customDateRange.start);
-                from.setHours(0, 0, 0, 0);
-                const to = new Date(customDateRange.end);
-                to.setHours(23, 59, 59, 999);
-                fromMs = from.getTime();
-                toMs = to.getTime();
-            } else if (selectedTimeRange === 'today') {
-                // Today: start of day to now (in user's timezone)
-                const todayStart = new Date(now);
-                todayStart.setHours(0, 0, 0, 0);
-                fromMs = todayStart.getTime();
-                toMs = now.getTime();
-            } else if (selectedTimeRange === 'yesterday') {
-                // Yesterday: full day (in user's timezone)
-                const yesterdayStart = new Date(now);
-                yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-                yesterdayStart.setHours(0, 0, 0, 0);
-                const yesterdayEnd = new Date(yesterdayStart);
-                yesterdayEnd.setHours(23, 59, 59, 999);
-                fromMs = yesterdayStart.getTime();
-                toMs = yesterdayEnd.getTime();
-            } else if (selectedTimeRange === 'week') {
-                // This week: Monday to now (in user's timezone)
-                const dayOfWeek = now.getDay();
-                const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-                const monday = new Date(now);
-                monday.setDate(monday.getDate() - daysToMonday);
-                monday.setHours(0, 0, 0, 0);
-                fromMs = monday.getTime();
-                toMs = now.getTime();
-            } else if (selectedTimeRange === 'month') {
-                // This month: 1st to now (in user's timezone)
-                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                monthStart.setHours(0, 0, 0, 0);
-                fromMs = monthStart.getTime();
-                toMs = now.getTime();
-            } else {
-                // Fallback: last N hours
-                fromMs = now.getTime() - (hours * 60 * 60 * 1000);
-                toMs = now.getTime();
-            }
-
-            // Send Unix timestamps (milliseconds since epoch)
-            url += `from=${fromMs}&to=${toMs}`;
-            return url;
-        }
-
-        function getHoursFromRange(range) {
-            // Simple, fixed hours for each range - no complex calculations
-            // This ensures all charts query enough data to cover the period
-            const rangeMap = {
-                'today': 48,        // 2 days to ensure we get all of today
-                'yesterday': 48,    // 2 days to ensure we get all of yesterday
-                'week': 168,        // 7 days
-                'month': 744        // 31 days
-            };
-
-            // Custom date range
-            if (customDateRange && customDateRange.start && customDateRange.end) {
-                const diffMs = customDateRange.end - customDateRange.start;
-                const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
-                return diffHours + 24; // Add buffer
-            }
-
-            return rangeMap[range] || 48;
-        }
-
         async function loadAllData(silent = false) {
+            if (!currentZone) {
+                showError('Zone configuration not loaded. Please refresh the page.');
+                return;
+            }
+
             if (!silent) {
                 document.getElementById('zone-overview').innerHTML = '<div class="loading">Loading zone data...</div>';
             }
 
             try {
-                // Load zones list
-                const zonesRes = await fetch('/api/zones');
-                const zonesData = await zonesRes.json();
-                zones = zonesData.zones;
-
-                // Load data for all zones in parallel
-                const hours = getHoursFromRange(selectedTimeRange);
+                // Load data for current zone in parallel
+                const hours = datePicker.getHoursFromRange();
                 await Promise.all([
                     loadZoneOverviews(),
                     loadClimateEntityCharts(hours),
@@ -954,24 +853,82 @@
 
         async function loadZoneOverviews() {
             const overviewHTML = [];
+            const zone = currentZone;  // Only process current zone
 
-            for (const zone of zones) {
-                try {
-                    // Get thermal characteristics
-                    const charRes = await fetch(`/api/thermal/characteristics?zone_id=${zone.id}`);
-                    const charData = await charRes.json();
+            try {
+                // Get thermal periods for current zone (period-based analysis)
+                const hours = datePicker?.getTimeRange().hours || 24;
+                const periodsRes = await fetch(`api/thermal/periods/${zone.id}?hours=${hours}`);
+                const periodsData = await periodsRes.json();
 
-                    // Get zone status
-                    const statusRes = await fetch(`/api/zones/${zone.id}/status`);
-                    const statusData = await statusRes.json();
+                // Get zone status for current zone
+                const statusRes = await fetch(`api/zones/${zone.id}/status`);
+                const statusData = await statusRes.json();
 
-                    const confidence = charData.overall_confidence || 0;
-                    const confidenceClass = confidence >= 0.7 ? 'confidence-high' :
+                // Calculate zone-level statistics from periods
+                const heatingPeriods = periodsData.periods.filter(p => p.type === 'heating');
+                const coolingPeriods = periodsData.periods.filter(p => p.type === 'cooling');
+
+                const heatingRate = heatingPeriods.length > 0
+                    ? heatingPeriods.reduce((sum, p) => sum + p.rate, 0) / heatingPeriods.length
+                    : 0;
+                const coolingRate = coolingPeriods.length > 0
+                    ? coolingPeriods.reduce((sum, p) => sum + p.rate, 0) / coolingPeriods.length
+                    : 0;
+
+                // Calculate confidence based on number and total duration of periods
+                const totalPeriods = heatingPeriods.length + coolingPeriods.length;
+                const totalDuration = periodsData.periods.reduce((sum, p) => sum + p.duration_hours, 0);
+                const confidence = Math.min(1.0, totalPeriods / 20 + totalDuration / 100);
+
+                const confidenceClass = confidence >= 0.7 ? 'confidence-high' :
                                           confidence >= 0.4 ? 'confidence-medium' : 'confidence-low';
 
-                    // Get target temperature from first climate entity
-                    const targetTemp = statusData.climate_states?.[0]?.target_temperature;
-                    const currentTemp = statusData.average_temperature || 0;
+                // Create charData-compatible object for existing display code
+                const charData = {
+                    heating_rate: heatingRate,
+                    cooling_rate_base: coolingRate,
+                    heating_samples: heatingPeriods.length,
+                    cooling_samples: coolingPeriods.length,
+                    overall_confidence: confidence
+                };
+
+                // Calculate period-specific statistics (not just "current")
+                // Average temperature over the selected period from all period data
+                const allPeriods = periodsData.periods;
+                let periodAvgTemp = 0;
+                let periodTargetTemp = null;
+
+                if (allPeriods.length > 0) {
+                    // Calculate weighted average temperature (weighted by duration)
+                    let totalTempTime = 0;
+                    let totalTime = 0;
+
+                    allPeriods.forEach(period => {
+                        const avgPeriodTemp = (period.start_temp + period.end_temp) / 2;
+                        totalTempTime += avgPeriodTemp * period.duration_hours;
+                        totalTime += period.duration_hours;
+                    });
+
+                    periodAvgTemp = totalTime > 0 ? totalTempTime / totalTime : 0;
+
+                    // Use most recent period's target temp
+                    const recentPeriod = allPeriods[allPeriods.length - 1];
+                    periodTargetTemp = recentPeriod.target_temp;
+                }
+
+                // Fallback to current values if no period data
+                const displayTemp = periodAvgTemp > 0 ? periodAvgTemp : (statusData.average_temperature || 0);
+                const targetTemp = periodTargetTemp || statusData.climate_states?.[0]?.target_temperature;
+
+                // Label for gauge (indicates time period)
+                const periodLabel = datePicker?.selectedTimeRange || 'today';
+                const tempLabel = periodAvgTemp > 0 ?
+                    (periodLabel === 'today' ? 'Today Avg' :
+                     periodLabel === 'yesterday' ? 'Yesterday' :
+                     periodLabel === 'week' ? 'Week Avg' :
+                     periodLabel === 'month' ? 'Month Avg' : 'Average')
+                    : 'Current';
 
                     // Calculate gauge stroke-dashoffset (circumference = 264)
                     const gaugeOffset = 264 * (1 - confidence);
@@ -1012,9 +969,9 @@
 
                                         <div class="temp-display">
                                             <div class="current-temp">
-                                                ${currentTemp.toFixed(1)}<span class="temp-unit">°</span>
+                                                ${displayTemp.toFixed(1)}<span class="temp-unit">°</span>
                                             </div>
-                                            <div class="temp-label">Current</div>
+                                            <div class="temp-label">${tempLabel}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1083,70 +1040,76 @@
                                 </div>
                             </div>
                         </div>
-                    `);
+                `);
 
-                } catch (error) {
-                    console.error(`Error loading zone ${zone.id}:`, error);
-                }
+                document.getElementById('zone-overview').innerHTML = overviewHTML.join('');
+
+            } catch (error) {
+                console.error(`Error loading zone ${zone.id}:`, error);
+                showError(`Failed to load zone overview: ${error.message}`);
             }
-
-            document.getElementById('zone-overview').innerHTML = overviewHTML.join('');
         }
 
         async function loadClimateEntityCharts(hours) {
             const container = document.getElementById('climate-charts-container');
             container.innerHTML = '<div class="loading">Loading climate entity charts...</div>';
 
-            // Build API URL with date range if applicable
-            const apiUrl = buildChartDataUrl(hours);
+            // Build API URL with date range for current zone
+            const apiUrl = datePicker.buildChartDataUrl(`api/zones/${zoneId}/chart_data`);
 
-            // Collect all climate entities across all zones using unified endpoint
+            // Collect climate entities for current zone using unified endpoint
             const climateCharts = [];
-            for (const zone of zones) {
-                try {
-                    // ONE API call gets EVERYTHING: datasets + annotations!
-                    const res = await fetch(apiUrl.replace('{zone_id}', zone.id));
-                    const chartData = await res.json();
+            const zone = currentZone;
 
-                    if (!chartData.datasets || chartData.datasets.length === 0) continue;
+            try {
+                // ONE API call gets EVERYTHING: datasets + annotations!
+                const res = await fetch(apiUrl);
+                const chartData = await res.json();
 
-                    // Extract entity names from dataset labels (backend returns "entityname - Current", etc.)
-                    const entities = new Set();
-                    chartData.datasets.forEach(ds => {
-                        const match = ds.label.match(/^(\w+) - /);
-                        if (match) entities.add(match[1]);
+                if (!chartData.datasets || chartData.datasets.length === 0) {
+                    container.innerHTML = '<div class="card"><p>No climate entity data available for this zone</p></div>';
+                    return;
+                }
+
+                // Extract unique entity IDs from datasets (backend now includes entity_id field)
+                const entityMap = new Map(); // entity_id -> entity_name
+                chartData.datasets.forEach(ds => {
+                    if (ds.entity_id) {
+                        const match = ds.label.match(/^(.+?) - (Current|Target|Heating %)/);
+                        if (match) {
+                            entityMap.set(ds.entity_id, match[1]); // Store entity_id -> friendly name mapping
+                        }
+                    }
+                });
+
+                // Separate datasets and annotations by entity
+                for (const [entityId, entityName] of entityMap) {
+                    // Filter datasets for THIS entity using entity_id field
+                    const entityDatasets = chartData.datasets.filter(ds => ds.entity_id === entityId);
+
+                    // Filter annotations for THIS entity using entity_id field
+                    const entityAnnotations = {};
+                    Object.entries(chartData.annotations).forEach(([key, annotation]) => {
+                        if (annotation.entity_id === entityId) {
+                            entityAnnotations[key] = annotation;
+                        }
                     });
 
-                    // Separate datasets and annotations by entity
-                    for (const entityName of entities) {
-                        const entityId = `climate.${entityName.toLowerCase()}`;
-
-                        // Filter datasets for THIS entity (all matching this entity name prefix)
-                        const entityDatasets = chartData.datasets.filter(ds =>
-                            ds.label.startsWith(entityName + ' - ')
-                        );
-
-                        // Filter annotations for THIS entity using entity_id field
-                        const entityAnnotations = {};
-                        Object.entries(chartData.annotations).forEach(([key, annotation]) => {
-                            if (annotation.entity_id === entityId) {
-                                entityAnnotations[key] = annotation;
-                            }
-                        });
-
-                        climateCharts.push({
-                            zone: zone.name,
-                            zoneId: zone.id,
-                            entity: entityId,
-                            entityName: entityName,
-                            datasets: entityDatasets,
-                            annotations: entityAnnotations,
-                            scales: chartData.scales
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Error loading climate charts for ${zone.id}:`, error);
+                    climateCharts.push({
+                        zone: zone.name,
+                        zoneId: zone.id,
+                        entity: entityId,
+                        entityName: entityName,
+                        datasets: entityDatasets,
+                        annotations: entityAnnotations,
+                        scales: chartData.scales
+                    });
                 }
+
+            } catch (error) {
+                console.error(`Error loading climate charts for ${zone.id}:`, error);
+                container.innerHTML = `<div class="card error-card"><h3>⚠️ Error</h3><p>Failed to load climate charts: ${error.message}</p></div>`;
+                return;
             }
 
             // Generate HTML for all climate entity charts
@@ -1228,69 +1191,31 @@
         async function loadZoneAggregateChart(hours) {
             const datasets = [];
 
-            // Build URL with same date range logic as charts
-            const baseUrl = buildChartDataUrl(hours);
-            const urlParams = baseUrl.split('?')[1]; // Extract query params
+            // Get time bounds for x-axis from datePicker
+            const { xAxisMin, xAxisMax } = datePicker.getTimeBounds();
 
-            // Calculate time bounds for x-axis (same logic as buildChartDataUrl)
-            const now = new Date();
-            let xAxisMin, xAxisMax;
+            // Process current zone only
+            const zone = currentZone;
+            const zoneIdx = 0;  // Single zone, use index 0 for colors
 
-            if (customDateRange && customDateRange.start && customDateRange.end) {
-                const from = new Date(customDateRange.start);
-                from.setHours(0, 0, 0, 0);
-                const to = new Date(customDateRange.end);
-                to.setHours(23, 59, 59, 999);
-                xAxisMin = from.toISOString();
-                xAxisMax = to.toISOString();
-            } else if (selectedTimeRange === 'today') {
-                const todayStart = new Date(now);
-                todayStart.setHours(0, 0, 0, 0);
-                xAxisMin = todayStart.toISOString();
-                xAxisMax = now.toISOString();
-            } else if (selectedTimeRange === 'yesterday') {
-                const yesterdayStart = new Date(now);
-                yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-                yesterdayStart.setHours(0, 0, 0, 0);
-                const yesterdayEnd = new Date(yesterdayStart);
-                yesterdayEnd.setHours(23, 59, 59, 999);
-                xAxisMin = yesterdayStart.toISOString();
-                xAxisMax = yesterdayEnd.toISOString();
-            } else if (selectedTimeRange === 'week') {
-                const dayOfWeek = now.getDay();
-                const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-                const monday = new Date(now);
-                monday.setDate(monday.getDate() - daysToMonday);
-                monday.setHours(0, 0, 0, 0);
-                xAxisMin = monday.toISOString();
-                xAxisMax = now.toISOString();
-            } else if (selectedTimeRange === 'month') {
-                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                monthStart.setHours(0, 0, 0, 0);
-                xAxisMin = monthStart.toISOString();
-                xAxisMax = now.toISOString();
-            } else {
-                // Fallback: use hours-based range
-                const fromTime = new Date(now.getTime() - (hours * 60 * 60 * 1000));
-                xAxisMin = fromTime.toISOString();
-                xAxisMax = now.toISOString();
-            }
+            try {
+                // Fetch temperature history with date range
+                const historyUrl = datePicker.buildChartDataUrl(`/api/zones/${zone.id}/history`);
+                const res = await fetch(historyUrl);
+                const tempData = await res.json();
 
-            // Collect data for all zones
-            for (let zoneIdx = 0; zoneIdx < zones.length; zoneIdx++) {
-                const zone = zones[zoneIdx];
-                try {
-                    // Fetch temperature history with same date range
-                    const res = await fetch(`/api/zones/${zone.id}/history?${urlParams}`);
-                    const tempData = await res.json();
+                // Fetch heating power timeline with date range
+                const heatingUrl = datePicker.buildChartDataUrl(`/api/zones/${zone.id}/heating_timeline`);
+                const heatingRes = await fetch(heatingUrl);
+                const heatingData = await heatingRes.json();
 
-                    // Fetch heating power timeline with same date range
-                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?${urlParams}`);
-                    const heatingData = await heatingRes.json();
+                if (!tempData.history || tempData.history.length === 0) {
+                    console.warn(`No temperature history data for zone ${zone.id}`);
+                    // Continue with empty datasets - will show empty chart
+                }
 
-                    if (!tempData.history || tempData.history.length === 0) continue;
-
-                    // Zone average temperature
+                // Zone average temperature
+                if (tempData.history && tempData.history.length > 0) {
                     const zoneAvgData = tempData.history.map(h => ({
                         x: new Date(h.timestamp),
                         y: h.current_temp
@@ -1356,30 +1281,31 @@
                             yAxisID: 'y'
                         });
                     });
-
-                    // Heating activity overlay
-                    if (heatingData.timeline && heatingData.timeline.length > 0) {
-                        const heatingDataMapped = heatingData.timeline.map(h => ({
-                            x: new Date(h.timestamp),
-                            y: h.avg_heating_request
-                        }));
-
-                        datasets.push({
-                            label: `${zone.name} - Heating %`,
-                            data: heatingDataMapped,
-                            borderColor: `${ZONE_COLORS[zoneIdx][1]}80`,
-                            backgroundColor: `${ZONE_COLORS[zoneIdx][1]}30`,
-                            borderWidth: 1.5,
-                            tension: 0.2,
-                            pointRadius: 0,
-                            fill: true,
-                            yAxisID: 'y1',
-                            stepped: 'before'
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Error loading zone aggregate for ${zone.id}:`, error);
                 }
+
+                // Heating activity overlay
+                if (heatingData.timeline && heatingData.timeline.length > 0) {
+                    const heatingDataMapped = heatingData.timeline.map(h => ({
+                        x: new Date(h.timestamp),
+                        y: h.avg_heating_request
+                    }));
+
+                    datasets.push({
+                        label: `${zone.name} - Heating %`,
+                        data: heatingDataMapped,
+                        borderColor: `${ZONE_COLORS[zoneIdx][1]}80`,
+                        backgroundColor: `${ZONE_COLORS[zoneIdx][1]}30`,
+                        borderWidth: 1.5,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        fill: true,
+                        yAxisID: 'y1',
+                        stepped: 'before'
+                    });
+                }
+
+            } catch (error) {
+                console.error(`Error loading zone aggregate for ${zone.id}:`, error);
             }
 
             const ctx = document.getElementById('zoneAggregateChart');
@@ -1522,11 +1448,11 @@
                 const zone = zones[i];
                 try {
                     // Fetch temperature history
-                    const res = await fetch(`/api/zones/${zone.id}/history?hours=${hours}`);
+                    const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
 
                     // Fetch heating power timeline
-                    const heatingRes = await fetch(`/api/zones/${zone.id}/heating_timeline?hours=${hours}`);
+                    const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
                     const heatingData = await heatingRes.json();
 
                     zoneDataList.push({

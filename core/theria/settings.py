@@ -23,6 +23,7 @@ class ZoneSettings:
     name: str
     climate_entities: list[str]  # One or more climate entities (radiators) in this zone
     temp_sensors: list[str]  # One or more temperature sensors
+    icon: str | None = None
     comfort_target: float = 21.0  # Target comfort temperature (°C) - for heat capacitor strategy
     allowed_deviation: float = 1.0  # Allowed temperature variation (±°C) - for heat capacitor strategy
     enabled: bool = True

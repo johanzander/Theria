@@ -141,6 +141,7 @@ async def get_zones():
             {
                 "id": zone.id,
                 "name": zone.name,
+                "icon": zone.icon,
                 "climate_entities": zone.climate_entities,
                 "temp_sensors": zone.temp_sensors,
                 "enabled": zone.enabled,
@@ -504,63 +505,6 @@ async def get_price_forecast(hours: int = 24):
     }
 
 
-@router.get("/api/thermal/characteristics")
-async def get_thermal_characteristics(zone_id: str | None = None):
-    """Get learned thermal characteristics for zones.
-
-    Args:
-        zone_id: Optional zone filter (returns all zones if not specified)
-
-    Returns:
-        Learned thermal characteristics (heating/cooling rates, confidence)
-    """
-    if learning_service is None:
-        raise HTTPException(status_code=503, detail="Thermal learning service not available")
-
-    if zone_id:
-        chars = learning_service.get_zone_characteristics(zone_id)
-        if chars is None:
-            raise HTTPException(status_code=404, detail=f"Zone {zone_id} not found")
-
-        # Convert dataclass to dict for JSON response
-        characteristics = chars["characteristics"]
-        return {
-            "zone_id": zone_id,
-            "heating_rate": characteristics.heating_rate,
-            "heating_rate_confidence": characteristics.heating_rate_confidence,
-            "heating_samples": characteristics.heating_samples,
-            "cooling_rate_base": characteristics.cooling_rate_base,
-            "cooling_rate_confidence": characteristics.cooling_rate_confidence,
-            "cooling_samples": characteristics.cooling_samples,
-            "outdoor_temp_coefficient": characteristics.outdoor_temp_coefficient,
-            "last_updated": characteristics.last_updated.isoformat() if characteristics.last_updated else None,
-            "overall_confidence": chars["confidence"],
-            "recent_measurements": chars["recent_measurements"]
-        }
-    else:
-        # Return all zones
-        all_chars = learning_service.get_all_characteristics()
-        result = {}
-
-        for zid, chars in all_chars.items():
-            if chars:
-                characteristics = chars["characteristics"]
-                result[zid] = {
-                    "heating_rate": characteristics.heating_rate,
-                    "heating_rate_confidence": characteristics.heating_rate_confidence,
-                    "heating_samples": characteristics.heating_samples,
-                    "cooling_rate_base": characteristics.cooling_rate_base,
-                    "cooling_rate_confidence": characteristics.cooling_rate_confidence,
-                    "cooling_samples": characteristics.cooling_samples,
-                    "outdoor_temp_coefficient": characteristics.outdoor_temp_coefficient,
-                    "last_updated": characteristics.last_updated.isoformat() if characteristics.last_updated else None,
-                    "overall_confidence": chars["confidence"],
-                    "recent_measurements": chars["recent_measurements"]
-                }
-
-        return result
-
-
 @router.get("/api/thermal/characteristics/history")
 async def get_thermal_characteristics_history(zone_id: str | None = None, hours: int = 24):
     """Get historical thermal characteristics snapshots.
@@ -582,57 +526,6 @@ async def get_thermal_characteristics_history(zone_id: str | None = None, hours:
         "hours": hours,
         "count": len(snapshots),
         "snapshots": snapshots
-    }
-
-
-@router.get("/api/thermal/measurements")
-async def get_thermal_measurements(zone_id: str, hours: int = 24, limit: int = 100):
-    """Get recent thermal measurements with predictions.
-
-    Args:
-        zone_id: Zone identifier (required)
-        hours: How many hours back (default: 24, max: 168 for 7d)
-        limit: Maximum number of measurements (default: 100, max: 1000)
-
-    Returns:
-        Recent measurements with predicted values and errors
-    """
-    if not learning_service:
-        raise HTTPException(status_code=503, detail="Thermal learning service not available")
-
-    # Verify zone exists
-    zone = next((z for z in ZONES if z.id == zone_id), None)
-    if not zone:
-        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
-
-    # Limit parameters
-    hours = min(hours, 168)
-    limit = min(limit, 1000)
-
-    # Get measurements from learner
-    if zone_id not in learning_service.learners:
-        return {
-            "zone_id": zone_id,
-            "measurements": [],
-            "message": "No measurements available yet"
-        }
-
-    learner = learning_service.learners[zone_id]
-    measurements = learner.get_measurements_with_predictions(limit=limit)
-
-    # Filter by time range
-    from datetime import datetime, timedelta
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    measurements = [
-        m for m in measurements
-        if datetime.fromisoformat(m["timestamp"]) > cutoff
-    ]
-
-    return {
-        "zone_id": zone_id,
-        "hours": hours,
-        "count": len(measurements),
-        "measurements": measurements
     }
 
 
@@ -779,14 +672,36 @@ async def get_thermal_periods(zone_id: str, hours: int = 24):
     if not learning_service:
         raise HTTPException(status_code=503, detail="Thermal learning service not available")
 
-    # Get all entity learners for this zone
+    # Get the zone configuration
+    zone = next((z for z in ZONES if z.id == zone_id), None)
+    if not zone:
+        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
+
+    # Get periods only for entities that belong to this zone
     zone_periods = []
 
-    for entity_id, learner in learning_service.entity_learners.items():
-        # Check if this entity belongs to the zone (simple check based on entity_id)
-        # TODO: Use proper zone mapping from settings
-        periods = learner.get_periods(hours=hours)
-        zone_periods.extend(periods)
+    # Fetch friendly names for all entities
+    entity_friendly_names = {}
+    if ha_client:
+        for entity_id in zone.climate_entities:
+            try:
+                state = ha_client.get_state(entity_id)
+                friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+                entity_friendly_names[entity_id] = friendly_name
+            except Exception as e:
+                logger.warning(f"Could not fetch friendly name for {entity_id}: {e}")
+                entity_friendly_names[entity_id] = entity_id
+
+    for entity_id in zone.climate_entities:
+        if entity_id in learning_service.entity_learners:
+            learner = learning_service.entity_learners[entity_id]
+            periods = learner.get_periods(hours=hours)
+
+            # Add friendly name to each period
+            for period in periods:
+                period["entity_friendly_name"] = entity_friendly_names.get(entity_id, entity_id)
+
+            zone_periods.extend(periods)
 
     # Sort by start time
     zone_periods.sort(key=lambda p: p["start_time"])
@@ -913,12 +828,17 @@ async def get_sensor_history(entity_id: str, hours: int = 24):
 # UNIFIED CHART DATA ENDPOINT (Phase 1)
 # =============================================================================
 
-def _build_chartjs_datasets(history: list, zone: ZoneSettings) -> list:
+def _build_chartjs_datasets(history: list, zone: ZoneSettings, entity_friendly_names: dict = None) -> list:
     """
     Convert temperature history to Chart.js datasets.
 
     Returns format: [{label, data: [{x, y}], borderColor, ...}, ...]
     Eliminates frontend transformation - backend returns ready-to-render format.
+
+    Args:
+        history: Temperature history readings
+        zone: Zone configuration
+        entity_friendly_names: Dict mapping entity_id to friendly name (optional)
     """
     datasets = []
 
@@ -944,7 +864,11 @@ def _build_chartjs_datasets(history: list, zone: ZoneSettings) -> list:
             if reading.get("heating_requests", {}).get(entity_id) is not None:
                 heating_data.append({"x": ts, "y": reading["heating_requests"][entity_id]})
 
-        entity_name = entity_id.replace('climate.', '')
+        # Use friendly name if available, otherwise use entity_id without domain prefix
+        if entity_friendly_names and entity_id in entity_friendly_names:
+            entity_name = entity_friendly_names[entity_id]
+        else:
+            entity_name = entity_id.replace('climate.', '')
 
         # Current temperature dataset
         datasets.append({
@@ -954,7 +878,8 @@ def _build_chartjs_datasets(history: list, zone: ZoneSettings) -> list:
             "borderWidth": 2,
             "tension": 0.1,
             "pointRadius": 0,
-            "yAxisID": "y"
+            "yAxisID": "y",
+            "entity_id": entity_id  # Add entity_id for frontend filtering
         })
 
         # Target temperature dataset
@@ -966,7 +891,8 @@ def _build_chartjs_datasets(history: list, zone: ZoneSettings) -> list:
             "borderDash": [5, 5],
             "stepped": "before",  # Step function for setpoint changes
             "pointRadius": 0,
-            "yAxisID": "y"
+            "yAxisID": "y",
+            "entity_id": entity_id  # Add entity_id for frontend filtering
         })
 
         # Heating percentage dataset
@@ -980,13 +906,14 @@ def _build_chartjs_datasets(history: list, zone: ZoneSettings) -> list:
             "stepped": "before",  # Step function - heating is binary/percentage, not smooth
             "tension": 0,  # No curve interpolation
             "pointRadius": 0,
-            "yAxisID": "y1"
+            "yAxisID": "y1",
+            "entity_id": entity_id  # Add entity_id for frontend filtering
         })
 
     return datasets
 
 
-def _build_chartjs_annotations(periods: list) -> dict:
+def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None) -> dict:
     """
     Convert thermal periods to Chart.js annotations.
 
@@ -994,6 +921,10 @@ def _build_chartjs_annotations(periods: list) -> dict:
     Pre-builds Chart.js annotation objects on backend - zero frontend work.
 
     Note: Includes entity_id in annotation metadata for frontend filtering.
+
+    Args:
+        periods: List of thermal periods
+        entity_friendly_names: Dict mapping entity_id to friendly name (optional)
     """
     annotations = {}
 
@@ -1003,8 +934,12 @@ def _build_chartjs_annotations(periods: list) -> dict:
         bg_color = "rgba(239, 68, 68, 0.08)" if is_heating else "rgba(59, 130, 246, 0.08)"
         border_color = "rgba(239, 68, 68, 0.6)" if is_heating else "rgba(59, 130, 246, 0.6)"
 
-        # Extract entity name for filtering (e.g., "climate.vantsidan" -> "vantsidan")
-        entity_name = period["entity_id"].replace("climate.", "")
+        # Use friendly name if available, otherwise use entity_id without domain prefix
+        entity_id = period["entity_id"]
+        if entity_friendly_names and entity_id in entity_friendly_names:
+            entity_name = entity_friendly_names[entity_id]
+        else:
+            entity_name = entity_id.replace("climate.", "")
 
         # Background shading for period - subtle overlay in temperature range
         annotations[f"period_{entity_name}_{idx}"] = {
@@ -1128,7 +1063,19 @@ async def get_zone_chart_data(
                     continue  # Skip malformed timestamps
             history = filtered_history
 
-        # Step 2: Get thermal periods from entity learners
+        # Step 2: Fetch friendly names for all entities
+        entity_friendly_names = {}
+        if ha_client:
+            for entity_id in zone.climate_entities:
+                try:
+                    state = ha_client.get_state(entity_id)
+                    friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+                    entity_friendly_names[entity_id] = friendly_name
+                except Exception as e:
+                    logger.warning(f"Could not fetch friendly name for {entity_id}: {e}")
+                    entity_friendly_names[entity_id] = entity_id
+
+        # Step 3: Get thermal periods from entity learners
         periods = []
         if learning_service:
             for entity_id in zone.climate_entities:
@@ -1137,9 +1084,9 @@ async def get_zone_chart_data(
                     entity_periods = learner.get_periods(hours=hours)
                     periods.extend(entity_periods)
 
-        # Step 3: Transform to Chart.js format
-        datasets = _build_chartjs_datasets(history, zone)
-        annotations = _build_chartjs_annotations(periods)
+        # Step 4: Transform to Chart.js format (with friendly names)
+        datasets = _build_chartjs_datasets(history, zone, entity_friendly_names)
+        annotations = _build_chartjs_annotations(periods, entity_friendly_names)
 
         # Build x-axis scale configuration
         x_scale = {

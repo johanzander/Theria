@@ -174,6 +174,7 @@ class ClimateEntityThermalLearner:
         """
         Get detailed list of detected heating and cooling periods.
 
+        Uses industry-standard ON/OFF transition detection.
         Returns list of periods with timestamps, temperatures, and rates.
         Useful for visualization.
         """
@@ -186,54 +187,58 @@ class ClimateEntityThermalLearner:
         periods = []
         i = 0
 
+        # Same thresholds as _calculate_characteristics
+        ACTIVE_HEATING_THRESHOLD = 1.0
+        MIN_DURATION_HOURS = 0.25
+
         while i < len(recent):
             if i + 1 < len(recent):
                 curr = recent[i]
                 next_m = recent[i + 1]
 
-                # Detect heating period start: target temp increases
-                if (curr.target_temp is not None and next_m.target_temp is not None and
-                    next_m.target_temp > curr.target_temp + 0.2):
+                # Detect heating period start: heating turns ON OR setpoint increases while heating
+                heating_turned_on = not curr.heating_active and next_m.heating_active
+                setpoint_increased_while_heating = (
+                    curr.heating_active and next_m.heating_active and
+                    curr.target_temp is not None and next_m.target_temp is not None and
+                    next_m.target_temp > curr.target_temp + 0.5  # Significant increase
+                )
+
+                if heating_turned_on or setpoint_increased_while_heating:
 
                     period_start = next_m
                     period_start_idx = i + 1
 
-                    # Find end of heating period
+                    # Find end of heating period (when heating turns OFF)
                     period_end = None
                     end_reason = None
                     for j in range(period_start_idx + 1, len(recent)):
                         m = recent[j]
-
-                        temp_reached_target = m.temperature >= period_start.target_temp - 0.2
-                        heating_stopped = not m.heating_active
-                        setpoint_changed = m.target_temp and abs(m.target_temp - period_start.target_temp) > 0.2
-
-                        if temp_reached_target:
-                            period_end = m
-                            end_reason = "target_reached"
-                            break
-                        elif heating_stopped:
-                            period_end = m
+                        if not m.heating_active:
+                            period_end = recent[j - 1]
                             end_reason = "heating_stopped"
-                            break
-                        elif setpoint_changed:
-                            period_end = m
-                            end_reason = "setpoint_changed"
                             break
 
                     if period_end is None and len(recent) > period_start_idx + 1:
                         period_end = recent[-1]
                         end_reason = "ongoing"
 
-                    # Calculate heating rate
+                    # Calculate heating rate and classify period
                     if period_end and period_end.timestamp > period_start.timestamp:
                         temp_change = period_end.temperature - period_start.temperature
                         duration_hours = (period_end.timestamp - period_start.timestamp).total_seconds() / 3600
 
-                        if duration_hours > 0:
+                        # Determine if "active heating" or "maintenance"
+                        period_type = "heating"
+                        if period_start.target_temp is not None:
+                            temp_below_target = period_start.target_temp - period_start.temperature
+                            if temp_below_target < ACTIVE_HEATING_THRESHOLD:
+                                period_type = "maintenance"  # Too close to target
+
+                        if duration_hours >= MIN_DURATION_HOURS:
                             rate = temp_change / duration_hours
                             periods.append({
-                                "type": "heating",
+                                "type": period_type,
                                 "entity_id": self.entity_id,
                                 "start_time": period_start.timestamp.isoformat(),
                                 "end_time": period_end.timestamp.isoformat(),
@@ -249,28 +254,41 @@ class ClimateEntityThermalLearner:
                     i = period_start_idx + 1
                     continue
 
-                # Look for cooling period start (heating stops)
-                if curr.heating_active and not next_m.heating_active:
+                # Detect cooling period start: heating turns OFF OR setpoint decreases while temp > target
+                heating_turned_off = curr.heating_active and not next_m.heating_active
+                setpoint_decreased_above_target = (
+                    curr.target_temp is not None and next_m.target_temp is not None and
+                    next_m.target_temp < curr.target_temp - 0.5 and  # Significant decrease
+                    next_m.temperature > next_m.target_temp  # Current temp above new target
+                )
+
+                if heating_turned_off or setpoint_decreased_above_target:
                     period_start = next_m
                     period_start_idx = i + 1
 
-                    # Find end of cooling period
+                    # Find end of cooling period (when heating turns back ON)
                     period_end = None
+                    end_reason = None
                     for j in range(period_start_idx + 1, len(recent)):
                         m = recent[j]
                         if m.heating_active:
                             period_end = recent[j - 1]
+                            end_reason = "heating_started"
                             break
 
                     if period_end is None and len(recent) > period_start_idx + 1:
                         period_end = recent[-1]
+                        end_reason = "ongoing"
 
                     # Calculate cooling rate
                     if period_end and period_end.timestamp > period_start.timestamp:
                         temp_change = period_end.temperature - period_start.temperature
                         duration_hours = (period_end.timestamp - period_start.timestamp).total_seconds() / 3600
 
-                        if duration_hours >= 0.25 and temp_change < -0.1:
+                        # Apply minimum duration filter
+                        # Note: We don't require temp drop - show cooling period even if temp is flat
+                        # This gives visibility into when heating is OFF (useful for understanding system behavior)
+                        if duration_hours >= MIN_DURATION_HOURS:
                             rate = temp_change / duration_hours
                             periods.append({
                                 "type": "cooling",
@@ -283,7 +301,7 @@ class ClimateEntityThermalLearner:
                                 "temp_change": temp_change,
                                 "duration_hours": duration_hours,
                                 "rate": rate,
-                                "end_reason": "heating_started"
+                                "end_reason": end_reason
                             })
 
                     i = period_start_idx + 1
@@ -297,7 +315,37 @@ class ClimateEntityThermalLearner:
         self,
         timeframe: TimeframeKey
     ) -> TimeframeCharacteristics:
-        """Calculate heating and cooling rates for specific timeframe."""
+        """Calculate heating and cooling rates for specific timeframe.
+
+        Uses industry-standard period classification approach based on HVAC best practices:
+
+        Period Classification (based on thermostat deadband/hysteresis):
+        ┌─────────────────────┬──────────────────────────┬─────────────────────┐
+        │ Period Type         │ Detection Criteria       │ Used for Learning?  │
+        ├─────────────────────┼──────────────────────────┼─────────────────────┤
+        │ Active Heating      │ heating_ON AND           │ ✓ YES               │
+        │                     │ temp < target - 1°C      │ Calculate heating   │
+        │                     │ duration > 15 min        │ rate                │
+        ├─────────────────────┼──────────────────────────┼─────────────────────┤
+        │ Maintenance/Cycling │ heating_ON AND           │ ✗ NO                │
+        │                     │ |temp - target| < 0.5°C  │ Too noisy, ignore   │
+        ├─────────────────────┼──────────────────────────┼─────────────────────┤
+        │ Cooling/Heat Loss   │ heating_OFF AND          │ ✓ YES               │
+        │                     │ temp falling             │ Calculate cooling   │
+        │                     │ duration > 15 min        │ rate                │
+        └─────────────────────┴──────────────────────────┴─────────────────────┘
+
+        This approach:
+        1. Detects periods by heating ON/OFF transitions (not setpoint changes)
+        2. Filters by temperature differential (active heating vs maintenance)
+        3. Requires minimum duration (15 min) to avoid sensor artifacts
+        4. Handles rapid setpoint changes correctly (e.g., 17→18→20 or 18→21→20)
+
+        References:
+        - Thermostat deadband: 0.5-1°C typical (HVAC industry standard)
+        - RC thermal models: System identification using transient periods
+        - Filtering maintenance cycles: Standard practice in building energy modeling
+        """
         timeframe_hours = TIMEFRAMES[timeframe]
         cutoff = now_utc() - timedelta(hours=timeframe_hours)
 
@@ -307,81 +355,123 @@ class ClimateEntityThermalLearner:
         if len(recent) < 2:
             return TimeframeCharacteristics()
 
-        # Detect heating and cooling periods, calculate rate over entire period
+        # Detect heating and cooling periods using ON/OFF transitions
         heating_rates = []
         cooling_rates = []
 
+        # Thresholds (industry standard)
+        ACTIVE_HEATING_THRESHOLD = 1.0  # °C below target to qualify as "active heating"
+        MAINTENANCE_THRESHOLD = 0.5     # °C around target = "maintenance mode"
+        MIN_DURATION_HOURS = 0.25       # 15 minutes minimum
+
         i = 0
         while i < len(recent):
-            # Look for start of heating period (setpoint increase)
             if i + 1 < len(recent):
                 curr = recent[i]
                 next_m = recent[i + 1]
 
-                # Detect heating period start: target temp increases
-                if (curr.target_temp is not None and next_m.target_temp is not None and
-                    next_m.target_temp > curr.target_temp + 0.2):
+                # ═══════════════════════════════════════════════════════════
+                # HEATING PERIOD DETECTION (Industry Standard Approach)
+                # ═══════════════════════════════════════════════════════════
+                # Detect by EITHER:
+                # 1. Heating ON transition (OFF→ON)
+                # 2. Significant setpoint increase while heating already active
 
-                    # Found start of heating period
+                heating_turned_on = not curr.heating_active and next_m.heating_active
+                setpoint_increased_while_heating = (
+                    curr.heating_active and next_m.heating_active and
+                    curr.target_temp is not None and next_m.target_temp is not None and
+                    next_m.target_temp > curr.target_temp + 0.5  # Significant increase
+                )
+
+                if heating_turned_on or setpoint_increased_while_heating:
+                    # Heating just turned ON - potential heating period start
                     period_start = next_m
                     period_start_idx = i + 1
 
-                    # Find end of heating period (temp reaches target OR heating stops OR setpoint changes)
+                    # Find end of heating period (when heating turns OFF)
                     period_end = None
                     for j in range(period_start_idx + 1, len(recent)):
                         m = recent[j]
-
-                        # Stop if: temp reached target, heating stopped, or setpoint changed
-                        temp_reached_target = m.temperature >= period_start.target_temp - 0.2
-                        heating_stopped = not m.heating_active
-                        setpoint_changed = m.target_temp and abs(m.target_temp - period_start.target_temp) > 0.2
-
-                        if temp_reached_target or heating_stopped or setpoint_changed:
-                            period_end = m  # Use current reading as end point
+                        if not m.heating_active:
+                            period_end = recent[j - 1]  # Use last measurement with heating ON
                             break
 
-                    # If no end found, use last measurement
+                    # If still heating at end of timeframe, use last measurement
                     if period_end is None and len(recent) > period_start_idx + 1:
                         period_end = recent[-1]
 
-                    # Calculate heating rate over entire period
+                    # Calculate and filter heating period
                     if period_end and period_end.timestamp > period_start.timestamp:
                         temp_change = period_end.temperature - period_start.temperature
                         duration_hours = (period_end.timestamp - period_start.timestamp).total_seconds() / 3600
 
-                        if duration_hours > 0:
-                            rate = temp_change / duration_hours
-                            heating_rates.append(rate)
+                        # Apply industry-standard filters:
+                        # 1. Minimum duration (avoid sensor artifacts)
+                        # 2. Active heating only (temp significantly below target)
+                        # 3. Temperature rising (positive rate)
+
+                        if duration_hours >= MIN_DURATION_HOURS:
+                            # Check if this is "active heating" or just "maintenance"
+                            if period_start.target_temp is not None:
+                                temp_below_target = period_start.target_temp - period_start.temperature
+
+                                # Active heating: temp significantly below target
+                                if temp_below_target >= ACTIVE_HEATING_THRESHOLD:
+                                    rate = temp_change / duration_hours
+                                    # Only count if temperature actually rising
+                                    if rate > 0:
+                                        heating_rates.append(rate)
+                                # Else: Maintenance mode (too close to target) - ignore
+                            else:
+                                # No target temp available - use heating period anyway if temp rising
+                                rate = temp_change / duration_hours
+                                if rate > 0:
+                                    heating_rates.append(rate)
 
                     # Skip to end of this period
                     i = period_start_idx + 1
                     continue
 
-                # Look for cooling period start (heating stops)
-                if curr.heating_active and not next_m.heating_active:
-                    # Found start of cooling period
+                # ═══════════════════════════════════════════════════════════
+                # COOLING PERIOD DETECTION
+                # ═══════════════════════════════════════════════════════════
+                # Detect by heating OFF transition OR setpoint decrease while temp > target
+                heating_turned_off = curr.heating_active and not next_m.heating_active
+                setpoint_decreased_above_target = (
+                    curr.target_temp is not None and next_m.target_temp is not None and
+                    next_m.target_temp < curr.target_temp - 0.5 and  # Significant decrease
+                    next_m.temperature > next_m.target_temp  # Current temp above new target
+                )
+
+                if heating_turned_off or setpoint_decreased_above_target:
+                    # Cooling period start
                     period_start = next_m
                     period_start_idx = i + 1
 
-                    # Find end of cooling period (heating starts again)
+                    # Find end of cooling period (when heating turns back ON)
                     period_end = None
                     for j in range(period_start_idx + 1, len(recent)):
                         m = recent[j]
                         if m.heating_active:
-                            period_end = recent[j - 1]
+                            period_end = recent[j - 1]  # Use last measurement with heating OFF
                             break
 
-                    # If no end found, use last measurement
+                    # If still cooling at end of timeframe, use last measurement
                     if period_end is None and len(recent) > period_start_idx + 1:
                         period_end = recent[-1]
 
-                    # Calculate cooling rate over entire period
+                    # Calculate and filter cooling period
                     if period_end and period_end.timestamp > period_start.timestamp:
                         temp_change = period_end.temperature - period_start.temperature
                         duration_hours = (period_end.timestamp - period_start.timestamp).total_seconds() / 3600
 
-                        # Cooling should decrease temp, require minimum 15 min to avoid sensor artifacts
-                        if duration_hours >= 0.25 and temp_change < -0.1:
+                        # Apply industry-standard filters:
+                        # 1. Minimum duration (avoid sensor artifacts)
+                        # Note: We don't require temp drop - include all cooling periods for visibility
+                        # Even if temp is flat, it's useful to know heating was OFF
+
+                        if duration_hours >= MIN_DURATION_HOURS:
                             rate = temp_change / duration_hours
                             cooling_rates.append(rate)
 

@@ -151,6 +151,15 @@ class TemperatureHistoryService:
                         target_temps[climate_entity] = attributes.get("temperature")
                         current_temps[climate_entity] = attributes.get("current_temperature")
                         heating_power = attributes.get("heating_power_request")
+
+                        # Fallback: if heating_power_request not available, use hvac_action
+                        if heating_power is None:
+                            hvac_action = attributes.get("hvac_action")
+                            if hvac_action == "heating":
+                                heating_power = 100.0  # Fully heating
+                            elif hvac_action in ["idle", "off"]:
+                                heating_power = 0.0
+
                         if heating_power is not None:
                             heating_requests[climate_entity] = heating_power
                     except Exception as e:
@@ -367,7 +376,7 @@ class TemperatureHistoryService:
 
             # Determine field name based on domain
             if domain == "climate":
-                # For climate, we'll fetch both current and target temperature
+                # For climate, fetch current_temperature, target temperature, and heating_power_request
                 # First fetch current_temperature
                 result_current = get_sensor_timeseries(
                     sensor_name=sensor_name,
@@ -386,10 +395,29 @@ class TemperatureHistoryService:
                     field_name="temperature"
                 )
 
+                # Fetch heating_power_request (for thermal learning)
+                result_heating = get_sensor_timeseries(
+                    sensor_name=sensor_name,
+                    start_time=start_time,
+                    stop_time=end_time,
+                    domain=domain,
+                    field_name="heating_power_request"
+                )
+
+                # Fetch hvac_action_str as fallback (for thermostats without heating_power_request)
+                result_hvac_action = get_sensor_timeseries(
+                    sensor_name=sensor_name,
+                    start_time=start_time,
+                    stop_time=end_time,
+                    domain=domain,
+                    field_name="hvac_action_str",
+                    parse_as_string=True
+                )
+
                 # Convert to HA History API format
                 history_data = []
 
-                # Merge both datasets by timestamp
+                # Merge all datasets by timestamp
                 if result_current.get("status") == "success":
                     for timestamp, value in result_current.get("data", []):
                         history_data.append({
@@ -406,6 +434,22 @@ class TemperatureHistoryService:
                         ts = datetime.fromisoformat(entry["last_changed"])
                         if ts in target_map:
                             entry["attributes"]["temperature"] = target_map[ts]
+
+                # Add heating_power_request data
+                if result_heating.get("status") == "success":
+                    heating_map = {ts: val for ts, val in result_heating.get("data", [])}
+                    for entry in history_data:
+                        ts = datetime.fromisoformat(entry["last_changed"])
+                        if ts in heating_map:
+                            entry["attributes"]["heating_power_request"] = heating_map[ts]
+
+                # Add hvac_action data (for climate entities without heating_power_request)
+                if result_hvac_action.get("status") == "success":
+                    hvac_map = {ts: val for ts, val in result_hvac_action.get("data", [])}
+                    for entry in history_data:
+                        ts = datetime.fromisoformat(entry["last_changed"])
+                        if ts in hvac_map:
+                            entry["attributes"]["hvac_action"] = hvac_map[ts]
 
                 return history_data
 
@@ -490,6 +534,14 @@ class TemperatureHistoryService:
                         current_temp = attributes.get("current_temperature")
                         heating_request = attributes.get("heating_power_request")
 
+                        # Fallback: if heating_power_request not available, use hvac_action
+                        if heating_request is None:
+                            hvac_action = attributes.get("hvac_action")
+                            if hvac_action == "heating":
+                                heating_request = 100.0  # Fully heating
+                            elif hvac_action in ["idle", "off"]:
+                                heating_request = 0.0
+
                         if target_temp is not None:
                             time_buckets[bucket_time]["targets"][entity_id] = float(target_temp)
                         if current_temp is not None:
@@ -535,6 +587,7 @@ class TemperatureHistoryService:
                 avg_temp = sum(temps_list) / len(temps_list)
 
                 # Store in history tracker with historical timestamp
+                # Skip cleanup during backfill to preserve all historical data
                 history_tracker.add_temperature_reading(
                     zone_id=zone.id,
                     current_temp=avg_temp,
@@ -542,7 +595,8 @@ class TemperatureHistoryService:
                     target_temps=bucket_data["targets"],
                     current_temps=bucket_data["currents"],
                     heating_requests=bucket_data["heating_requests"],
-                    timestamp=bucket_time
+                    timestamp=bucket_time,
+                    skip_cleanup=True
                 )
 
                 # Store heating power snapshot if we have heating request data
@@ -554,12 +608,14 @@ class TemperatureHistoryService:
                     heating_active = any(r > 0 for r in request_values)
 
                     # Store with historical timestamp (history_tracker is imported at module level)
+                    # Skip cleanup during backfill to preserve all historical data
                     history_tracker.add_heating_power_snapshot(
                         zone_id=zone.id,
                         avg_heating_request=avg_heating_request,
                         max_heating_request=max_heating_request,
                         heating_active=heating_active,
-                        timestamp=bucket_time
+                        timestamp=bucket_time,
+                        skip_cleanup=True
                     )
 
                 stored_count += 1
