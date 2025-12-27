@@ -11,7 +11,7 @@
 export async function loadNavigation(currentPage = 'dashboard', currentZoneId = null) {
     try {
         // Fetch zones from API
-        const res = await fetch('/api/zones');
+        const res = await fetch('api/zones');
         const data = await res.json();
 
         if (!data.zones || data.zones.length === 0) {
@@ -21,11 +21,11 @@ export async function loadNavigation(currentPage = 'dashboard', currentZoneId = 
 
         // Build navigation HTML
         let navHTML = `
-            <a href="/" ${currentPage === 'dashboard' ? 'class="active"' : ''} style="color: ${currentPage === 'dashboard' ? '#4fd1c5' : '#4fd1c5'};">
+            <a href="./" ${currentPage === 'dashboard' ? 'class="active"' : ''} style="color: ${currentPage === 'dashboard' ? '#4fd1c5' : '#4fd1c5'};">
                 ← Dashboard
             </a>
             <span style="color: #4a5568;">|</span>
-            <a href="/system-insights" ${currentPage === 'system' ? 'class="active"' : ''} style="color: ${currentPage === 'system' ? '#4fd1c5' : '#4fd1c5'};">
+            <a href="system-insights" ${currentPage === 'system' ? 'class="active"' : ''} style="color: ${currentPage === 'system' ? '#4fd1c5' : '#4fd1c5'};">
                 System Insights
             </a>
         `;
@@ -41,7 +41,7 @@ export async function loadNavigation(currentPage = 'dashboard', currentZoneId = 
                 const isActive = currentPage === 'zone' && zone.id === currentZoneId;
                 const icon = zone.icon || '📊';
                 return `
-                    <a href="/zone-insights?zone_id=${zone.id}"
+                    <a href="zone-insights?zone_id=${zone.id}"
                        ${isActive ? 'class="active"' : ''}
                        style="color: ${isActive ? '#fff' : '#4fd1c5'}; margin: 0 5px;">
                         ${icon} ${zone.name}
