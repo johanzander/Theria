@@ -746,9 +746,11 @@
         </div>
     </div>
 
-    <script type="module">
-        import { TheriaDatePicker } from 'static/js/date-picker.js';
-        import { loadNavigation } from 'static/js/navigation.js';
+    <!-- Load external scripts (respects base tag) -->
+    <script src="static/js/date-picker.js"></script>
+    <script src="static/js/navigation.js"></script>
+
+    <script>
 
         // Extract zone_id from URL parameter
         const urlParams = new URLSearchParams(window.location.search);

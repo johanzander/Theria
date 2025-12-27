@@ -8,7 +8,7 @@
  * @param {string} currentPage - Current page type: 'dashboard', 'zone', or 'system'
  * @param {string|null} currentZoneId - Current zone ID if on a zone page
  */
-export async function loadNavigation(currentPage = 'dashboard', currentZoneId = null) {
+async function loadNavigation(currentPage = 'dashboard', currentZoneId = null) {
     try {
         // Fetch zones from API
         const res = await fetch('api/zones');
@@ -67,7 +67,7 @@ export async function loadNavigation(currentPage = 'dashboard', currentZoneId = 
  * Initialize navigation on page load
  * Automatically detects current page and zone from URL
  */
-export function initNavigation() {
+function initNavigation() {
     // Detect current page type
     const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);

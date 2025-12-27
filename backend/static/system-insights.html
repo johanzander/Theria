@@ -362,8 +362,10 @@
 
 </div>
 
-    <script type="module">
-        import { TheriaDatePicker } from 'static/js/date-picker.js';
+    <!-- Load external scripts (respects base tag) -->
+    <script src="static/js/date-picker.js"></script>
+
+    <script>
 
         // Global state
         let zones = [];

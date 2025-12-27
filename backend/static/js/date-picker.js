@@ -2,7 +2,7 @@
  * Reusable date picker component for all Theria pages
  * Provides consistent date range selection across dashboard, zone, and system views
  */
-export class TheriaDatePicker {
+class TheriaDatePicker {
     constructor(containerId, options = {}) {
         this.containerId = containerId;
         this.onRangeChange = options.onRangeChange || (() => {});
