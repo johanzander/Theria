@@ -337,6 +337,14 @@
             </div>
         </div>
 
+        <!-- Aggregated Zone Temperatures -->
+        <div class="card">
+            <h3>📊 All Zones - Temperature & Heating</h3>
+            <div class="chart-container">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+
         <!-- Heat Carrier System Efficiency -->
         <div class="card">
             <h3>⚡ Heat Carrier Delta Temperature (Efficiency Indicator)</h3>
@@ -480,6 +488,7 @@
                 const hours = datePicker.getHoursFromRange();
                 await Promise.all([
                     loadMainHeatingChart(hours),
+                    loadTemperatureChart(hours),
                     loadHeatCarrierChart(hours)
                 ]);
 
