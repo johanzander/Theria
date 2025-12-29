@@ -226,6 +226,29 @@
             50% { opacity: 0.5; transform: scale(0.9); }
         }
 
+        .period-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid;
+        }
+
+        .period-badge-live {
+            background: rgba(79, 209, 197, 0.15);
+            border-color: #4fd1c5;
+            color: #4fd1c5;
+        }
+
+        .period-badge-historical {
+            background: rgba(159, 122, 234, 0.15);
+            border-color: #9f7aea;
+            color: #b794f4;
+        }
+
         .zone-content {
             display: grid;
             grid-template-columns: 160px 1fr;
@@ -858,190 +881,177 @@
             const zone = currentZone;  // Only process current zone
 
             try {
-                // Get thermal periods for current zone (period-based analysis)
-                const hours = datePicker?.getTimeRange().hours || 24;
-                const periodsRes = await fetch(`api/thermal/periods/${zone.id}?hours=${hours}`);
-                const periodsData = await periodsRes.json();
+                const selectedRange = datePicker?.selectedTimeRange || 'today';
+                const isLive = (selectedRange === 'today');
 
-                // Get zone status for current zone
-                const statusRes = await fetch(`api/zones/${zone.id}/status`);
-                const statusData = await statusRes.json();
+                let displayTemp, targetTemp, heatingRate, coolingRate, confidence, heatingSamples, coolingSamples;
+                let periodBadge, tempLabel;
 
-                // Calculate zone-level statistics from periods
-                const heatingPeriods = periodsData.periods.filter(p => p.type === 'heating');
-                const coolingPeriods = periodsData.periods.filter(p => p.type === 'cooling');
+                if (isLive) {
+                    // LIVE MODE: Use current status endpoint
+                    const statusRes = await fetch(`api/zones/${zone.id}/status`);
+                    const statusData = await statusRes.json();
 
-                const heatingRate = heatingPeriods.length > 0
-                    ? heatingPeriods.reduce((sum, p) => sum + p.rate, 0) / heatingPeriods.length
-                    : 0;
-                const coolingRate = coolingPeriods.length > 0
-                    ? coolingPeriods.reduce((sum, p) => sum + p.rate, 0) / coolingPeriods.length
-                    : 0;
+                    // Get current values from status
+                    displayTemp = statusData.average_temperature || 0;
+                    targetTemp = statusData.climate_states?.[0]?.target_temperature;
 
-                // Calculate confidence based on number and total duration of periods
-                const totalPeriods = heatingPeriods.length + coolingPeriods.length;
-                const totalDuration = periodsData.periods.reduce((sum, p) => sum + p.duration_hours, 0);
-                const confidence = Math.min(1.0, totalPeriods / 20 + totalDuration / 100);
+                    // Get thermal characteristics for current zone (live learning data)
+                    const thermalRes = await fetch(`api/thermal/characteristics?zone_id=${zone.id}`);
+                    const thermalData = await thermalRes.json();
 
-                const confidenceClass = confidence >= 0.7 ? 'confidence-high' :
-                                          confidence >= 0.4 ? 'confidence-medium' : 'confidence-low';
+                    heatingRate = thermalData.heating_rate || 0;
+                    coolingRate = thermalData.cooling_rate_base || 0;
+                    confidence = thermalData.overall_confidence || 0;
+                    heatingSamples = thermalData.heating_samples || 0;
+                    coolingSamples = thermalData.cooling_samples || 0;
 
-                // Create charData-compatible object for existing display code
-                const charData = {
-                    heating_rate: heatingRate,
-                    cooling_rate_base: coolingRate,
-                    heating_samples: heatingPeriods.length,
-                    cooling_samples: coolingPeriods.length,
-                    overall_confidence: confidence
-                };
+                    periodBadge = '<span class="period-badge period-badge-live">● Live</span>';
+                    tempLabel = 'Current';
 
-                // Calculate period-specific statistics (not just "current")
-                // Average temperature over the selected period from all period data
-                const allPeriods = periodsData.periods;
-                let periodAvgTemp = 0;
-                let periodTargetTemp = null;
+                } else {
+                    // HISTORICAL MODE: Use period stats endpoint
+                    const timeBounds = datePicker.buildChartDataUrl('dummy');
+                    const fromParam = new URLSearchParams(timeBounds.split('?')[1]).get('from');
+                    const toParam = new URLSearchParams(timeBounds.split('?')[1]).get('to');
 
-                if (allPeriods.length > 0) {
-                    // Calculate weighted average temperature (weighted by duration)
-                    let totalTempTime = 0;
-                    let totalTime = 0;
+                    const statsRes = await fetch(`api/zones/${zone.id}/period_stats?from=${fromParam}&to=${toParam}`);
+                    const statsData = await statsRes.json();
 
-                    allPeriods.forEach(period => {
-                        const avgPeriodTemp = (period.start_temp + period.end_temp) / 2;
-                        totalTempTime += avgPeriodTemp * period.duration_hours;
-                        totalTime += period.duration_hours;
-                    });
+                    // Use period averages
+                    displayTemp = statsData.temperature?.average || 0;
+                    targetTemp = null;  // Grey out target for historical periods
 
-                    periodAvgTemp = totalTime > 0 ? totalTempTime / totalTime : 0;
+                    heatingRate = statsData.heating?.rate || 0;
+                    coolingRate = statsData.cooling?.rate || 0;
+                    confidence = (statsData.confidence || 0) / 100;  // Convert from percentage
+                    heatingSamples = statsData.heating?.samples || 0;
+                    coolingSamples = statsData.cooling?.samples || 0;
 
-                    // Use most recent period's target temp
-                    const recentPeriod = allPeriods[allPeriods.length - 1];
-                    periodTargetTemp = recentPeriod.target_temp;
+                    // Period badge with label
+                    const periodLabel = statsData.period?.label || selectedRange.toUpperCase();
+                    periodBadge = `<span class="period-badge period-badge-historical">${periodLabel} Average</span>`;
+
+                    // Temperature label
+                    tempLabel = selectedRange === 'yesterday' ? 'Yesterday' :
+                                selectedRange === 'week' ? 'Week Avg' :
+                                selectedRange === 'month' ? 'Month Avg' : 'Average';
                 }
 
-                // Fallback to current values if no period data
-                const displayTemp = periodAvgTemp > 0 ? periodAvgTemp : (statusData.average_temperature || 0);
-                const targetTemp = periodTargetTemp || statusData.climate_states?.[0]?.target_temperature;
+                // Calculate gauge stroke-dashoffset (circumference = 264)
+                const gaugeOffset = 264 * (1 - confidence);
 
-                // Label for gauge (indicates time period)
-                const periodLabel = datePicker?.selectedTimeRange || 'today';
-                const tempLabel = periodAvgTemp > 0 ?
-                    (periodLabel === 'today' ? 'Today Avg' :
-                     periodLabel === 'yesterday' ? 'Yesterday' :
-                     periodLabel === 'week' ? 'Week Avg' :
-                     periodLabel === 'month' ? 'Month Avg' : 'Average')
-                    : 'Current';
+                // Determine confidence class and gauge gradient
+                const confidenceClass = confidence >= 0.7 ? 'confidence-high' :
+                                        confidence >= 0.4 ? 'confidence-medium' : 'confidence-low';
 
-                    // Calculate gauge stroke-dashoffset (circumference = 264)
-                    const gaugeOffset = 264 * (1 - confidence);
+                const gaugeGradientId = `gaugeGradient_${zone.id}`;
+                let gradientStops = '';
+                if (confidence >= 0.7) {
+                    gradientStops = '<stop offset="0%" style="stop-color:#4fd1c5;stop-opacity:1" /><stop offset="100%" style="stop-color:#38b2ac;stop-opacity:1" />';
+                } else if (confidence >= 0.4) {
+                    gradientStops = '<stop offset="0%" style="stop-color:#ed8936;stop-opacity:1" /><stop offset="100%" style="stop-color:#f6ad55;stop-opacity:1" />';
+                } else {
+                    gradientStops = '<stop offset="0%" style="stop-color:#e53e3e;stop-opacity:1" /><stop offset="100%" style="stop-color:#fc8181;stop-opacity:1" />';
+                }
 
-                    // Determine gauge gradient based on confidence
-                    const gaugeGradientId = `gaugeGradient_${zone.id}`;
-                    let gradientStops = '';
-                    if (confidence >= 0.7) {
-                        gradientStops = '<stop offset="0%" style="stop-color:#4fd1c5;stop-opacity:1" /><stop offset="100%" style="stop-color:#38b2ac;stop-opacity:1" />';
-                    } else if (confidence >= 0.4) {
-                        gradientStops = '<stop offset="0%" style="stop-color:#ed8936;stop-opacity:1" /><stop offset="100%" style="stop-color:#f6ad55;stop-opacity:1" />';
-                    } else {
-                        gradientStops = '<stop offset="0%" style="stop-color:#e53e3e;stop-opacity:1" /><stop offset="100%" style="stop-color:#fc8181;stop-opacity:1" />';
-                    }
+                overviewHTML.push(`
+                    <div class="zone-card">
+                        <div class="zone-card-header">
+                            <h3>${zone.name}</h3>
+                            ${periodBadge}
+                        </div>
 
-                    overviewHTML.push(`
-                        <div class="zone-card">
-                            <div class="zone-card-header">
-                                <h3>${zone.name}</h3>
+                        <div class="zone-content">
+                            <!-- Left: Temperature Gauge -->
+                            <div class="temp-gauge">
+                                <div class="gauge-container">
+                                    <svg class="gauge-svg" viewBox="0 0 100 100">
+                                        <defs>
+                                            <linearGradient id="${gaugeGradientId}" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                ${gradientStops}
+                                            </linearGradient>
+                                        </defs>
+                                        <circle class="gauge-bg" cx="50" cy="50" r="42" />
+                                        <circle class="gauge-progress" cx="50" cy="50" r="42"
+                                                stroke-dasharray="264"
+                                                stroke-dashoffset="${gaugeOffset}"
+                                                style="stroke: url(#${gaugeGradientId})" />
+                                    </svg>
+
+                                    <div class="temp-display">
+                                        <div class="current-temp">
+                                            ${displayTemp.toFixed(1)}<span class="temp-unit">°</span>
+                                        </div>
+                                        <div class="temp-label">${tempLabel}</div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div class="zone-content">
-                                <!-- Left: Temperature Gauge -->
-                                <div class="temp-gauge">
-                                    <div class="gauge-container">
-                                        <svg class="gauge-svg" viewBox="0 0 100 100">
-                                            <defs>
-                                                <linearGradient id="${gaugeGradientId}" x1="0%" y1="0%" x2="100%" y2="100%">
-                                                    ${gradientStops}
-                                                </linearGradient>
-                                            </defs>
-                                            <circle class="gauge-bg" cx="50" cy="50" r="42" />
-                                            <circle class="gauge-progress" cx="50" cy="50" r="42"
-                                                    stroke-dasharray="264"
-                                                    stroke-dashoffset="${gaugeOffset}"
-                                                    style="stroke: url(#${gaugeGradientId})" />
+                            <!-- Right: Metrics Grid -->
+                            <div class="zone-metrics">
+                                <!-- Target Temperature -->
+                                <div class="metric metric-target">
+                                    <div class="metric-label">
+                                        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M12 2v20M17 7l-5-5-5 5"/>
                                         </svg>
+                                        Target
+                                    </div>
+                                    <div class="metric-value" style="${!isLive ? 'opacity: 0.3;' : ''}">${targetTemp ? targetTemp.toFixed(1) + '°' : '—'}</div>
+                                </div>
 
-                                        <div class="temp-display">
-                                            <div class="current-temp">
-                                                ${displayTemp.toFixed(1)}<span class="temp-unit">°</span>
-                                            </div>
-                                            <div class="temp-label">${tempLabel}</div>
-                                        </div>
+                                <!-- Heating Rate -->
+                                <div class="metric metric-heating">
+                                    <div class="metric-label">
+                                        <svg class="metric-icon" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 2c.6 0 1 .4 1 1v3c0 .6-.4 1-1 1s-1-.4-1-1V3c0-.6.4-1 1-1zm0 15c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z"/>
+                                        </svg>
+                                        Heating
+                                    </div>
+                                    <div class="metric-value metric-value-small">
+                                        <span class="rate-arrow heating-arrow">↑</span>${heatingRate >= 0 ? '+' : ''}${heatingRate.toFixed(2)}°/h
                                     </div>
                                 </div>
 
-                                <!-- Right: Metrics Grid -->
-                                <div class="zone-metrics">
-                                    <!-- Target Temperature -->
-                                    <div class="metric metric-target">
-                                        <div class="metric-label">
-                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <path d="M12 2v20M17 7l-5-5-5 5"/>
-                                            </svg>
-                                            Target
-                                        </div>
-                                        <div class="metric-value">${targetTemp?.toFixed(1) || 'N/A'}°</div>
+                                <!-- Samples -->
+                                <div class="metric metric-samples">
+                                    <div class="metric-label">
+                                        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                                            <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                                        </svg>
+                                        Samples
                                     </div>
+                                    <div class="metric-value metric-value-small">H:${heatingSamples} C:${coolingSamples}</div>
+                                </div>
 
-                                    <!-- Heating Rate -->
-                                    <div class="metric metric-heating">
-                                        <div class="metric-label">
-                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 2c.6 0 1 .4 1 1v3c0 .6-.4 1-1 1s-1-.4-1-1V3c0-.6.4-1 1-1zm0 15c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z"/>
-                                            </svg>
-                                            Heating
-                                        </div>
-                                        <div class="metric-value metric-value-small">
-                                            <span class="rate-arrow heating-arrow">↑</span>${charData.heating_rate >= 0 ? '+' : ''}${charData.heating_rate?.toFixed(2) || 'N/A'}°/h
-                                        </div>
+                                <!-- Cooling Rate -->
+                                <div class="metric metric-cooling">
+                                    <div class="metric-label">
+                                        <svg class="metric-icon" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z"/>
+                                        </svg>
+                                        Cooling
                                     </div>
-
-                                    <!-- Samples -->
-                                    <div class="metric metric-samples">
-                                        <div class="metric-label">
-                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                                                <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-                                            </svg>
-                                            Samples
-                                        </div>
-                                        <div class="metric-value metric-value-small">H:${charData.heating_samples || 0} C:${charData.cooling_samples || 0}</div>
+                                    <div class="metric-value metric-value-small">
+                                        <span class="rate-arrow cooling-arrow">↓</span>${coolingRate.toFixed(2)}°/h
                                     </div>
+                                </div>
 
-                                    <!-- Cooling Rate -->
-                                    <div class="metric metric-cooling">
-                                        <div class="metric-label">
-                                            <svg class="metric-icon" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z"/>
-                                            </svg>
-                                            Cooling
-                                        </div>
-                                        <div class="metric-value metric-value-small">
-                                            <span class="rate-arrow cooling-arrow">↓</span>${charData.cooling_rate_base?.toFixed(2) || 'N/A'}°/h
-                                        </div>
+                                <!-- Confidence (full width) -->
+                                <div class="confidence-metric">
+                                    <div class="confidence-label-group">
+                                        <div class="confidence-label">Confidence</div>
+                                        <div class="confidence-value ${confidenceClass}">${(confidence * 100).toFixed(0)}%</div>
                                     </div>
-
-                                    <!-- Confidence (full width) -->
-                                    <div class="confidence-metric">
-                                        <div class="confidence-label-group">
-                                            <div class="confidence-label">Confidence</div>
-                                            <div class="confidence-value ${confidenceClass}">${(confidence * 100).toFixed(0)}%</div>
-                                        </div>
-                                        <div class="confidence-bar">
-                                            <div class="confidence-fill ${confidenceClass}" style="width: ${(confidence * 100).toFixed(0)}%;"></div>
-                                        </div>
+                                    <div class="confidence-bar">
+                                        <div class="confidence-fill ${confidenceClass}" style="width: ${(confidence * 100).toFixed(0)}%;"></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+                    </div>
                 `);
 
                 document.getElementById('zone-overview').innerHTML = overviewHTML.join('');

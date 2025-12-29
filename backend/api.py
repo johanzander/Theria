@@ -335,6 +335,160 @@ async def get_status():
     }
 
 
+@router.get("/api/zones/{zone_id}/period_stats")
+async def get_zone_period_stats(
+    zone_id: str,
+    from_ms: int = Query(None, alias="from"),
+    to: int = None
+):
+    """Get aggregated statistics for a zone over a time period.
+
+    Used for displaying period averages on dashboard when viewing historical ranges
+    (Yesterday, Week, Month) instead of live values.
+
+    Args:
+        zone_id: Zone identifier
+        from_ms: Start time as Unix timestamp in milliseconds
+        to: End time as Unix timestamp in milliseconds
+
+    Returns:
+        Aggregated statistics for the period
+    """
+    from datetime import datetime
+
+    # Find zone
+    zone = next((z for z in ZONES if z.id == zone_id), None)
+    if not zone:
+        raise HTTPException(status_code=404, detail=f"Zone not found: {zone_id}")
+
+    # Parse timestamps
+    if from_ms is None or to is None:
+        raise HTTPException(status_code=400, detail="Both 'from' and 'to' parameters required")
+
+    start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
+    end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+
+    # Calculate hours for fetching data
+    hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
+
+    # Get temperature history for period
+    history = history_tracker.get_temperature_history(zone_id=zone_id, hours=hours)
+
+    # Filter to exact period
+    filtered_history = []
+    for h in history:
+        ts_str = h["timestamp"]
+        if ts_str.endswith('Z'):
+            ts_str = ts_str[:-1] + '+00:00'
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if start_dt <= ts < end_dt:
+                filtered_history.append(h)
+        except ValueError:
+            continue
+
+    # Calculate average temperature
+    avg_temp = None
+    if filtered_history:
+        temps = [h["current_temp"] for h in filtered_history if h.get("current_temp") is not None]
+        if temps:
+            avg_temp = sum(temps) / len(temps)
+
+    # Calculate average target temperature
+    avg_target = None
+    if filtered_history:
+        targets = [h["scheduled_temp"] for h in filtered_history if h.get("scheduled_temp") is not None]
+        if targets:
+            avg_target = sum(targets) / len(targets)
+
+    # Get thermal characteristics for period
+    heating_rate = None
+    cooling_rate = None
+    heating_samples = 0
+    cooling_samples = 0
+    confidence = 0
+
+    # Calculate duration in hours
+    duration_hours = (end_dt - start_dt).total_seconds() / 3600
+
+    if learning_service:
+        # Get thermal periods for the ACTUAL selected time range (not just 24h!)
+        zone_heating_rates = []
+        zone_cooling_rates = []
+
+        for entity_id in zone.climate_entities:
+            if entity_id in learning_service.entity_learners:
+                learner = learning_service.entity_learners[entity_id]
+
+                # Get periods for the actual selected time range
+                entity_periods = learner.get_periods(hours=int(duration_hours))
+
+                # Filter and calculate rates from actual periods in this time range
+                heating_periods = [p for p in entity_periods if p["type"] == "heating"]
+                cooling_periods = [p for p in entity_periods if p["type"] == "cooling"]
+
+                if heating_periods:
+                    avg_heating = sum(p["rate"] for p in heating_periods) / len(heating_periods)
+                    zone_heating_rates.append(avg_heating)
+                    heating_samples += len(heating_periods)
+
+                if cooling_periods:
+                    avg_cooling = sum(p["rate"] for p in cooling_periods) / len(cooling_periods)
+                    zone_cooling_rates.append(avg_cooling)
+                    cooling_samples += len(cooling_periods)
+
+        # Calculate zone averages from all entities
+        if zone_heating_rates:
+            heating_rate = sum(zone_heating_rates) / len(zone_heating_rates)
+
+        if zone_cooling_rates:
+            cooling_rate = sum(zone_cooling_rates) / len(zone_cooling_rates)
+
+        # Calculate confidence based on number of samples
+        total_samples = heating_samples + cooling_samples
+        if total_samples > 0:
+            # Confidence scales with number of samples (maxes out at 100% with 50+ samples)
+            confidence = min(100, (total_samples / 50) * 100)
+
+    # Determine period label
+    if duration_hours <= 24:
+        period_label = "Today" if end_dt.date() == datetime.now(timezone.utc).date() else "Yesterday"
+    elif duration_hours <= 168:
+        period_label = "Week"
+    else:
+        period_label = "Month"
+
+    return {
+        "zone_id": zone_id,
+        "zone_name": zone.name,
+        "period": {
+            "from": start_dt.isoformat(),
+            "to": end_dt.isoformat(),
+            "label": period_label,
+            "hours": duration_hours
+        },
+        "temperature": {
+            "average": round(avg_temp, 1) if avg_temp is not None else None,
+            "unit": "°C"
+        },
+        "target": {
+            "average": round(avg_target, 1) if avg_target is not None else None,
+            "unit": "°C"
+        },
+        "heating": {
+            "rate": round(heating_rate, 2) if heating_rate is not None else None,
+            "samples": heating_samples,
+            "unit": "°C/h"
+        },
+        "cooling": {
+            "rate": round(cooling_rate, 2) if cooling_rate is not None else None,
+            "samples": cooling_samples,
+            "unit": "°C/h"
+        },
+        "confidence": round(confidence, 0) if confidence > 0 else None
+    }
+
+
 @router.get("/api/zones/{zone_id}/history")
 async def get_zone_history(
     zone_id: str,
