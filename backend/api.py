@@ -1099,6 +1099,7 @@ async def get_zone_chart_data(
                 },
                 "tooltipFormat": "PPpp"
             },
+            "bounds": "data",  # Ensure axis extends to min/max, not just to ticks
             "ticks": {
                 "color": "#a0aec0",
                 "maxRotation": 0,
