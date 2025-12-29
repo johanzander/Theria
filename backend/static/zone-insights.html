@@ -1202,12 +1202,12 @@
 
             try {
                 // Fetch temperature history with date range
-                const historyUrl = datePicker.buildChartDataUrl(`/api/zones/${zone.id}/history`);
+                const historyUrl = datePicker.buildChartDataUrl(`api/zones/${zone.id}/history`);
                 const res = await fetch(historyUrl);
                 const tempData = await res.json();
 
                 // Fetch heating power timeline with date range
-                const heatingUrl = datePicker.buildChartDataUrl(`/api/zones/${zone.id}/heating_timeline`);
+                const heatingUrl = datePicker.buildChartDataUrl(`api/zones/${zone.id}/heating_timeline`);
                 const heatingRes = await fetch(heatingUrl);
                 const heatingData = await heatingRes.json();
 
