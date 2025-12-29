@@ -192,8 +192,10 @@ class TheriaDatePicker {
         } else if (this.selectedTimeRange === 'today') {
             const todayStart = new Date(now);
             todayStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(now);
+            todayEnd.setHours(23, 59, 59, 999);
             fromMs = todayStart.getTime();
-            toMs = now.getTime();
+            toMs = todayEnd.getTime();
         } else if (this.selectedTimeRange === 'yesterday') {
             const yesterdayStart = new Date(now);
             yesterdayStart.setDate(yesterdayStart.getDate() - 1);
@@ -208,13 +210,17 @@ class TheriaDatePicker {
             const monday = new Date(now);
             monday.setDate(monday.getDate() - daysToMonday);
             monday.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(now);
+            todayEnd.setHours(23, 59, 59, 999);
             fromMs = monday.getTime();
-            toMs = now.getTime();
+            toMs = todayEnd.getTime();
         } else if (this.selectedTimeRange === 'month') {
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
             monthStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(now);
+            todayEnd.setHours(23, 59, 59, 999);
             fromMs = monthStart.getTime();
-            toMs = now.getTime();
+            toMs = todayEnd.getTime();
         } else {
             const hours = this.getHoursFromRange();
             fromMs = now.getTime() - (hours * 60 * 60 * 1000);
@@ -263,8 +269,10 @@ class TheriaDatePicker {
         } else if (this.selectedTimeRange === 'today') {
             const todayStart = new Date(now);
             todayStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(now);
+            todayEnd.setHours(23, 59, 59, 999);
             xAxisMin = todayStart.toISOString();
-            xAxisMax = now.toISOString();
+            xAxisMax = todayEnd.toISOString();
         } else if (this.selectedTimeRange === 'yesterday') {
             const yesterdayStart = new Date(now);
             yesterdayStart.setDate(yesterdayStart.getDate() - 1);
@@ -279,13 +287,17 @@ class TheriaDatePicker {
             const monday = new Date(now);
             monday.setDate(monday.getDate() - daysToMonday);
             monday.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(now);
+            todayEnd.setHours(23, 59, 59, 999);
             xAxisMin = monday.toISOString();
-            xAxisMax = now.toISOString();
+            xAxisMax = todayEnd.toISOString();
         } else if (this.selectedTimeRange === 'month') {
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
             monthStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(now);
+            todayEnd.setHours(23, 59, 59, 999);
             xAxisMin = monthStart.toISOString();
-            xAxisMax = now.toISOString();
+            xAxisMax = todayEnd.toISOString();
         } else {
             const hours = this.getHoursFromRange();
             const fromTime = new Date(now.getTime() - (hours * 60 * 60 * 1000));
