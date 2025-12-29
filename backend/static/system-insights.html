@@ -1033,9 +1033,7 @@
         }
 
         async function loadTemperatureChart(hours) {
-            try {
-                console.log(`[loadTemperatureChart] Starting with hours=${hours}, zones.length=${zones.length}`);
-                const datasets = [];
+            const datasets = [];
 
             // Generate fixed time axis from (now - hours) to now, rounded to full hours
             const now = new Date();
@@ -1088,12 +1086,10 @@
                     // Fetch temperature history
                     const res = await fetch(`api/zones/${zone.id}/history?hours=${hours}`);
                     const tempData = await res.json();
-                    console.log(`[loadTemperatureChart] Zone ${zone.id}: Fetched ${tempData.history?.length || 0} temperature readings`);
 
                     // Fetch heating power timeline
                     const heatingRes = await fetch(`api/zones/${zone.id}/heating_timeline?hours=${hours}`);
                     const heatingData = await heatingRes.json();
-                    console.log(`[loadTemperatureChart] Zone ${zone.id}: Fetched ${heatingData.timeline?.length || 0} heating readings`);
 
                     zoneDataList.push({
                         zone,
@@ -1202,14 +1198,7 @@
                 }
             }
 
-            console.log(`[loadTemperatureChart] Created ${datasets.length} datasets`);
-
             const ctx = document.getElementById('tempChart');
-            if (!ctx) {
-                console.error('[loadTemperatureChart] Canvas element #tempChart not found!');
-                return;
-            }
-
             if (charts.temp) {
                 charts.temp.destroy();
             }
@@ -1286,12 +1275,6 @@
                     }
                 }
             });
-
-                console.log('[loadTemperatureChart] Chart created successfully');
-            } catch (error) {
-                console.error('[loadTemperatureChart] Error:', error);
-                console.error('Stack trace:', error.stack);
-            }
         }
 
 
