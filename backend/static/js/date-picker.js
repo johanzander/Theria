@@ -205,17 +205,18 @@ class TheriaDatePicker {
             fromMs = yesterdayStart.getTime();
             toMs = yesterdayEnd.getTime();
         } else if (this.selectedTimeRange === 'week') {
-            const dayOfWeek = now.getDay();
-            const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-            const monday = new Date(now);
-            monday.setDate(monday.getDate() - daysToMonday);
-            monday.setHours(0, 0, 0, 0);
+            // Last 7 complete days (industry standard rolling window)
+            const weekStart = new Date(now);
+            weekStart.setDate(weekStart.getDate() - 6);  // 6 days ago + today = 7 days
+            weekStart.setHours(0, 0, 0, 0);
             const todayEnd = new Date(now);
             todayEnd.setHours(23, 59, 59, 999);
-            fromMs = monday.getTime();
+            fromMs = weekStart.getTime();
             toMs = todayEnd.getTime();
         } else if (this.selectedTimeRange === 'month') {
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            // Last 30 complete days (industry standard rolling window)
+            const monthStart = new Date(now);
+            monthStart.setDate(monthStart.getDate() - 29);  // 29 days ago + today = 30 days
             monthStart.setHours(0, 0, 0, 0);
             const todayEnd = new Date(now);
             todayEnd.setHours(23, 59, 59, 999);
@@ -232,10 +233,10 @@ class TheriaDatePicker {
 
     getHoursFromRange() {
         const rangeMap = {
-            'today': 48,
-            'yesterday': 48,
-            'week': 168,
-            'month': 744
+            'today': 48,        // Fetch 2 days to ensure complete data
+            'yesterday': 48,    // Fetch 2 days to ensure complete data
+            'week': 168,        // 7 days * 24 hours = 168
+            'month': 720        // 30 days * 24 hours = 720
         };
 
         if (this.customDateRange && this.customDateRange.start && this.customDateRange.end) {
@@ -282,17 +283,18 @@ class TheriaDatePicker {
             xAxisMin = yesterdayStart.toISOString();
             xAxisMax = yesterdayEnd.toISOString();
         } else if (this.selectedTimeRange === 'week') {
-            const dayOfWeek = now.getDay();
-            const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-            const monday = new Date(now);
-            monday.setDate(monday.getDate() - daysToMonday);
-            monday.setHours(0, 0, 0, 0);
+            // Last 7 complete days (industry standard rolling window)
+            const weekStart = new Date(now);
+            weekStart.setDate(weekStart.getDate() - 6);  // 6 days ago + today = 7 days
+            weekStart.setHours(0, 0, 0, 0);
             const todayEnd = new Date(now);
             todayEnd.setHours(23, 59, 59, 999);
-            xAxisMin = monday.toISOString();
+            xAxisMin = weekStart.toISOString();
             xAxisMax = todayEnd.toISOString();
         } else if (this.selectedTimeRange === 'month') {
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            // Last 30 complete days (industry standard rolling window)
+            const monthStart = new Date(now);
+            monthStart.setDate(monthStart.getDate() - 29);  // 29 days ago + today = 30 days
             monthStart.setHours(0, 0, 0, 0);
             const todayEnd = new Date(now);
             todayEnd.setHours(23, 59, 59, 999);
