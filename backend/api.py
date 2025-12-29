@@ -43,6 +43,7 @@ def load_zones_from_config():
     options_path = "/data/options.json"
     if os.path.exists(options_path):
         import json
+
         with open(options_path) as f:
             options = json.load(f)
             zone_configs = options.get("zones", [])
@@ -51,6 +52,7 @@ def load_zones_from_config():
     else:
         # Development: load from config.yaml if available
         import yaml
+
         config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
         if os.path.exists(config_path):
             with open(config_path) as f:
@@ -66,19 +68,16 @@ def load_zones_from_config():
             ZoneSettings(
                 id="butik",
                 name="Butik",
-                climate_entities=[
-                    "climate.vantsidan",
-                    "climate.klippsidan"
-                ],
+                climate_entities=["climate.vantsidan", "climate.klippsidan"],
                 temp_sensors=[
                     "climate.vantsidan",
                     "climate.klippsidan",
                     "sensor.schamponeringstolen_temperature",
-                    "sensor.butik_temperature_2"
+                    "sensor.butik_temperature_2",
                 ],
                 comfort_target=21.0,
                 allowed_deviation=1.0,
-                enabled=True
+                enabled=True,
             )
         ]
         logger.warning("Using development zone configuration")
@@ -92,6 +91,7 @@ price_optimizer = None
 if ha_client:
     try:
         import yaml
+
         config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
         if os.path.exists(config_path):
             with open(config_path) as f:
@@ -110,15 +110,20 @@ if ha_client:
                             price_entity=price_entity,
                             expensive_hours=price_config.get("expensive_hours", 4),
                             cheap_hours=price_config.get("cheap_hours", 4),
-                            adjustment_degrees=price_config.get("adjustment_degrees", 0.5)
+                            adjustment_degrees=price_config.get(
+                                "adjustment_degrees", 0.5
+                            ),
                         )
-                        logger.info(f"Price optimizer initialized (sensor: {sensor_key} -> {price_entity})")
+                        logger.info(
+                            f"Price optimizer initialized (sensor: {sensor_key} -> {price_entity})"
+                        )
     except Exception as e:
         logger.warning(f"Failed to initialize price optimizer in API: {e}")
 
 
 class SetTemperatureRequest(BaseModel):
     """Request body for setting temperature."""
+
     temperature: float
 
 
@@ -168,21 +173,23 @@ async def get_zone_status(zone_id: str):
         for sensor in zone.temp_sensors:
             try:
                 temp = ha_client.get_temperature(sensor)
-                temperatures.append({
-                    "entity_id": sensor,
-                    "temperature": temp,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                temperatures.append(
+                    {
+                        "entity_id": sensor,
+                        "temperature": temp,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
             except Exception as e:
                 logger.warning(f"Failed to read {sensor}: {e}")
-                temperatures.append({
-                    "entity_id": sensor,
-                    "temperature": None,
-                    "error": str(e)
-                })
+                temperatures.append(
+                    {"entity_id": sensor, "temperature": None, "error": str(e)}
+                )
 
         # Calculate average of valid temperatures
-        valid_temps = [t["temperature"] for t in temperatures if t["temperature"] is not None]
+        valid_temps = [
+            t["temperature"] for t in temperatures if t["temperature"] is not None
+        ]
         avg_temp = sum(valid_temps) / len(valid_temps) if valid_temps else None
 
         # Read climate entity states with heating_power_request
@@ -196,7 +203,9 @@ async def get_zone_status(zone_id: str):
 
                 # Get full state to extract heating_power_request attribute
                 full_state = ha_client.get_state(climate_entity)
-                heating_power_request = full_state.get("attributes", {}).get("heating_power_request")
+                heating_power_request = full_state.get("attributes", {}).get(
+                    "heating_power_request"
+                )
 
                 # Add heating_power_request to climate state
                 if heating_power_request is not None:
@@ -207,10 +216,7 @@ async def get_zone_status(zone_id: str):
                 climate_states.append(state)
             except Exception as e:
                 logger.warning(f"Failed to read {climate_entity}: {e}")
-                climate_states.append({
-                    "entity_id": climate_entity,
-                    "error": str(e)
-                })
+                climate_states.append({"entity_id": climate_entity, "error": str(e)})
 
         # Calculate average heating power request (if available)
         avg_heating_request = None
@@ -220,10 +226,14 @@ async def get_zone_status(zone_id: str):
             # Find max heating request
             for state in climate_states:
                 if "heating_power_request" in state:
-                    max_heating_request = max(max_heating_request, state["heating_power_request"])
+                    max_heating_request = max(
+                        max_heating_request, state["heating_power_request"]
+                    )
 
         # Determine heating status based on heating_power_request
-        is_heating = avg_heating_request > 0 if avg_heating_request is not None else None
+        is_heating = (
+            avg_heating_request > 0 if avg_heating_request is not None else None
+        )
 
         # Note: Temperature and heating power history is collected by the background
         # TemperatureHistoryService, not by this API endpoint. This ensures data
@@ -279,24 +289,24 @@ async def set_zone_temperature(zone_id: str, request: SetTemperatureRequest):
                     time.sleep(0.5)
 
                 ha_client.set_temperature(climate_entity, request.temperature)
-                results.append({
-                    "entity_id": climate_entity,
-                    "status": "success",
-                    "target_temperature": request.temperature
-                })
+                results.append(
+                    {
+                        "entity_id": climate_entity,
+                        "status": "success",
+                        "target_temperature": request.temperature,
+                    }
+                )
             except Exception as e:
                 logger.error(f"Failed to set temperature on {climate_entity}: {e}")
-                errors.append({
-                    "entity_id": climate_entity,
-                    "status": "failed",
-                    "error": str(e)
-                })
+                errors.append(
+                    {"entity_id": climate_entity, "status": "failed", "error": str(e)}
+                )
 
         if errors and not results:
             # All failed
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to set temperature on all radiators: {errors}"
+                detail=f"Failed to set temperature on all radiators: {errors}",
             )
 
         # Log control event
@@ -305,7 +315,7 @@ async def set_zone_temperature(zone_id: str, request: SetTemperatureRequest):
                 zone_id=zone.id,
                 action="manual_override",
                 details=f"Manual temperature set to {request.temperature}°C on {len(results)} radiators",
-                temperature=request.temperature
+                temperature=request.temperature,
             )
 
         return {
@@ -313,7 +323,7 @@ async def set_zone_temperature(zone_id: str, request: SetTemperatureRequest):
             "target_temperature": request.temperature,
             "results": results,
             "errors": errors if errors else None,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     except HTTPException:
@@ -337,9 +347,7 @@ async def get_status():
 
 @router.get("/api/zones/{zone_id}/period_stats")
 async def get_zone_period_stats(
-    zone_id: str,
-    from_ms: int = Query(None, alias="from"),
-    to: int = None
+    zone_id: str, from_ms: int = Query(None, alias="from"), to: int | None = None
 ):
     """Get aggregated statistics for a zone over a time period.
 
@@ -363,7 +371,9 @@ async def get_zone_period_stats(
 
     # Parse timestamps
     if from_ms is None or to is None:
-        raise HTTPException(status_code=400, detail="Both 'from' and 'to' parameters required")
+        raise HTTPException(
+            status_code=400, detail="Both 'from' and 'to' parameters required"
+        )
 
     start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
     end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
@@ -378,8 +388,8 @@ async def get_zone_period_stats(
     filtered_history = []
     for h in history:
         ts_str = h["timestamp"]
-        if ts_str.endswith('Z'):
-            ts_str = ts_str[:-1] + '+00:00'
+        if ts_str.endswith("Z"):
+            ts_str = ts_str[:-1] + "+00:00"
         try:
             ts = datetime.fromisoformat(ts_str)
             if start_dt <= ts < end_dt:
@@ -390,14 +400,22 @@ async def get_zone_period_stats(
     # Calculate average temperature
     avg_temp = None
     if filtered_history:
-        temps = [h["current_temp"] for h in filtered_history if h.get("current_temp") is not None]
+        temps = [
+            h["current_temp"]
+            for h in filtered_history
+            if h.get("current_temp") is not None
+        ]
         if temps:
             avg_temp = sum(temps) / len(temps)
 
     # Calculate average target temperature
     avg_target = None
     if filtered_history:
-        targets = [h["scheduled_temp"] for h in filtered_history if h.get("scheduled_temp") is not None]
+        targets = [
+            h["scheduled_temp"]
+            for h in filtered_history
+            if h.get("scheduled_temp") is not None
+        ]
         if targets:
             avg_target = sum(targets) / len(targets)
 
@@ -428,12 +446,16 @@ async def get_zone_period_stats(
                 cooling_periods = [p for p in entity_periods if p["type"] == "cooling"]
 
                 if heating_periods:
-                    avg_heating = sum(p["rate"] for p in heating_periods) / len(heating_periods)
+                    avg_heating = sum(p["rate"] for p in heating_periods) / len(
+                        heating_periods
+                    )
                     zone_heating_rates.append(avg_heating)
                     heating_samples += len(heating_periods)
 
                 if cooling_periods:
-                    avg_cooling = sum(p["rate"] for p in cooling_periods) / len(cooling_periods)
+                    avg_cooling = sum(p["rate"] for p in cooling_periods) / len(
+                        cooling_periods
+                    )
                     zone_cooling_rates.append(avg_cooling)
                     cooling_samples += len(cooling_periods)
 
@@ -452,7 +474,11 @@ async def get_zone_period_stats(
 
     # Determine period label
     if duration_hours <= 24:
-        period_label = "Today" if end_dt.date() == datetime.now(timezone.utc).date() else "Yesterday"
+        period_label = (
+            "Today"
+            if end_dt.date() == datetime.now(timezone.utc).date()
+            else "Yesterday"
+        )
     elif duration_hours <= 168:
         period_label = "Week"
     else:
@@ -465,38 +491,38 @@ async def get_zone_period_stats(
             "from": start_dt.isoformat(),
             "to": end_dt.isoformat(),
             "label": period_label,
-            "hours": duration_hours
+            "hours": duration_hours,
         },
         "temperature": {
             "average": round(avg_temp, 1) if avg_temp is not None else None,
-            "unit": "°C"
+            "unit": "°C",
         },
         "target": {
             "average": round(avg_target, 1) if avg_target is not None else None,
-            "unit": "°C"
+            "unit": "°C",
         },
         "heating": {
             "rate": round(heating_rate, 2) if heating_rate is not None else None,
             "samples": heating_samples,
-            "unit": "°C/h"
+            "unit": "°C/h",
         },
         "cooling": {
             "rate": round(cooling_rate, 2) if cooling_rate is not None else None,
             "samples": cooling_samples,
-            "unit": "°C/h"
+            "unit": "°C/h",
         },
-        "confidence": round(confidence, 0) if confidence > 0 else None
+        "confidence": round(confidence, 0) if confidence > 0 else None,
     }
 
 
 @router.get("/api/zones/{zone_id}/history")
 async def get_zone_history(
     zone_id: str,
-    hours: int = None,
+    hours: int | None = None,
     from_ms: int = Query(None, alias="from"),  # Unix timestamp in ms (Grafana-style)
-    to: int = None,                             # Unix timestamp in ms
-    start_date: str = None,  # Legacy support
-    end_date: str = None     # Legacy support
+    to: int | None = None,  # Unix timestamp in ms
+    start_date: str | None = None,  # Legacy support
+    end_date: str | None = None,  # Legacy support
 ):
     """Get temperature history for a zone.
 
@@ -529,8 +555,12 @@ async def get_zone_history(
         hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
     elif start_date and end_date:
         # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
-        start_dt = datetime.fromisoformat(start_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
-        end_dt = datetime.fromisoformat(end_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        start_dt = datetime.fromisoformat(start_date).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+        )
+        end_dt = datetime.fromisoformat(end_date).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+        )
         hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
     elif hours is None:
         hours = 24
@@ -547,8 +577,8 @@ async def get_zone_history(
         filtered_history = []
         for h in history:
             ts_str = h["timestamp"]
-            if ts_str.endswith('Z'):
-                ts_str = ts_str[:-1] + '+00:00'
+            if ts_str.endswith("Z"):
+                ts_str = ts_str[:-1] + "+00:00"
             try:
                 ts = datetime.fromisoformat(ts_str)  # Keep timezone-aware
                 if start_dt <= ts < end_dt:
@@ -561,7 +591,7 @@ async def get_zone_history(
         "zone_id": zone_id,
         "hours": hours,
         "count": len(history),
-        "history": history
+        "history": history,
     }
 
 
@@ -583,22 +613,14 @@ async def get_zone_events(zone_id: str, hours: int = 24):
 
     events = history_tracker.get_control_events(zone_id=zone_id, hours=hours)
 
-    return {
-        "zone_id": zone_id,
-        "hours": hours,
-        "count": len(events),
-        "events": events
-    }
+    return {"zone_id": zone_id, "hours": hours, "count": len(events), "events": events}
 
 
 @router.get("/api/price/current")
 async def get_current_price():
     """Get current electricity price and optimization status."""
     if not price_optimizer:
-        return {
-            "enabled": False,
-            "message": "Price optimization not enabled"
-        }
+        return {"enabled": False, "message": "Price optimization not enabled"}
 
     current_price = price_optimizer.get_current_price()
     price_adjustment = price_optimizer.get_price_adjustment()
@@ -607,7 +629,9 @@ async def get_current_price():
     # Calculate historical average
     historical_avg = None
     if len(price_optimizer.historical_prices) > 24:
-        historical_avg = sum(price_optimizer.historical_prices) / len(price_optimizer.historical_prices)
+        historical_avg = sum(price_optimizer.historical_prices) / len(
+            price_optimizer.historical_prices
+        )
 
     return {
         "enabled": True,
@@ -619,7 +643,7 @@ async def get_current_price():
         "is_cheap_hour": price_adjustment > 0,
         # Legacy fields (for backward compatibility)
         "expensive_hours": sorted(price_optimizer.expensive_hour_set),
-        "cheap_hours": sorted(price_optimizer.cheap_hour_set)
+        "cheap_hours": sorted(price_optimizer.cheap_hour_set),
     }
 
 
@@ -634,10 +658,7 @@ async def get_price_forecast(hours: int = 24):
         List of price forecast entries with categories
     """
     if not price_optimizer:
-        return {
-            "enabled": False,
-            "forecast": []
-        }
+        return {"enabled": False, "forecast": []}
 
     forecast = price_optimizer.get_price_forecast_24h()
 
@@ -649,18 +670,22 @@ async def get_price_forecast(hours: int = 24):
                 "timestamp": entry["timestamp"].isoformat(),
                 "hour": entry["hour"],
                 "price": entry["price"],
-                "category": price_optimizer.hour_categories.get(entry["hour"], "NORMAL"),
+                "category": price_optimizer.hour_categories.get(
+                    entry["hour"], "NORMAL"
+                ),
                 # Legacy fields (for backward compatibility)
                 "is_expensive": entry["hour"] in price_optimizer.expensive_hour_set,
-                "is_cheap": entry["hour"] in price_optimizer.cheap_hour_set
+                "is_cheap": entry["hour"] in price_optimizer.cheap_hour_set,
             }
             for entry in forecast[:hours]
-        ]
+        ],
     }
 
 
 @router.get("/api/thermal/characteristics/history")
-async def get_thermal_characteristics_history(zone_id: str | None = None, hours: int = 24):
+async def get_thermal_characteristics_history(
+    zone_id: str | None = None, hours: int = 24
+):
     """Get historical thermal characteristics snapshots.
 
     Args:
@@ -679,19 +704,19 @@ async def get_thermal_characteristics_history(zone_id: str | None = None, hours:
         "zone_id": zone_id,
         "hours": hours,
         "count": len(snapshots),
-        "snapshots": snapshots
+        "snapshots": snapshots,
     }
 
 
 @router.get("/api/zones/{zone_id}/heating_timeline")
 async def get_heating_timeline(
     zone_id: str,
-    hours: int = None,
+    hours: int | None = None,
     resolution: str = "raw",
     from_ms: int = Query(None, alias="from"),  # Unix timestamp in ms (Grafana-style)
-    to: int = None,                             # Unix timestamp in ms
-    start_date: str = None,  # Legacy support
-    end_date: str = None     # Legacy support
+    to: int | None = None,  # Unix timestamp in ms
+    start_date: str | None = None,  # Legacy support
+    end_date: str | None = None,  # Legacy support
 ):
     """Get heating power request timeline.
 
@@ -725,8 +750,12 @@ async def get_heating_timeline(
         hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
     elif start_date and end_date:
         # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
-        start_dt = datetime.fromisoformat(start_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
-        end_dt = datetime.fromisoformat(end_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        start_dt = datetime.fromisoformat(start_date).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+        )
+        end_dt = datetime.fromisoformat(end_date).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+        )
         hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
     elif hours is None:
         hours = 24
@@ -740,9 +769,7 @@ async def get_heating_timeline(
     hours = min(hours, 744)  # Increased limit for month view
 
     timeline = history_tracker.get_heating_timeline(
-        zone_id=zone_id,
-        hours=hours,
-        resolution=resolution
+        zone_id=zone_id, hours=hours, resolution=resolution
     )
 
     # Filter to date range if specified (compare timezone-aware datetimes)
@@ -750,8 +777,8 @@ async def get_heating_timeline(
         filtered_timeline = []
         for item in timeline:
             ts_str = item["timestamp"]
-            if ts_str.endswith('Z'):
-                ts_str = ts_str[:-1] + '+00:00'
+            if ts_str.endswith("Z"):
+                ts_str = ts_str[:-1] + "+00:00"
             try:
                 ts = datetime.fromisoformat(ts_str)  # Keep timezone-aware
                 if start_dt <= ts < end_dt:
@@ -765,7 +792,7 @@ async def get_heating_timeline(
         "hours": hours,
         "resolution": resolution,
         "count": len(timeline),
-        "timeline": timeline
+        "timeline": timeline,
     }
 
 
@@ -781,11 +808,15 @@ async def get_entity_thermal(entity_id: str, timeframe: str = "24h"):
         Per-entity thermal characteristics across all timeframes
     """
     if not learning_service:
-        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+        raise HTTPException(
+            status_code=503, detail="Thermal learning service not available"
+        )
 
     # Find entity in learning service
     if entity_id not in learning_service.entity_learners:
-        raise HTTPException(status_code=404, detail=f"Entity {entity_id} not found in thermal learning")
+        raise HTTPException(
+            status_code=404, detail=f"Entity {entity_id} not found in thermal learning"
+        )
 
     learner = learning_service.entity_learners[entity_id]
 
@@ -793,10 +824,7 @@ async def get_entity_thermal(entity_id: str, timeframe: str = "24h"):
     all_timeframes = learner.get_all_timeframes()
 
     # Build response with all timeframes
-    result = {
-        "entity_id": entity_id,
-        "timeframes": {}
-    }
+    result = {"entity_id": entity_id, "timeframes": {}}
 
     for tf, chars in all_timeframes.items():
         result["timeframes"][tf] = {
@@ -806,7 +834,7 @@ async def get_entity_thermal(entity_id: str, timeframe: str = "24h"):
             "cooling_samples": chars.cooling_samples,
             "heating_confidence": chars.heating_confidence,
             "cooling_confidence": chars.cooling_confidence,
-            "overall_confidence": chars.overall_confidence
+            "overall_confidence": chars.overall_confidence,
         }
 
     return result
@@ -824,7 +852,9 @@ async def get_thermal_periods(zone_id: str, hours: int = 24):
         List of detected periods with timestamps, temperatures, and rates
     """
     if not learning_service:
-        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+        raise HTTPException(
+            status_code=503, detail="Thermal learning service not available"
+        )
 
     # Get the zone configuration
     zone = next((z for z in ZONES if z.id == zone_id), None)
@@ -840,7 +870,9 @@ async def get_thermal_periods(zone_id: str, hours: int = 24):
         for entity_id in zone.climate_entities:
             try:
                 state = ha_client.get_state(entity_id)
-                friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+                friendly_name = state.get("attributes", {}).get(
+                    "friendly_name", entity_id
+                )
                 entity_friendly_names[entity_id] = friendly_name
             except Exception as e:
                 logger.warning(f"Could not fetch friendly name for {entity_id}: {e}")
@@ -853,18 +885,16 @@ async def get_thermal_periods(zone_id: str, hours: int = 24):
 
             # Add friendly name to each period
             for period in periods:
-                period["entity_friendly_name"] = entity_friendly_names.get(entity_id, entity_id)
+                period["entity_friendly_name"] = entity_friendly_names.get(
+                    entity_id, entity_id
+                )
 
             zone_periods.extend(periods)
 
     # Sort by start time
     zone_periods.sort(key=lambda p: p["start_time"])
 
-    return {
-        "zone_id": zone_id,
-        "hours": hours,
-        "periods": zone_periods
-    }
+    return {"zone_id": zone_id, "hours": hours, "periods": zone_periods}
 
 
 @router.get("/api/thermal/zone/{zone_id}/comparison")
@@ -879,7 +909,9 @@ async def get_zone_entity_comparison(zone_id: str, timeframe: str = "24h"):
         Comparison of all entities in the zone with insights
     """
     if not learning_service:
-        raise HTTPException(status_code=503, detail="Thermal learning service not available")
+        raise HTTPException(
+            status_code=503, detail="Thermal learning service not available"
+        )
 
     # Verify zone exists
     zone = next((z for z in ZONES if z.id == zone_id), None)
@@ -888,7 +920,9 @@ async def get_zone_entity_comparison(zone_id: str, timeframe: str = "24h"):
 
     # Get aggregator for this zone
     if zone_id not in learning_service.zone_aggregators:
-        raise HTTPException(status_code=404, detail=f"No thermal data for zone {zone_id}")
+        raise HTTPException(
+            status_code=404, detail=f"No thermal data for zone {zone_id}"
+        )
 
     aggregator = learning_service.zone_aggregators[zone_id]
 
@@ -897,7 +931,7 @@ async def get_zone_entity_comparison(zone_id: str, timeframe: str = "24h"):
     if timeframe not in valid_timeframes:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid timeframe: {timeframe}. Must be one of {valid_timeframes}"
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {valid_timeframes}",
         )
 
     # Get comparison data
@@ -918,6 +952,7 @@ async def get_sensor_history(entity_id: str, hours: int = 24):
         Historical state changes with timestamps and values
     """
     from datetime import datetime, timedelta
+
     import requests
 
     # Limit hours
@@ -930,16 +965,10 @@ async def get_sensor_history(entity_id: str, hours: int = 24):
     # Fetch from HA history API
     try:
         url = f"{ha_client.base_url}/api/history/period/{start_time.isoformat()}"
-        params = {
-            "filter_entity_id": entity_id,
-            "end_time": end_time.isoformat()
-        }
+        params = {"filter_entity_id": entity_id, "end_time": end_time.isoformat()}
 
         response = requests.get(
-            url,
-            headers=ha_client.headers,
-            params=params,
-            timeout=30
+            url, headers=ha_client.headers, params=params, timeout=30
         )
 
         if response.status_code == 200:
@@ -950,39 +979,40 @@ async def get_sensor_history(entity_id: str, hours: int = 24):
                 # Format the data
                 formatted_history = []
                 for state_change in history:
-                    timestamp = state_change.get("last_changed") or state_change.get("last_updated")
+                    timestamp = state_change.get("last_changed") or state_change.get(
+                        "last_updated"
+                    )
                     state = state_change.get("state")
 
                     if timestamp and state not in ("unknown", "unavailable", None):
-                        formatted_history.append({
-                            "timestamp": timestamp,
-                            "state": state
-                        })
+                        formatted_history.append(
+                            {"timestamp": timestamp, "state": state}
+                        )
 
                 return {
                     "entity_id": entity_id,
                     "hours": hours,
                     "count": len(formatted_history),
-                    "history": formatted_history
+                    "history": formatted_history,
                 }
 
-        return {
-            "entity_id": entity_id,
-            "hours": hours,
-            "count": 0,
-            "history": []
-        }
+        return {"entity_id": entity_id, "hours": hours, "count": 0, "history": []}
 
     except Exception as e:
         logger.error(f"Failed to fetch sensor history for {entity_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch sensor history: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch sensor history: {e!s}"
+        ) from e
 
 
 # =============================================================================
 # UNIFIED CHART DATA ENDPOINT (Phase 1)
 # =============================================================================
 
-def _build_chartjs_datasets(history: list, zone: ZoneSettings, entity_friendly_names: dict = None) -> list:
+
+def _build_chartjs_datasets(
+    history: list, zone: ZoneSettings, entity_friendly_names: dict | None = None
+) -> list:
     """
     Convert temperature history to Chart.js datasets.
 
@@ -1008,7 +1038,9 @@ def _build_chartjs_datasets(history: list, zone: ZoneSettings, entity_friendly_n
 
             # Current temperature
             if reading.get("current_temps", {}).get(entity_id) is not None:
-                current_temps.append({"x": ts, "y": reading["current_temps"][entity_id]})
+                current_temps.append(
+                    {"x": ts, "y": reading["current_temps"][entity_id]}
+                )
 
             # Target temperature
             if reading.get("target_temps", {}).get(entity_id) is not None:
@@ -1016,58 +1048,68 @@ def _build_chartjs_datasets(history: list, zone: ZoneSettings, entity_friendly_n
 
             # Heating request percentage
             if reading.get("heating_requests", {}).get(entity_id) is not None:
-                heating_data.append({"x": ts, "y": reading["heating_requests"][entity_id]})
+                heating_data.append(
+                    {"x": ts, "y": reading["heating_requests"][entity_id]}
+                )
 
         # Use friendly name if available, otherwise use entity_id without domain prefix
         if entity_friendly_names and entity_id in entity_friendly_names:
             entity_name = entity_friendly_names[entity_id]
         else:
-            entity_name = entity_id.replace('climate.', '')
+            entity_name = entity_id.replace("climate.", "")
 
         # Current temperature dataset
-        datasets.append({
-            "label": f"{entity_name} - Current",
-            "data": current_temps,
-            "borderColor": "#4fd1c5",
-            "borderWidth": 2,
-            "tension": 0.1,
-            "pointRadius": 0,
-            "yAxisID": "y",
-            "entity_id": entity_id  # Add entity_id for frontend filtering
-        })
+        datasets.append(
+            {
+                "label": f"{entity_name} - Current",
+                "data": current_temps,
+                "borderColor": "#4fd1c5",
+                "borderWidth": 2,
+                "tension": 0.1,
+                "pointRadius": 0,
+                "yAxisID": "y",
+                "entity_id": entity_id,  # Add entity_id for frontend filtering
+            }
+        )
 
         # Target temperature dataset
-        datasets.append({
-            "label": f"{entity_name} - Target",
-            "data": target_temps,
-            "borderColor": "#4fd1c5",
-            "borderWidth": 1.5,
-            "borderDash": [5, 5],
-            "stepped": "before",  # Step function for setpoint changes
-            "pointRadius": 0,
-            "yAxisID": "y",
-            "entity_id": entity_id  # Add entity_id for frontend filtering
-        })
+        datasets.append(
+            {
+                "label": f"{entity_name} - Target",
+                "data": target_temps,
+                "borderColor": "#4fd1c5",
+                "borderWidth": 1.5,
+                "borderDash": [5, 5],
+                "stepped": "before",  # Step function for setpoint changes
+                "pointRadius": 0,
+                "yAxisID": "y",
+                "entity_id": entity_id,  # Add entity_id for frontend filtering
+            }
+        )
 
         # Heating percentage dataset
-        datasets.append({
-            "label": f"{entity_name} - Heating %",
-            "data": heating_data,
-            "backgroundColor": "rgba(239, 68, 68, 0.2)",
-            "borderColor": "rgba(239, 68, 68, 0.5)",
-            "borderWidth": 1,
-            "fill": True,
-            "stepped": "before",  # Step function - heating is binary/percentage, not smooth
-            "tension": 0,  # No curve interpolation
-            "pointRadius": 0,
-            "yAxisID": "y1",
-            "entity_id": entity_id  # Add entity_id for frontend filtering
-        })
+        datasets.append(
+            {
+                "label": f"{entity_name} - Heating %",
+                "data": heating_data,
+                "backgroundColor": "rgba(239, 68, 68, 0.2)",
+                "borderColor": "rgba(239, 68, 68, 0.5)",
+                "borderWidth": 1,
+                "fill": True,
+                "stepped": "before",  # Step function - heating is binary/percentage, not smooth
+                "tension": 0,  # No curve interpolation
+                "pointRadius": 0,
+                "yAxisID": "y1",
+                "entity_id": entity_id,  # Add entity_id for frontend filtering
+            }
+        )
 
     return datasets
 
 
-def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None) -> dict:
+def _build_chartjs_annotations(
+    periods: list, entity_friendly_names: dict | None = None
+) -> dict:
     """
     Convert thermal periods to Chart.js annotations.
 
@@ -1085,8 +1127,12 @@ def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None
     for idx, period in enumerate(periods):
         is_heating = period["type"] == "heating"
         # Much more subtle opacity for background shading
-        bg_color = "rgba(239, 68, 68, 0.08)" if is_heating else "rgba(59, 130, 246, 0.08)"
-        border_color = "rgba(239, 68, 68, 0.6)" if is_heating else "rgba(59, 130, 246, 0.6)"
+        bg_color = (
+            "rgba(239, 68, 68, 0.08)" if is_heating else "rgba(59, 130, 246, 0.08)"
+        )
+        border_color = (
+            "rgba(239, 68, 68, 0.6)" if is_heating else "rgba(59, 130, 246, 0.6)"
+        )
 
         # Use friendly name if available, otherwise use entity_id without domain prefix
         entity_id = period["entity_id"]
@@ -1106,7 +1152,7 @@ def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None
             "borderWidth": 0,
             "xScaleID": "x",
             "yScaleID": "y",
-            "entity_id": period["entity_id"]  # Add for frontend filtering
+            "entity_id": period["entity_id"],  # Add for frontend filtering
         }
 
         # Rate label
@@ -1114,8 +1160,9 @@ def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None
 
         # Calculate midpoint for label placement
         from datetime import datetime
-        start = datetime.fromisoformat(period["start_time"].replace('Z', '+00:00'))
-        end = datetime.fromisoformat(period["end_time"].replace('Z', '+00:00'))
+
+        start = datetime.fromisoformat(period["start_time"].replace("Z", "+00:00"))
+        end = datetime.fromisoformat(period["end_time"].replace("Z", "+00:00"))
         mid_timestamp = start + (end - start) / 2
 
         annotations[f"period_label_{entity_name}_{idx}"] = {
@@ -1131,7 +1178,7 @@ def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None
             "position": "start",
             "xScaleID": "x",
             "yScaleID": "y",
-            "entity_id": period["entity_id"]  # Add for frontend filtering
+            "entity_id": period["entity_id"],  # Add for frontend filtering
         }
 
     return annotations
@@ -1140,11 +1187,11 @@ def _build_chartjs_annotations(periods: list, entity_friendly_names: dict = None
 @router.get("/api/zones/{zone_id}/chart_data")
 async def get_zone_chart_data(
     zone_id: str,
-    hours: int = None,
+    hours: int | None = None,
     from_ms: int = Query(None, alias="from"),  # Unix timestamp in ms (Grafana-style)
-    to: int = None,                             # Unix timestamp in ms
-    start_date: str = None,  # Legacy support
-    end_date: str = None     # Legacy support
+    to: int | None = None,  # Unix timestamp in ms
+    start_date: str | None = None,  # Legacy support
+    end_date: str | None = None,  # Legacy support
 ):
     """
     Unified endpoint that returns EVERYTHING a Chart.js chart needs.
@@ -1166,7 +1213,7 @@ async def get_zone_chart_data(
     Returns:
         Complete Chart.js chart configuration
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     # Find zone
     zone = next((z for z in ZONES if z.id == zone_id), None)
@@ -1185,8 +1232,12 @@ async def get_zone_chart_data(
             hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
         elif start_date and end_date:
             # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
-            start_dt = datetime.fromisoformat(start_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
-            end_dt = datetime.fromisoformat(end_date).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            start_dt = datetime.fromisoformat(start_date).replace(
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            )
+            end_dt = datetime.fromisoformat(end_date).replace(
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            )
             now_utc = datetime.now(timezone.utc)
             hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
         elif hours is None:
@@ -1206,8 +1257,8 @@ async def get_zone_chart_data(
             for h in history:
                 # Parse timestamp (handle both 'Z' and '+00:00' timezone formats)
                 ts_str = h["timestamp"]
-                if ts_str.endswith('Z'):
-                    ts_str = ts_str[:-1] + '+00:00'
+                if ts_str.endswith("Z"):
+                    ts_str = ts_str[:-1] + "+00:00"
                 try:
                     ts = datetime.fromisoformat(ts_str)  # Keep timezone-aware
                     # Use >= and < for half-open interval [start_dt, end_dt)
@@ -1223,10 +1274,14 @@ async def get_zone_chart_data(
             for entity_id in zone.climate_entities:
                 try:
                     state = ha_client.get_state(entity_id)
-                    friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+                    friendly_name = state.get("attributes", {}).get(
+                        "friendly_name", entity_id
+                    )
                     entity_friendly_names[entity_id] = friendly_name
                 except Exception as e:
-                    logger.warning(f"Could not fetch friendly name for {entity_id}: {e}")
+                    logger.warning(
+                        f"Could not fetch friendly name for {entity_id}: {e}"
+                    )
                     entity_friendly_names[entity_id] = entity_id
 
         # Step 3: Get thermal periods from entity learners
@@ -1247,20 +1302,17 @@ async def get_zone_chart_data(
             "type": "time",
             "time": {
                 "unit": "hour" if hours <= 48 else "day",
-                "displayFormats": {
-                    "hour": "HH:mm",
-                    "day": "MMM dd"
-                },
-                "tooltipFormat": "PPpp"
+                "displayFormats": {"hour": "HH:mm", "day": "MMM dd"},
+                "tooltipFormat": "PPpp",
             },
             "bounds": "data",  # Ensure axis extends to min/max, not just to ticks
             "ticks": {
                 "color": "#a0aec0",
                 "maxRotation": 0,
                 "minRotation": 0,
-                "maxTicksLimit": 12
+                "maxTicksLimit": 12,
             },
-            "grid": {"display": False}
+            "grid": {"display": False},
         }
 
         # Add explicit time bounds when a specific date range is selected
@@ -1282,12 +1334,12 @@ async def get_zone_chart_data(
                     "title": {
                         "display": True,
                         "text": "Temperature (°C)",
-                        "color": "#a0aec0"
+                        "color": "#a0aec0",
                     },
                     "suggestedMin": 15,
                     "suggestedMax": 25,
                     "grid": {"color": "rgba(255, 255, 255, 0.1)"},
-                    "ticks": {"color": "#a0aec0"}
+                    "ticks": {"color": "#a0aec0"},
                 },
                 "y1": {
                     "type": "linear",
@@ -1295,23 +1347,134 @@ async def get_zone_chart_data(
                     "title": {
                         "display": True,
                         "text": "Heating Request (%)",
-                        "color": "#a0aec0"
+                        "color": "#a0aec0",
                     },
                     "min": 0,
                     "max": 100,
                     "grid": {"display": False},
-                    "ticks": {
-                        "color": "#a0aec0"
-                    }
-                }
+                    "ticks": {"color": "#a0aec0"},
+                },
             },
             "metadata": {
                 "source": "history_tracker",
                 "data_points": len(history),
-                "period_count": len(periods)
-            }
+                "period_count": len(periods),
+            },
         }
 
     except Exception as e:
         logger.error(f"Failed to build chart data for {zone_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to build chart data: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to build chart data: {e!s}"
+        ) from e
+
+
+@router.get("/api/debug/thermal/{entity_id}/verification")
+async def verify_thermal_calculations(entity_id: str, hours: int = 24):
+    """
+    Debug endpoint to verify thermal calculation accuracy.
+
+    Returns raw snapshots, detected periods, and calculated characteristics
+    for manual verification of the math.
+
+    Example: /api/debug/thermal/climate.vantsidan/verification?hours=24
+    """
+    if not learning_service:
+        raise HTTPException(status_code=503, detail="Learning service not available")
+
+    if entity_id not in learning_service.entity_learners:
+        raise HTTPException(
+            status_code=404, detail=f"No learner found for entity: {entity_id}"
+        )
+
+    learner = learning_service.entity_learners[entity_id]
+
+    try:
+        # Get raw measurements from learner
+        from datetime import datetime, timedelta, timezone
+
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        filtered_measurements = [
+            m for m in learner.measurements if m.timestamp >= cutoff_time
+        ]
+
+        # Get detected periods
+        periods = learner.get_periods(hours=hours)
+
+        # Get aggregated characteristics - map to valid timeframe
+        # Valid timeframes: "1h", "6h", "24h", "7d"
+        if hours <= 1:
+            timeframe = "1h"
+        elif hours <= 6:
+            timeframe = "6h"
+        elif hours <= 24:
+            timeframe = "24h"
+        else:
+            timeframe = "7d"
+
+        chars = learner.get_characteristics(timeframe)
+
+        # Format response
+        return {
+            "entity_id": entity_id,
+            "time_range_hours": hours,
+            "snapshot_count": len(filtered_measurements),
+            "snapshots": [
+                {
+                    "timestamp": m.timestamp.isoformat(),
+                    "temperature": round(m.temperature, 2),
+                    "outdoor_temp": (
+                        round(m.outdoor_temp, 2) if m.outdoor_temp is not None else None
+                    ),
+                    "heating_active": m.heating_active,
+                    "target_temp": (
+                        round(m.target_temp, 2) if m.target_temp is not None else None
+                    ),
+                }
+                for m in filtered_measurements[-50:]  # Last 50 for readability
+            ],
+            "period_count": len(periods),
+            "periods": [
+                {
+                    "index": idx,
+                    "type": p["type"],
+                    "start_time": p["start_time"],
+                    "end_time": p["end_time"],
+                    "start_temp": round(p["start_temp"], 2),
+                    "end_temp": round(p["end_temp"], 2),
+                    "temp_delta": round(p["end_temp"] - p["start_temp"], 2),
+                    "duration_hours": round(p["duration_hours"], 2),
+                    "rate": round(p["rate"], 3),
+                    "manual_calculation": f"({round(p['end_temp'], 2)} - {round(p['start_temp'], 2)}) / {round(p['duration_hours'], 2)} = {round((p['end_temp'] - p['start_temp']) / p['duration_hours'] if p['duration_hours'] > 0 else 0, 3)}",
+                }
+                for idx, p in enumerate(periods)
+            ],
+            "characteristics": {
+                "heating_rate": round(chars.heating_rate, 3),
+                "heating_samples": chars.heating_samples,
+                "heating_confidence": round(chars.heating_confidence, 2),
+                "cooling_rate": round(chars.cooling_rate, 3),
+                "cooling_samples": chars.cooling_samples,
+                "cooling_confidence": round(chars.cooling_confidence, 2),
+                "overall_confidence": round(chars.overall_confidence, 2),
+            },
+            "verification_notes": {
+                "heating_calculation": f"Average of {chars.heating_samples} heating period rates",
+                "cooling_calculation": f"Average of {chars.cooling_samples} cooling period rates",
+                "expected_behavior": "Individual period rates should be mathematically correct (end_temp - start_temp) / duration_hours",
+                "common_issues": [
+                    "Timezone conversion errors",
+                    "Period merging/splitting logic",
+                    "Averaging method (simple vs weighted)",
+                    "Incomplete periods at boundaries",
+                ],
+            },
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Failed to verify thermal calculations for {entity_id}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Verification failed: {e!s}"
+        ) from e
