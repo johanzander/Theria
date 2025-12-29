@@ -191,7 +191,16 @@ class TemperatureHistoryService:
                 for climate_entity in zone.climate_entities:
                     try:
                         full_state = self.ha_client.get_state(climate_entity)
-                        heating_power_request = full_state.get("attributes", {}).get("heating_power_request")
+                        attributes = full_state.get("attributes", {})
+                        heating_power_request = attributes.get("heating_power_request")
+
+                        # Fallback: if heating_power_request not available, use hvac_action (for LK thermostats)
+                        if heating_power_request is None:
+                            hvac_action = attributes.get("hvac_action")
+                            if hvac_action == "heating":
+                                heating_power_request = 100.0  # Fully heating
+                            elif hvac_action in ["idle", "off"]:
+                                heating_power_request = 0.0
 
                         if heating_power_request is not None:
                             total_heating_request += float(heating_power_request)
