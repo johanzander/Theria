@@ -1,0 +1,9 @@
+-r backend/requirements.txt
+
+pytest
+pytest-cov
+ruff
+black
+mypy
+types-requests
+types-PyYAML

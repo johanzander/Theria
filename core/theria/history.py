@@ -20,8 +20,12 @@ class TemperatureReading:
     current_temp: float  # Zone average
     scheduled_temp: float | None
     target_temps: dict[str, float]  # climate_entity -> target_temp
-    current_temps: dict[str, float] | None = None  # climate_entity -> current_temp (actual reading)
-    heating_requests: dict[str, float] | None = None  # climate_entity -> heating_power_request %
+    current_temps: dict[str, float] | None = (
+        None  # climate_entity -> current_temp (actual reading)
+    )
+    heating_requests: dict[str, float] | None = (
+        None  # climate_entity -> heating_power_request %
+    )
 
 
 @dataclass
@@ -77,8 +81,12 @@ class HistoryTracker:
         # Use deque for efficient append/pop
         self.temperature_readings: deque[TemperatureReading] = deque(maxlen=10000)
         self.control_events: deque[ControlEvent] = deque(maxlen=1000)
-        self.thermal_snapshots: deque[ThermalCharacteristicsSnapshot] = deque(maxlen=10080)  # 7 days at 1/min
-        self.heating_power_snapshots: deque[HeatingPowerSnapshot] = deque(maxlen=10080)  # 7 days at 1/min
+        self.thermal_snapshots: deque[ThermalCharacteristicsSnapshot] = deque(
+            maxlen=10080
+        )  # 7 days at 1/min
+        self.heating_power_snapshots: deque[HeatingPowerSnapshot] = deque(
+            maxlen=10080
+        )  # 7 days at 1/min
 
         self.lock = threading.Lock()
 
@@ -91,7 +99,7 @@ class HistoryTracker:
         current_temps: dict[str, float] | None = None,
         heating_requests: dict[str, float] | None = None,
         timestamp: datetime | None = None,
-        skip_cleanup: bool = False
+        skip_cleanup: bool = False,
     ):
         """Add a temperature reading.
 
@@ -106,7 +114,11 @@ class HistoryTracker:
             skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
         # Use provided timestamp for historical backfill, or current time for real-time
-        ts = timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat()
+        ts = (
+            timestamp.isoformat()
+            if timestamp
+            else datetime.now(timezone.utc).isoformat()
+        )
 
         reading = TemperatureReading(
             timestamp=ts,
@@ -115,7 +127,7 @@ class HistoryTracker:
             scheduled_temp=scheduled_temp,
             target_temps=target_temps,
             current_temps=current_temps or {},
-            heating_requests=heating_requests or {}
+            heating_requests=heating_requests or {},
         )
 
         with self.lock:
@@ -124,11 +136,7 @@ class HistoryTracker:
                 self._cleanup_old_data()
 
     def add_control_event(
-        self,
-        zone_id: str,
-        action: str,
-        details: str,
-        temperature: float | None = None
+        self, zone_id: str, action: str, details: str, temperature: float | None = None
     ):
         """Log a control action.
 
@@ -143,7 +151,7 @@ class HistoryTracker:
             zone_id=zone_id,
             action=action,
             details=details,
-            temperature=temperature
+            temperature=temperature,
         )
 
         with self.lock:
@@ -151,9 +159,7 @@ class HistoryTracker:
             self._cleanup_old_data()
 
     def get_temperature_history(
-        self,
-        zone_id: str | None = None,
-        hours: int | None = None
+        self, zone_id: str | None = None, hours: int | None = None
     ) -> list[dict]:
         """Get temperature history.
 
@@ -175,16 +181,13 @@ class HistoryTracker:
         if hours:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             readings = [
-                r for r in readings
-                if datetime.fromisoformat(r.timestamp) > cutoff
+                r for r in readings if datetime.fromisoformat(r.timestamp) > cutoff
             ]
 
         return [asdict(r) for r in readings]
 
     def get_control_events(
-        self,
-        zone_id: str | None = None,
-        hours: int | None = None
+        self, zone_id: str | None = None, hours: int | None = None
     ) -> list[dict]:
         """Get control events.
 
@@ -205,10 +208,7 @@ class HistoryTracker:
         # Filter by time
         if hours:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-            events = [
-                e for e in events
-                if datetime.fromisoformat(e.timestamp) > cutoff
-            ]
+            events = [e for e in events if datetime.fromisoformat(e.timestamp) > cutoff]
 
         return [asdict(e) for e in events]
 
@@ -221,7 +221,7 @@ class HistoryTracker:
         cooling_rate_base: float,
         cooling_rate_confidence: float,
         cooling_samples: int,
-        outdoor_temp_coefficient: float
+        outdoor_temp_coefficient: float,
     ):
         """Add a thermal characteristics snapshot.
 
@@ -245,16 +245,14 @@ class HistoryTracker:
             cooling_rate_confidence=cooling_rate_confidence,
             cooling_samples=cooling_samples,
             outdoor_temp_coefficient=outdoor_temp_coefficient,
-            overall_confidence=min(heating_rate_confidence, cooling_rate_confidence)
+            overall_confidence=min(heating_rate_confidence, cooling_rate_confidence),
         )
 
         with self.lock:
             self.thermal_snapshots.append(snapshot)
 
     def get_thermal_history(
-        self,
-        zone_id: str | None = None,
-        hours: int | None = None
+        self, zone_id: str | None = None, hours: int | None = None
     ) -> list[dict]:
         """Get thermal characteristics history.
 
@@ -276,8 +274,7 @@ class HistoryTracker:
         if hours:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             snapshots = [
-                s for s in snapshots
-                if datetime.fromisoformat(s.timestamp) > cutoff
+                s for s in snapshots if datetime.fromisoformat(s.timestamp) > cutoff
             ]
 
         return [asdict(s) for s in snapshots]
@@ -289,7 +286,7 @@ class HistoryTracker:
         max_heating_request: float,
         heating_active: bool,
         timestamp: datetime | None = None,
-        skip_cleanup: bool = False
+        skip_cleanup: bool = False,
     ):
         """Add a heating power request snapshot.
 
@@ -302,14 +299,18 @@ class HistoryTracker:
             skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
         # Use provided timestamp for historical backfill, or current time for real-time
-        ts = timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat()
+        ts = (
+            timestamp.isoformat()
+            if timestamp
+            else datetime.now(timezone.utc).isoformat()
+        )
 
         snapshot = HeatingPowerSnapshot(
             timestamp=ts,
             zone_id=zone_id,
             avg_heating_request=avg_heating_request,
             max_heating_request=max_heating_request,
-            heating_active=heating_active
+            heating_active=heating_active,
         )
 
         with self.lock:
@@ -321,7 +322,7 @@ class HistoryTracker:
         self,
         zone_id: str | None = None,
         hours: int | None = None,
-        resolution: str = "raw"
+        resolution: str = "raw",
     ) -> list[dict]:
         """Get heating power request timeline.
 
@@ -344,8 +345,7 @@ class HistoryTracker:
         if hours:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             snapshots = [
-                s for s in snapshots
-                if datetime.fromisoformat(s.timestamp) > cutoff
+                s for s in snapshots if datetime.fromisoformat(s.timestamp) > cutoff
             ]
 
         # TODO: Implement aggregation for resolution != "raw"
@@ -357,24 +357,34 @@ class HistoryTracker:
         cutoff = datetime.now(timezone.utc) - self.max_age
 
         # Clean temperature readings
-        while (self.temperature_readings and
-               datetime.fromisoformat(self.temperature_readings[0].timestamp) < cutoff):
+        while (
+            self.temperature_readings
+            and datetime.fromisoformat(self.temperature_readings[0].timestamp) < cutoff
+        ):
             self.temperature_readings.popleft()
 
         # Clean control events
-        while (self.control_events and
-               datetime.fromisoformat(self.control_events[0].timestamp) < cutoff):
+        while (
+            self.control_events
+            and datetime.fromisoformat(self.control_events[0].timestamp) < cutoff
+        ):
             self.control_events.popleft()
 
         # Clean thermal snapshots (keep 7 days, don't use max_hours)
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        while (self.thermal_snapshots and
-               datetime.fromisoformat(self.thermal_snapshots[0].timestamp) < seven_days_ago):
+        while (
+            self.thermal_snapshots
+            and datetime.fromisoformat(self.thermal_snapshots[0].timestamp)
+            < seven_days_ago
+        ):
             self.thermal_snapshots.popleft()
 
         # Clean heating power snapshots (keep 7 days)
-        while (self.heating_power_snapshots and
-               datetime.fromisoformat(self.heating_power_snapshots[0].timestamp) < seven_days_ago):
+        while (
+            self.heating_power_snapshots
+            and datetime.fromisoformat(self.heating_power_snapshots[0].timestamp)
+            < seven_days_ago
+        ):
             self.heating_power_snapshots.popleft()
 
 

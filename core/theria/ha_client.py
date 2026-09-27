@@ -53,10 +53,10 @@ class HAClient:
             return response.json()
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
-                raise ValueError(f"Entity not found: {entity_id}")
-            raise RuntimeError(f"Failed to get state for {entity_id}: {e}")
+                raise ValueError(f"Entity not found: {entity_id}") from e
+            raise RuntimeError(f"Failed to get state for {entity_id}: {e}") from e
         except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"HA API request failed: {e}")
+            raise RuntimeError(f"HA API request failed: {e}") from e
 
     def get_temperature(self, entity_id: str) -> float:
         """Get temperature from sensor or climate entity.
@@ -75,10 +75,13 @@ class HAClient:
             ValueError: If temperature cannot be read
         """
         # Add domain prefix if not present
-        if '.' not in entity_id:
+        if "." not in entity_id:
             # Guess domain based on typical usage
             # If starts with common climate names, assume climate domain
-            if any(x in entity_id.lower() for x in ['vantsidan', 'klippsidan', 'thermostat', 'climate']):
+            if any(
+                x in entity_id.lower()
+                for x in ["vantsidan", "klippsidan", "thermostat", "climate"]
+            ):
                 entity_id = f"climate.{entity_id}"
             else:
                 entity_id = f"sensor.{entity_id}"
@@ -92,7 +95,7 @@ class HAClient:
             except (ValueError, KeyError, TypeError) as e:
                 raise ValueError(
                     f"Cannot read current_temperature from climate entity {entity_id}: {e}"
-                )
+                ) from e
 
         # For sensors, use state value
         try:
@@ -104,7 +107,7 @@ class HAClient:
             except (ValueError, KeyError, TypeError):
                 raise ValueError(
                     f"Cannot read temperature from {entity_id}: {e}"
-                )
+                ) from e
 
     def get_climate_state(self, entity_id: str) -> dict[str, Any]:
         """Get climate entity state.
@@ -147,12 +150,12 @@ class HAClient:
             logger.debug(f"Calling {url} with data: {data}")
             response = self.session.post(url, json=data, timeout=self.timeout)
             response.raise_for_status()
-            logger.info(f"Set {entity_id} to {temperature}°C - Response: {response.status_code}")
+            logger.info(
+                f"Set {entity_id} to {temperature}°C - Response: {response.status_code}"
+            )
             logger.debug(f"Response body: {response.text}")
         except requests.exceptions.RequestException as e:
-            raise RuntimeError(
-                f"Failed to set temperature for {entity_id}: {e}"
-            )
+            raise RuntimeError(f"Failed to set temperature for {entity_id}: {e}") from e
 
     def set_hvac_mode(self, entity_id: str, mode: str) -> None:
         """Set HVAC mode for climate entity.
@@ -175,4 +178,4 @@ class HAClient:
             response.raise_for_status()
             logger.info(f"Set {entity_id} HVAC mode to {mode}")
         except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to set HVAC mode for {entity_id}: {e}")
+            raise RuntimeError(f"Failed to set HVAC mode for {entity_id}: {e}") from e

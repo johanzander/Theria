@@ -32,7 +32,7 @@ class ThermalLearningService:
         ha_client: HAClient,
         zones: list[ZoneSettings],
         learning_interval_minutes: int = 15,
-        outdoor_temp_sensor: str = "sensor.theria_outdoor_temp"
+        outdoor_temp_sensor: str = "sensor.theria_outdoor_temp",
     ):
         self.ha_client = ha_client
         self.zones = zones
@@ -51,15 +51,14 @@ class ThermalLearningService:
                 learner = ClimateEntityThermalLearner(
                     entity_id=entity_id,
                     max_history_hours=168,  # 7 days
-                    min_samples_for_confidence=100
+                    min_samples_for_confidence=100,
                 )
                 self.entity_learners[entity_id] = learner
                 zone_entity_learners.append(learner)
 
             # Create aggregator for this zone
             self.zone_aggregators[zone.id] = ZoneThermalAggregator(
-                zone_id=zone.id,
-                entity_learners=zone_entity_learners
+                zone_id=zone.id, entity_learners=zone_entity_learners
             )
 
         self._task: asyncio.Task | None = None
@@ -73,7 +72,9 @@ class ThermalLearningService:
 
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info(f"🧠 Thermal learning service started for {len(self.zones)} zone(s), {len(self.entity_learners)} entities")
+        logger.info(
+            f"🧠 Thermal learning service started for {len(self.zones)} zone(s), {len(self.entity_learners)} entities"
+        )
         logger.info(f"   Learning interval: {self.learning_interval_minutes} minutes")
 
     async def bootstrap_from_history(self):
@@ -107,7 +108,7 @@ class ThermalLearningService:
             try:
                 await self._collect_measurements()
             except Exception as e:
-                logger.error(f"Error in thermal learning loop: {e}", exc_info=True)
+                logger.exception(f"Error in thermal learning loop: {e}")
 
             # Sleep until next interval
             await asyncio.sleep(self.learning_interval_minutes * 60)
@@ -149,7 +150,7 @@ class ThermalLearningService:
                         temperature=entity_temp,
                         outdoor_temp=outdoor_temp,
                         heating_active=entity_heating,
-                        target_temp=entity_target
+                        target_temp=entity_target,
                     )
 
                     # Log entity characteristics (24h timeframe)
@@ -165,12 +166,14 @@ class ThermalLearningService:
                     )
 
                 except Exception as e:
-                    logger.error(f"Error learning for entity {entity_id}: {e}", exc_info=True)
+                    logger.exception(f"Error learning for entity {entity_id}: {e}")
 
             # Log zone aggregate
             try:
                 aggregator = self.zone_aggregators[zone.id]
-                zone_chars = aggregator.get_aggregate_characteristics("24h", weighted=True)
+                zone_chars = aggregator.get_aggregate_characteristics(
+                    "24h", weighted=True
+                )
                 logger.info(
                     f"Zone {zone.id} (aggregate): "
                     f"Heat {zone_chars.heating_rate:+.2f}°C/h "
@@ -179,11 +182,10 @@ class ThermalLearningService:
                     f"({zone_chars.cooling_confidence:.0%} conf)"
                 )
             except Exception as e:
-                logger.error(f"Error aggregating zone {zone.id}: {e}", exc_info=True)
+                logger.exception(f"Error aggregating zone {zone.id}: {e}")
 
     async def _bootstrap_from_history(self):
         """Bootstrap thermal learning from historical data."""
-        from .history import history_tracker
 
         logger.info("🧠 Bootstrapping thermal learning from historical data...")
 
@@ -201,8 +203,7 @@ class ThermalLearningService:
 
                     # Get zone temperature history (contains all entities)
                     zone_history = history_tracker.get_temperature_history(
-                        zone_id=zone.id,
-                        hours=bootstrap_hours
+                        zone_id=zone.id, hours=bootstrap_hours
                     )
 
                     if not zone_history or not outdoor_history:
@@ -227,8 +228,7 @@ class ThermalLearningService:
 
                         # Get outdoor temp
                         outdoor_temp = self._find_closest_outdoor_temp(
-                            curr_timestamp,
-                            outdoor_history
+                            curr_timestamp, outdoor_history
                         )
 
                         if outdoor_temp is None:
@@ -245,7 +245,9 @@ class ThermalLearningService:
                             continue
 
                         try:
-                            prev_entity_temp = float(prev_temps[entity_id])
+                            float(
+                                prev_temps[entity_id]
+                            )  # validate prev reading is numeric
                             curr_entity_temp = float(curr_temps[entity_id])
                         except (ValueError, TypeError):
                             continue
@@ -254,12 +256,15 @@ class ThermalLearningService:
                         heating_requests = self._get_heating_requests(prev_reading)
                         entity_heating = (
                             heating_requests.get(entity_id, 0) > 0
-                            if heating_requests else False
+                            if heating_requests
+                            else False
                         )
 
                         # Get target temperature for this entity
                         target_temps = self._get_target_temps(curr_reading)
-                        entity_target = target_temps.get(entity_id) if target_temps else None
+                        entity_target = (
+                            target_temps.get(entity_id) if target_temps else None
+                        )
                         if entity_target is not None:
                             try:
                                 entity_target = float(entity_target)
@@ -272,7 +277,7 @@ class ThermalLearningService:
                             temperature=curr_entity_temp,
                             outdoor_temp=outdoor_temp,
                             heating_active=entity_heating,
-                            target_temp=entity_target
+                            target_temp=entity_target,
                         )
 
                         if entity_heating:
@@ -290,24 +295,28 @@ class ThermalLearningService:
                     )
 
                 except Exception as e:
-                    logger.error(f"Error bootstrapping entity {entity_id} (V2): {e}", exc_info=True)
+                    logger.exception(
+                        f"Error bootstrapping entity {entity_id} (V2): {e}"
+                    )
 
             # Log zone aggregate after bootstrap
             try:
                 aggregator = self.zone_aggregators[zone.id]
-                zone_chars = aggregator.get_aggregate_characteristics("24h", weighted=True)
+                zone_chars = aggregator.get_aggregate_characteristics(
+                    "24h", weighted=True
+                )
                 logger.info(
                     f"Zone {zone.id} (V2 aggregate): "
                     f"Heat {zone_chars.heating_rate:+.2f}°C/h ({zone_chars.heating_confidence:.0%}), "
                     f"Cool {zone_chars.cooling_rate:+.2f}°C/h ({zone_chars.cooling_confidence:.0%})"
                 )
             except Exception as e:
-                logger.error(f"Error aggregating zone {zone.id} after bootstrap: {e}", exc_info=True)
+                logger.exception(
+                    f"Error aggregating zone {zone.id} after bootstrap: {e}"
+                )
 
     def _resample_history_to_intervals(
-        self,
-        history: list,
-        interval_minutes: int = 15
+        self, history: list, interval_minutes: int = 15
     ) -> list:
         """
         Resample irregular historical data to regular time intervals using bucket aggregation.
@@ -336,7 +345,11 @@ class ThermalLearningService:
             return history  # Fallback to original if timestamps missing
 
         # Sort history by timestamp
-        sorted_history = sorted(history, key=lambda r: self._get_timestamp(r) or datetime.min.replace(tzinfo=timezone.utc))
+        sorted_history = sorted(
+            history,
+            key=lambda r: self._get_timestamp(r)
+            or datetime.min.replace(tzinfo=timezone.utc),
+        )
 
         # Create buckets
         interval_delta = timedelta(minutes=interval_minutes)
@@ -377,7 +390,7 @@ class ThermalLearningService:
             # Create resampled reading with interval timestamp
             resampled_reading = dict(reading) if isinstance(reading, dict) else reading
             if isinstance(resampled_reading, dict):
-                resampled_reading['timestamp'] = current_time.isoformat()
+                resampled_reading["timestamp"] = current_time.isoformat()
             resampled.append(resampled_reading)
 
             current_time += interval_delta
@@ -392,6 +405,7 @@ class ThermalLearningService:
     async def _get_outdoor_temp_history_from_ha(self, hours: int) -> list[dict]:
         """Get historical outdoor temperature readings from Home Assistant."""
         from datetime import datetime, timedelta
+
         import requests
 
         try:
@@ -399,21 +413,22 @@ class ThermalLearningService:
             end_time = datetime.now()
             start_time = end_time - timedelta(hours=hours)
 
-            url = f"{self.ha_client.base_url}/api/history/period/{start_time.isoformat()}"
+            url = (
+                f"{self.ha_client.base_url}/api/history/period/{start_time.isoformat()}"
+            )
             params = {
                 "filter_entity_id": self.outdoor_temp_sensor,
-                "end_time": end_time.isoformat()
+                "end_time": end_time.isoformat(),
             }
 
             response = requests.get(
-                url,
-                headers=self.ha_client.headers,
-                params=params,
-                timeout=30
+                url, headers=self.ha_client.headers, params=params, timeout=30
             )
 
             if response.status_code != 200:
-                logger.warning(f"Failed to get outdoor temp history: HTTP {response.status_code}")
+                logger.warning(
+                    f"Failed to get outdoor temp history: HTTP {response.status_code}"
+                )
                 return []
 
             data = response.json()
@@ -425,8 +440,10 @@ class ThermalLearningService:
             # Convert to our format
             return [
                 {
-                    "timestamp": datetime.fromisoformat(reading["last_changed"].replace("Z", "+00:00")),
-                    "value": float(reading["state"])
+                    "timestamp": datetime.fromisoformat(
+                        reading["last_changed"].replace("Z", "+00:00")
+                    ),
+                    "value": float(reading["state"]),
                 }
                 for reading in history
                 if reading.get("state") not in ["unknown", "unavailable", None]
@@ -435,13 +452,14 @@ class ThermalLearningService:
             logger.error(f"Failed to get outdoor temp history from HA: {e}")
             return []
 
-    def _find_closest_outdoor_temp(self, timestamp, outdoor_history: list[dict]) -> float | None:
+    def _find_closest_outdoor_temp(
+        self, timestamp, outdoor_history: list[dict]
+    ) -> float | None:
         """Find outdoor temperature closest to given timestamp."""
         if not outdoor_history:
             return None
 
         # Find closest reading (within 30 minutes)
-        from datetime import timedelta
         closest = None
         min_diff = None
 
@@ -460,6 +478,7 @@ class ThermalLearningService:
     def _get_timestamp(self, reading):
         """Extract timestamp from reading."""
         from datetime import datetime
+
         if isinstance(reading, dict):
             ts = reading.get("timestamp")
             if isinstance(ts, str):
@@ -477,13 +496,21 @@ class ThermalLearningService:
         """Extract current_temps dict from reading."""
         if isinstance(reading, dict):
             return reading.get("current_temps", {})
-        return getattr(reading, "current_temps", {}) if hasattr(reading, "current_temps") else {}
+        return (
+            getattr(reading, "current_temps", {})
+            if hasattr(reading, "current_temps")
+            else {}
+        )
 
     def _get_target_temps(self, reading) -> dict:
         """Extract target_temps dict from reading."""
         if isinstance(reading, dict):
             return reading.get("target_temps", {})
-        return getattr(reading, "target_temps", {}) if hasattr(reading, "target_temps") else {}
+        return (
+            getattr(reading, "target_temps", {})
+            if hasattr(reading, "target_temps")
+            else {}
+        )
 
     def _extract_outdoor_temp(self, reading) -> float | None:
         """Extract outdoor temperature from reading."""
@@ -511,7 +538,11 @@ class ThermalLearningService:
             current_temps = reading.get("current_temps", {})
         else:
             # If it's a model object
-            current_temps = getattr(reading, "current_temps", {}) if hasattr(reading, "current_temps") else {}
+            current_temps = (
+                getattr(reading, "current_temps", {})
+                if hasattr(reading, "current_temps")
+                else {}
+            )
 
         if not current_temps:
             return None
@@ -537,7 +568,9 @@ class ThermalLearningService:
             if state:
                 return float(state["state"])
         except Exception as e:
-            logger.error(f"Failed to get outdoor temp from {self.outdoor_temp_sensor}: {e}")
+            logger.error(
+                f"Failed to get outdoor temp from {self.outdoor_temp_sensor}: {e}"
+            )
 
         return None
 
@@ -554,7 +587,10 @@ class ThermalLearningService:
             state = self.ha_client.get_state(climate_entity)
             if state:
                 # Try current_temperature attribute first
-                if "attributes" in state and "current_temperature" in state["attributes"]:
+                if (
+                    "attributes" in state
+                    and "current_temperature" in state["attributes"]
+                ):
                     return float(state["attributes"]["current_temperature"])
                 # Fallback to state
                 return float(state["state"])
@@ -605,7 +641,10 @@ class ThermalLearningService:
             state = self.ha_client.get_state(entity_id)
             if state:
                 # Try current_temperature attribute first
-                if "attributes" in state and "current_temperature" in state["attributes"]:
+                if (
+                    "attributes" in state
+                    and "current_temperature" in state["attributes"]
+                ):
                     return float(state["attributes"]["current_temperature"])
                 # Fallback to state
                 return float(state["state"])
@@ -644,4 +683,3 @@ class ThermalLearningService:
             logger.error(f"Failed to check heating status for {entity_id}: {e}")
 
         return False
-

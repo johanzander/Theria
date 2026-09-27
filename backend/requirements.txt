@@ -4,6 +4,6 @@ loguru
 python-dotenv
 pyyaml
 requests
-numpy
+numpy<2.1
 scipy
 watchdog

@@ -17,8 +17,14 @@ from core.theria.entity_thermal_learner import (
 
 @pytest.fixture
 def base_time():
-    """Base timestamp for all tests (timezone-aware UTC)."""
-    return datetime(2025, 12, 29, 12, 0, 0, tzinfo=timezone.utc)
+    """Base timestamp for all tests (timezone-aware UTC).
+
+    Anchored to real now (minus a safety margin) rather than a fixed date,
+    since get_characteristics() filters measurements against wall-clock
+    now_utc() - a hardcoded past date eventually falls outside the 24h
+    window and silently zeroes out every test.
+    """
+    return datetime.now(timezone.utc) - timedelta(hours=12)
 
 
 @pytest.fixture

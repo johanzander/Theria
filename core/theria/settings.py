@@ -5,8 +5,8 @@ Minimal configuration structure - will be expanded as needed.
 User-facing settings are loaded from config.yaml via Home Assistant add-on.
 """
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 
 def _camel_to_snake(name: str) -> str:
@@ -24,8 +24,12 @@ class ZoneSettings:
     climate_entities: list[str]  # One or more climate entities (radiators) in this zone
     temp_sensors: list[str]  # One or more temperature sensors
     icon: str | None = None
-    comfort_target: float = 21.0  # Target comfort temperature (°C) - for heat capacitor strategy
-    allowed_deviation: float = 1.0  # Allowed temperature variation (±°C) - for heat capacitor strategy
+    comfort_target: float = (
+        21.0  # Target comfort temperature (°C) - for heat capacitor strategy
+    )
+    allowed_deviation: float = (
+        1.0  # Allowed temperature variation (±°C) - for heat capacitor strategy
+    )
     enabled: bool = True
 
     @classmethod

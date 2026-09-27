@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        arch: [aarch64, amd64, armhf, armv7, i386]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version and base image
+        id: vars
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_FROM=$(jq -r --arg arch "${{ matrix.arch }}" '.build_from[$arch]' build.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build_from=$BUILD_FROM" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${IMAGE_OWNER}/theria-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            BUILD_FROM=${{ steps.vars.outputs.build_from }}
+            BUILD_VERSION=${{ steps.vars.outputs.version }}
+            BUILD_DATE=${{ github.event.release.published_at }}
+            BUILD_REF=${{ github.sha }}
+          tags: |
+            ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.version }}
+            ${{ steps.vars.outputs.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}

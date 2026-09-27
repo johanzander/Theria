@@ -32,8 +32,8 @@ class PriceOptimizer:
         ha_client,
         price_entity: str,
         expensive_hours: int = 4,  # Kept for backward compatibility
-        cheap_hours: int = 4,      # Kept for backward compatibility
-        adjustment_degrees: float = 0.5
+        cheap_hours: int = 4,  # Kept for backward compatibility
+        adjustment_degrees: float = 0.5,
     ):
         """Initialize price optimizer.
 
@@ -52,7 +52,7 @@ class PriceOptimizer:
         self.price_forecast = []
         self.last_update = None
 
-        # Historical price tracking (7 days × 24 hours = 168 prices)
+        # Historical price tracking (7 days x 24 hours = 168 prices)
         self.historical_prices = deque(maxlen=7 * 24)
 
         # Legacy sets (kept for backward compatibility with API)
@@ -82,15 +82,19 @@ class PriceOptimizer:
             self.price_forecast = []
             for entry in all_prices:
                 try:
-                    start_time = datetime.fromisoformat(entry["start"].replace("Z", "+00:00"))
+                    start_time = datetime.fromisoformat(
+                        entry["start"].replace("Z", "+00:00")
+                    )
                     # Handle both 'value' (official integration) and 'price' (custom integrations)
                     price = float(entry.get("value") or entry.get("price"))
-                    self.price_forecast.append({
-                        "hour": start_time.hour,
-                        "date": start_time.date(),
-                        "timestamp": start_time,
-                        "price": price
-                    })
+                    self.price_forecast.append(
+                        {
+                            "hour": start_time.hour,
+                            "date": start_time.date(),
+                            "timestamp": start_time,
+                            "price": price,
+                        }
+                    )
                 except (KeyError, ValueError, TypeError) as e:
                     logger.warning(f"Failed to parse price entry: {entry}, error: {e}")
                     continue
@@ -115,11 +119,13 @@ class PriceOptimizer:
             logger.info(
                 f"Updated prices: {len(self.price_forecast)} hours, "
                 f"categories: {category_counts}, "
-                f"historical avg: {np.mean(self.historical_prices):.2f} (7d)" if self.historical_prices else "no history"
+                f"historical avg: {np.mean(self.historical_prices):.2f} (7d)"
+                if self.historical_prices
+                else "no history"
             )
 
         except Exception as e:
-            logger.error(f"Failed to update prices: {e}", exc_info=True)
+            logger.exception(f"Failed to update prices: {e}")
 
     def _classify_prices_hybrid(self):
         """Classify prices using hybrid approach (PumpSteer-inspired).
@@ -142,7 +148,11 @@ class PriceOptimizer:
         p80 = np.percentile(prices_24h, 80)
 
         # Historical average (trailing 7 days)
-        historical_avg = np.mean(self.historical_prices) if len(self.historical_prices) > 24 else None
+        historical_avg = (
+            np.mean(self.historical_prices)
+            if len(self.historical_prices) > 24
+            else None
+        )
 
         # Classify each hour
         self.hour_categories = {}
@@ -170,11 +180,13 @@ class PriceOptimizer:
     def _update_legacy_sets(self):
         """Update legacy expensive_hour_set and cheap_hour_set for backward compatibility."""
         self.cheap_hour_set = {
-            hour for hour, cat in self.hour_categories.items()
+            hour
+            for hour, cat in self.hour_categories.items()
             if cat in (self.VERY_CHEAP, self.CHEAP)
         }
         self.expensive_hour_set = {
-            hour for hour, cat in self.hour_categories.items()
+            hour
+            for hour, cat in self.hour_categories.items()
             if cat in (self.EXPENSIVE, self.VERY_EXPENSIVE, self.EXTREME_EXPENSIVE)
         }
 
@@ -193,8 +205,9 @@ class PriceOptimizer:
         current_hour = current_time.hour
 
         # Check if we need to update prices (every hour)
-        if (self.last_update is None or
-            (datetime.now() - self.last_update) > timedelta(hours=1)):
+        if self.last_update is None or (datetime.now() - self.last_update) > timedelta(
+            hours=1
+        ):
             self.update_prices()
 
         # Get category for current hour
@@ -211,9 +224,9 @@ class PriceOptimizer:
         elif category == self.NORMAL:
             return 0.0  # No adjustment
         elif category == self.CHEAP:
-            return 1.0 * self.adjustment_degrees   # +0.5°C
+            return 1.0 * self.adjustment_degrees  # +0.5°C
         elif category == self.VERY_CHEAP:
-            return 1.5 * self.adjustment_degrees   # +0.75°C
+            return 1.5 * self.adjustment_degrees  # +0.75°C
         else:
             return 0.0
 
@@ -240,8 +253,9 @@ class PriceOptimizer:
         current_hour = current_time.hour
 
         # Update prices if needed
-        if (self.last_update is None or
-            (datetime.now() - self.last_update) > timedelta(hours=1)):
+        if self.last_update is None or (datetime.now() - self.last_update) > timedelta(
+            hours=1
+        ):
             self.update_prices()
 
         return self.hour_categories.get(current_hour, self.NORMAL)
@@ -252,7 +266,9 @@ class PriceOptimizer:
         forecast_24h = []
 
         for entry in self.price_forecast:
-            if entry["timestamp"] >= now and entry["timestamp"] < now + timedelta(hours=24):
+            if entry["timestamp"] >= now and entry["timestamp"] < now + timedelta(
+                hours=24
+            ):
                 forecast_24h.append(entry)
 
         return sorted(forecast_24h, key=lambda x: x["timestamp"])

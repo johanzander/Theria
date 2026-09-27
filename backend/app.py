@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
         try:
             # Load price config from options (in production) or config.yaml (dev)
             import yaml
+
             config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
             if os.path.exists(config_path):
                 with open(config_path) as f:
@@ -58,20 +59,28 @@ async def lifespan(app: FastAPI):
                         # Resolve sensor key to entity ID (BESS pattern)
                         sensor_key = price_config.get("price_sensor")
                         if not sensor_key:
-                            raise ValueError("price_sensor not configured in price_optimization")
+                            raise ValueError(
+                                "price_sensor not configured in price_optimization"
+                            )
 
                         price_entity = sensors.get(sensor_key)
                         if not price_entity:
-                            raise ValueError(f"Sensor key '{sensor_key}' not found in sensors config")
+                            raise ValueError(
+                                f"Sensor key '{sensor_key}' not found in sensors config"
+                            )
 
                         PriceOptimizer(
                             ha_client,
                             price_entity=price_entity,
                             expensive_hours=price_config.get("expensive_hours", 4),
                             cheap_hours=price_config.get("cheap_hours", 4),
-                            adjustment_degrees=price_config.get("adjustment_degrees", 0.5)
+                            adjustment_degrees=price_config.get(
+                                "adjustment_degrees", 0.5
+                            ),
                         )
-                        logger.info(f"💰 Price optimization enabled (sensor: {sensor_key} -> {price_entity})")
+                        logger.info(
+                            f"💰 Price optimization enabled (sensor: {sensor_key} -> {price_entity})"
+                        )
         except Exception as e:
             logger.warning(f"Failed to initialize price optimizer: {e}")
 
@@ -83,16 +92,14 @@ async def lifespan(app: FastAPI):
             ha_client,
             ZONES,
             learning_interval_minutes=1,  # 1 min for optimal learning resolution
-            outdoor_temp_sensor="sensor.outdoor"  # H60 outdoor temp sensor
+            outdoor_temp_sensor="sensor.outdoor",  # H60 outdoor temp sensor
         )
         await learning_service.start()
         logger.info(f"🧠 Thermal learning enabled for {len(ZONES)} zone(s)")
 
         # Start temperature history collection service
         history_service = TemperatureHistoryService(
-            ha_client,
-            ZONES,
-            collection_interval_seconds=60  # Collect every minute
+            ha_client, ZONES, collection_interval_seconds=60  # Collect every minute
         )
         await history_service.start()
 
@@ -102,6 +109,7 @@ async def lifespan(app: FastAPI):
 
         # Make learning service available to API
         import api
+
         api.learning_service = learning_service
     else:
         logger.warning("⚠️ Thermal learning disabled (no HA client or zones)")
@@ -170,22 +178,22 @@ if os.path.exists(static_dir):
 async def root(request: Request):
     """Root endpoint - serve UI with proper base path."""
     from fastapi.responses import HTMLResponse
-    
+
     # Get ingress path from Home Assistant header
     ingress_path = request.headers.get("X-Ingress-Path", "")
     logger.info(f"Serving root with X-Ingress-Path: '{ingress_path}'")
-    
+
     # Read index.html
     index_path = os.path.join(static_dir, "index.html")
     with open(index_path) as f:
         html_content = f.read()
-    
+
     # Inject base tag if ingress path exists
     if ingress_path:
         base_tag = f'<base href="{ingress_path}/">'
-        html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}")
         logger.info(f"Injected base tag: {base_tag}")
-    
+
     return HTMLResponse(content=html_content)
 
 
@@ -194,22 +202,22 @@ async def root(request: Request):
 async def zone_insights(request: Request):
     """Zone insights page (Butik zone) with proper base path."""
     from fastapi.responses import HTMLResponse
-    
+
     # Get ingress path from Home Assistant header
     ingress_path = request.headers.get("X-Ingress-Path", "")
     logger.info(f"Serving zone-insights with X-Ingress-Path: '{ingress_path}'")
-    
+
     # Read zone-insights.html
     insights_path = os.path.join(static_dir, "zone-insights.html")
     with open(insights_path) as f:
         html_content = f.read()
-    
+
     # Inject base tag if ingress path exists
     if ingress_path:
         base_tag = f'<base href="{ingress_path}/">'
-        html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}")
         logger.info(f"Injected base tag: {base_tag}")
-    
+
     return HTMLResponse(content=html_content)
 
 
@@ -218,22 +226,22 @@ async def zone_insights(request: Request):
 async def system_insights(request: Request):
     """System insights page (main heating system) with proper base path."""
     from fastapi.responses import HTMLResponse
-    
+
     # Get ingress path from Home Assistant header
     ingress_path = request.headers.get("X-Ingress-Path", "")
     logger.info(f"Serving system-insights with X-Ingress-Path: '{ingress_path}'")
-    
+
     # Read system-insights.html
     insights_path = os.path.join(static_dir, "system-insights.html")
     with open(insights_path) as f:
         html_content = f.read()
-    
+
     # Inject base tag if ingress path exists
     if ingress_path:
         base_tag = f'<base href="{ingress_path}/">'
-        html_content = html_content.replace('<head>', f'<head>\n    {base_tag}')
+        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}")
         logger.info(f"Injected base tag: {base_tag}")
-    
+
     return HTMLResponse(content=html_content)
 
 

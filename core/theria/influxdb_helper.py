@@ -194,8 +194,8 @@ def get_sensor_timeseries(
     stop_time: datetime,
     timezone: str = "Europe/Stockholm",
     domain: str = "sensor",
-    field_name: str = None,
-    parse_as_string: bool = False
+    field_name: str | None = None,
+    parse_as_string: bool = False,
 ) -> dict:
     """Get time series data for a single sensor or climate entity.
 
@@ -279,7 +279,9 @@ def get_sensor_timeseries(
             }
 
         # Parse CSV response
-        timeseries_data = _parse_timeseries_response(response.text, local_tz, parse_as_string)
+        timeseries_data = _parse_timeseries_response(
+            response.text, local_tz, parse_as_string
+        )
 
         if not timeseries_data:
             return {"status": "error", "message": "No valid data points found"}
@@ -299,7 +301,9 @@ def get_sensor_timeseries(
         return {"status": "error", "message": f"Unexpected error: {e!s}"}
 
 
-def _parse_timeseries_response(response_text: str, local_tz: ZoneInfo, parse_as_string: bool = False) -> list:
+def _parse_timeseries_response(
+    response_text: str, local_tz: ZoneInfo, parse_as_string: bool = False
+) -> list:
     """Parse InfluxDB CSV response to extract time series data.
 
     Args:
