@@ -66,6 +66,22 @@ class HeatingPowerSnapshot:
     heating_active: bool  # Whether any heating was requested
 
 
+@dataclass
+class HeatPumpSnapshot:
+    """Snapshot of heat pump state at a point in time."""
+
+    timestamp: str  # ISO format
+    compressor_speed: float | None  # % of max
+    compressor_power: float | None  # kW, instantaneous
+    mode: str  # "heating" or "hot_water"
+    heat_carrier_forward: float | None  # °C
+    heat_carrier_return: float | None  # °C
+    cop: float | None  # Rolling COP since previous snapshot (delivered/consumed)
+    hotwater_top: float | None = None  # °C
+    hotwater_mid: float | None = None  # °C
+    hotwater_setpoint: float | None = None  # °C
+
+
 class HistoryTracker:
     """Tracks temperature history and control events."""
 
@@ -85,6 +101,9 @@ class HistoryTracker:
             maxlen=10080
         )  # 7 days at 1/min
         self.heating_power_snapshots: deque[HeatingPowerSnapshot] = deque(
+            maxlen=10080
+        )  # 7 days at 1/min
+        self.heat_pump_snapshots: deque[HeatPumpSnapshot] = deque(
             maxlen=10080
         )  # 7 days at 1/min
 
@@ -352,6 +371,79 @@ class HistoryTracker:
         # For MVP, return raw data
         return [asdict(s) for s in snapshots]
 
+    def add_heat_pump_snapshot(
+        self,
+        compressor_speed: float | None,
+        compressor_power: float | None,
+        mode: str,
+        heat_carrier_forward: float | None,
+        heat_carrier_return: float | None,
+        cop: float | None,
+        hotwater_top: float | None = None,
+        hotwater_mid: float | None = None,
+        hotwater_setpoint: float | None = None,
+        timestamp: datetime | None = None,
+        skip_cleanup: bool = False,
+    ):
+        """Add a heat pump snapshot.
+
+        Args:
+            compressor_speed: Compressor speed % of max
+            compressor_power: Instantaneous compressor power (kW)
+            mode: "heating" or "hot_water"
+            heat_carrier_forward: Forward line temperature (°C)
+            heat_carrier_return: Return line temperature (°C)
+            cop: Rolling COP since previous snapshot (None if not computable)
+            hotwater_top: DHW tank top temperature (°C)
+            hotwater_mid: DHW tank mid temperature (°C)
+            hotwater_setpoint: DHW setpoint (°C)
+            timestamp: Optional timestamp (defaults to now for real-time snapshots)
+            skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
+        """
+        ts = (
+            timestamp.isoformat()
+            if timestamp
+            else datetime.now(timezone.utc).isoformat()
+        )
+
+        snapshot = HeatPumpSnapshot(
+            timestamp=ts,
+            compressor_speed=compressor_speed,
+            compressor_power=compressor_power,
+            mode=mode,
+            heat_carrier_forward=heat_carrier_forward,
+            heat_carrier_return=heat_carrier_return,
+            cop=cop,
+            hotwater_top=hotwater_top,
+            hotwater_mid=hotwater_mid,
+            hotwater_setpoint=hotwater_setpoint,
+        )
+
+        with self.lock:
+            self.heat_pump_snapshots.append(snapshot)
+            if not skip_cleanup:
+                self._cleanup_old_data()
+
+    def get_heat_pump_history(self, hours: int | None = None) -> list[dict]:
+        """Get heat pump history.
+
+        Args:
+            hours: How many hours back (None = all available)
+
+        Returns:
+            List of heat pump snapshots as dicts
+        """
+        with self.lock:
+            snapshots = list(self.heat_pump_snapshots)
+
+        if hours:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            snapshots = [
+                s for s in snapshots if datetime.fromisoformat(s.timestamp) > cutoff
+            ]
+
+        return [asdict(s) for s in snapshots]
+
     def _cleanup_old_data(self):
         """Remove data older than max_hours."""
         cutoff = datetime.now(timezone.utc) - self.max_age
@@ -386,6 +478,14 @@ class HistoryTracker:
             < seven_days_ago
         ):
             self.heating_power_snapshots.popleft()
+
+        # Clean heat pump snapshots (keep 7 days)
+        while (
+            self.heat_pump_snapshots
+            and datetime.fromisoformat(self.heat_pump_snapshots[0].timestamp)
+            < seven_days_ago
+        ):
+            self.heat_pump_snapshots.popleft()
 
 
 # Global instance

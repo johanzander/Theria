@@ -329,6 +329,14 @@
 
         <div id="warning-container"></div>
 
+        <!-- Heat Pump Status (live) -->
+        <div class="card">
+            <h3>♨️ Heat Pump Status</h3>
+            <div id="heatPumpStatus" style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px;">
+                <span style="color: #a0aec0;">Loading...</span>
+            </div>
+        </div>
+
 <!-- Main Heating System Chart -->
         <div class="card">
             <h3>Main Heating System</h3>
@@ -487,6 +495,7 @@
                 // Load data for all zones in parallel
                 const hours = datePicker.getHoursFromRange();
                 await Promise.all([
+                    loadHeatPumpStatus(),
                     loadMainHeatingChart(hours),
                     loadTemperatureChart(hours),
                     loadHeatCarrierChart(hours)
@@ -495,6 +504,37 @@
             } catch (error) {
                 console.error('Error loading data:', error);
                 showError('Failed to load data: ' + error.message);
+            }
+        }
+
+        async function loadHeatPumpStatus() {
+            const container = document.getElementById('heatPumpStatus');
+            try {
+                const res = await fetch('api/heatpump/status');
+                const data = await res.json();
+
+                if (!data.enabled) {
+                    container.innerHTML = `<span style="color: #a0aec0;">${data.message || 'Heat pump monitoring not enabled'}</span>`;
+                    return;
+                }
+
+                const fmt = (v, unit = '', digits = 1) =>
+                    (v === null || v === undefined) ? 'N/A' : `${Number(v).toFixed(digits)}${unit}`;
+
+                const modeLabel = data.mode === 'hot_water' ? '🚿 Hot Water' : '🔥 Heating';
+                const delta = (data.heat_carrier_forward != null && data.heat_carrier_return != null)
+                    ? (data.heat_carrier_forward - data.heat_carrier_return) : null;
+
+                container.innerHTML = `
+                    <div><strong>Mode:</strong> ${modeLabel}</div>
+                    <div><strong>Power:</strong> ${fmt(data.compressor_power, ' kW')}</div>
+                    <div><strong>Speed:</strong> ${fmt(data.compressor_speed, '%', 0)}</div>
+                    <div><strong>COP:</strong> ${fmt(data.cop, '', 2)}</div>
+                    <div><strong>Forward/Return:</strong> ${fmt(data.heat_carrier_forward, '°C')} / ${fmt(data.heat_carrier_return, '°C')} (Δ${fmt(delta, '°C')})</div>
+                `;
+            } catch (error) {
+                console.error('Error loading heat pump status:', error);
+                container.innerHTML = `<span style="color: #fc8181;">Failed to load heat pump status</span>`;
             }
         }
 

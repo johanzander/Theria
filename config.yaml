@@ -44,6 +44,25 @@ options:
     cheap_hours: 4  # Number of cheapest hours to pre-heat
     adjustment_degrees: 0.5  # Temperature adjustment in °C
 
+  heat_pump:
+    enabled: true
+    # IVT AirX via Husdata H60 - entity IDs confirmed against home-analytics/backend/sensors.yaml
+    compressor_speed: "sensor.compressor_speed"  # % of max
+    compressor_power: "sensor.compressor_speed_2"  # kW, instantaneous
+    mode_switch: "binary_sensor.switch_valve_1"  # True=hot water, False=heating
+    heat_carrier_forward: "sensor.heat_carrier_forwrd"
+    heat_carrier_return: "sensor.heat_carrier_return"
+    compressor_consumption_total: "sensor.compr_consump_tot"  # kWh, cumulative
+    compressor_consumption_heating: "sensor.compr_cons_heating"  # kWh, cumulative
+    compressor_consumption_hotwater: "sensor.compr_cons_hotwat"  # kWh, cumulative
+    delivered_energy_total: "sensor.supp_energy_tot"  # kWh, cumulative
+    delivered_energy_heating: "sensor.supp_energy_heating"  # kWh, cumulative
+    delivered_energy_hotwater: "sensor.supp_energy_hotwater"  # kWh, cumulative
+    aux_consumption_total: "sensor.aux_consumption_tot"  # kWh, cumulative
+    hotwater_setpoint: "sensor.warm_water_setpoint"
+    hotwater_top: "sensor.warm_water_1_top"
+    hotwater_mid: "sensor.warm_water_2_mid"
+
   zones:
     - id: "butik"
       name: "Butik"
@@ -90,6 +109,23 @@ schema:
     expensive_hours: int?
     cheap_hours: int?
     adjustment_degrees: float?
+  heat_pump:
+    enabled: bool?
+    compressor_speed: str?
+    compressor_power: str?
+    mode_switch: str?
+    heat_carrier_forward: str?
+    heat_carrier_return: str?
+    compressor_consumption_total: str?
+    compressor_consumption_heating: str?
+    compressor_consumption_hotwater: str?
+    delivered_energy_total: str?
+    delivered_energy_heating: str?
+    delivered_energy_hotwater: str?
+    aux_consumption_total: str?
+    hotwater_setpoint: str?
+    hotwater_top: str?
+    hotwater_mid: str?
   zones:
     - id: str
       name: str

@@ -682,6 +682,33 @@ async def get_price_forecast(hours: int = 24):
     }
 
 
+@router.get("/api/heatpump/status")
+async def get_heat_pump_status():
+    """Get current heat pump state (latest collected snapshot)."""
+    history = history_tracker.get_heat_pump_history(hours=1)
+
+    if not history:
+        return {"enabled": False, "message": "No heat pump data collected yet"}
+
+    latest = history[-1]
+    return {"enabled": True, **latest}
+
+
+@router.get("/api/heatpump/history")
+async def get_heat_pump_history(hours: int = 24):
+    """Get heat pump history for charting.
+
+    Args:
+        hours: How many hours of history to retrieve (default: 24)
+    """
+    history = history_tracker.get_heat_pump_history(hours=hours)
+
+    return {
+        "count": len(history),
+        "history": history,
+    }
+
+
 @router.get("/api/thermal/characteristics/history")
 async def get_thermal_characteristics_history(
     zone_id: str | None = None, hours: int = 24

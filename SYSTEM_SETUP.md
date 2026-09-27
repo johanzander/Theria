@@ -37,34 +37,56 @@ All buildings share a common heating source (IVT AirX heat pump):
 
 ### Key Sensors (H60 Main System)
 
+**Confirmed against `home-analytics/backend/sensors.yaml` and the official Husdata H66 register
+map (online.husdata.se/h-docs/C10.pdf, updated 2026-08-01). Entity IDs have no `h60_` prefix and
+one has a typo baked into the real integration (`heat_carrier_forwrd`). Register IDs below are
+the Husdata Modbus register (IDX), not the HA entity ID.**
+
 **Temperature & Control:**
 
-- `sensor.outdoor` - Outdoor temperature (external sensor)
-- `climate.room_temp_setpoint` - Master setpoint control
-- `sensor.radiator_forward` - Forward water temperature (all zones)
-- `sensor.heating_setpoint` - Current heating setpoint
-- `sensor.heat_carrier_forward` - Heat carrier forward temp
-- `sensor.heat_carrier_return` - Heat carrier return temp
-- `sensor.compressor_speed_2` - Compressor speed (0-100%)
-- `binary_sensor.switch_valve_1` - Hot water (True) vs Heating (False)
+- `sensor.outdoor` (reg `0007`) - Outdoor temperature (external sensor)
+- `sensor.radiator_forward` (reg `0002`) - Water feed out to the radiators/zones (distinct from
+  heat carrier forward - this is downstream of the mixing, closer to what the zones actually get)
+- `sensor.heat_carrier_forwrd` (reg `0004`) - HP's internal heat supply forward (note: "forwrd",
+  not "forward" - typo baked into the real integration)
+- `sensor.heat_carrier_return` (reg `0003`) - HP's internal heat carrier return
+- `sensor.heating_setpoint` (reg `0107`) - Target temp for heating (read/write)
+- `sensor.compressor_speed` (reg `3108`) - Compressor speed (% of max, same as Hz)
+- `sensor.compressor_speed_2` (reg `9112`) - Compressor power (kW, instantaneous)
+- `binary_sensor.switch_valve_1` (reg `1A07`) - `0`/off = Radiator heating, `1`/on = Hot water heating
 
-**Energy Monitoring - Compressor:**
+**Energy Monitoring - Compressor (cumulative kWh counters):**
 
-- `sensor.h60_compr_cons_heating` - Heating consumption
-- `sensor.h60_compr_cons_hotwat` - Hot water consumption
-- `sensor.h60_compr_consump_tot` - Total consumption
+- `sensor.compr_cons_heating` (reg `5C55`) - Heating consumption
+- `sensor.compr_cons_hotwat` (reg `5C56`) - Hot water consumption
+- `sensor.compr_consump_tot` (reg `5C54`) - Total consumption
 
-**Energy Monitoring - Auxiliary:**
+**Energy Monitoring - Auxiliary (cumulative kWh counters):**
 
-- `sensor.h60_aux_cons_hot_water`
-- `sensor.h60_aux_cons_heating`
-- `sensor.h60_aux_consumption_tot`
+- `sensor.aux_consumption_tot` (reg `5C57`) - Electrical additional heater, total
+- Registers `5C58`/`5C59` (heating/hot-water split) exist on the pump but aren't in
+  `home-analytics/backend/sensors.yaml` or Theria's config yet - add if the split becomes useful.
 
-**Energy Monitoring - Supplementary:**
+**Energy Monitoring - Delivered/Supplementary Energy (cumulative kWh counters):**
 
-- `sensor.h60_supp_energy_heating`
-- `sensor.h60_supp_energy_hotwater`
-- `sensor.h60_supp_energy_tot`
+- `sensor.supp_energy_heating` (reg `5C52`) - Energy supplied for heating
+- `sensor.supp_energy_hotwater` (reg `5C53`) - Energy supplied for hot water production
+- `sensor.supp_energy_tot` (reg `5C51`) - Energy supplied, total
+
+**Domestic Hot Water:**
+
+- `sensor.warm_water_setpoint` (reg `0111`) - Target temp for warm tap water
+- `sensor.warm_water_1_top` (reg `0009`) - Warm water tank, top sensor
+- `sensor.warm_water_2_mid` (reg `000A`) - Warm water tank, mid sensor
+
+**Also available on the pump but not yet tracked** (reg `6C60` Compr. Runtime hours,
+`2C61` Compr. Starts counter, `6C50` Total op. time hours, `3104` Add heat status % usage) -
+useful for reliability/health monitoring later, not needed for the current visibility pass.
+
+Tracked in Theria via `core/theria/heat_pump_monitor.py`, configured under `options.heat_pump`
+in `config.yaml`. Instantaneous power comes from `compressor_speed_2`; COP is computed as a
+rolling delta of the delivered/consumed cumulative counters between polls, not from the
+counters directly.
 
 ---
 

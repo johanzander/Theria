@@ -44,3 +44,31 @@ class ZoneSettings:
             converted["temp_sensors"] = [converted.pop("temp_sensor")]
 
         return cls(**converted)
+
+
+@dataclass
+class HeatPumpSettings:
+    """Configuration for heat pump monitoring (IVT AirX / Husdata H60)."""
+
+    compressor_speed: str
+    compressor_power: str
+    mode_switch: str
+    heat_carrier_forward: str
+    heat_carrier_return: str
+    compressor_consumption_total: str
+    compressor_consumption_heating: str
+    compressor_consumption_hotwater: str
+    delivered_energy_total: str
+    delivered_energy_heating: str
+    delivered_energy_hotwater: str
+    aux_consumption_total: str
+    hotwater_setpoint: str | None = None
+    hotwater_top: str | None = None
+    hotwater_mid: str | None = None
+    enabled: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "HeatPumpSettings":
+        """Create from dictionary."""
+        converted = {_camel_to_snake(k): v for k, v in data.items()}
+        return cls(**converted)

@@ -22,7 +22,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from api import ZONES, ha_client
 from api import router as api_router
 
+from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.price_optimizer import PriceOptimizer
+from core.theria.settings import HeatPumpSettings
 from core.theria.temperature_history_service import TemperatureHistoryService
 from core.theria.thermal_learning_service import ThermalLearningService
 
@@ -84,6 +86,32 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Failed to initialize price optimizer: {e}")
 
+    # Start heat pump monitor if enabled
+    heat_pump_service = None
+    if ha_client:
+        try:
+            import yaml
+
+            config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+            if os.path.exists(config_path):
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+                    heat_pump_config = config.get("options", {}).get("heat_pump", {})
+
+                    if heat_pump_config.get("enabled"):
+                        heat_pump_settings = HeatPumpSettings.from_dict(
+                            heat_pump_config
+                        )
+                        heat_pump_service = HeatPumpMonitorService(
+                            ha_client,
+                            heat_pump_settings,
+                            collection_interval_seconds=60,
+                        )
+                        await heat_pump_service.start()
+                        logger.info("♨️ Heat pump monitoring enabled")
+        except Exception as e:
+            logger.warning(f"Failed to initialize heat pump monitor: {e}")
+
     # Start thermal learning service if HA client is available
     learning_service = None
     history_service = None
@@ -122,6 +150,8 @@ async def lifespan(app: FastAPI):
         await learning_service.stop()
     if history_service:
         await history_service.stop()
+    if heat_pump_service:
+        await heat_pump_service.stop()
 
 
 # Create FastAPI application
