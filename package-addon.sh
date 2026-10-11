@@ -12,26 +12,13 @@ mkdir -p ./build/theria
 
 # Copy Dockerfile and configuration
 echo "📦 Copying Dockerfile and configuration..."
-cp Dockerfile ./build/theria/
-cp config.yaml ./build/theria/
-cp build.json ./build/theria/
+cp Dockerfile .dockerignore config.yaml build.json ./build/theria/
 
-# Copy backend files
-echo "📦 Copying backend files..."
-mkdir -p ./build/theria/backend
-cp backend/app.py ./build/theria/backend/
-cp backend/api.py ./build/theria/backend/
-cp backend/log_config.py ./build/theria/backend/
-cp backend/requirements.txt ./build/theria/backend/
-cp backend/run.sh ./build/theria/backend/
-
-# Copy static files (UI)
-echo "📦 Copying static files..."
-cp -r backend/static ./build/theria/backend/
-
-# Copy core module
-echo "📦 Copying core module..."
-cp -r core ./build/theria/
+# The Dockerfile copies backend/, core/ and frontend/ (it builds the React page itself)
+echo "📦 Copying backend, core and frontend sources..."
+rsync -a --exclude '__pycache__' --exclude 'static/plan' backend ./build/theria/
+rsync -a --exclude '__pycache__' core ./build/theria/
+rsync -a --exclude node_modules --exclude dist frontend ./build/theria/
 
 # Create repository structure
 echo "📦 Creating repository structure..."

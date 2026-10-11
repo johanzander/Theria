@@ -1,3 +1,6 @@
+# Declared before the first FROM so that it can be used by the final FROM
+ARG BUILD_FROM
+
 FROM node:22-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -6,7 +9,6 @@ COPY frontend/ ./
 # vite.config.ts writes to ../backend/static/plan
 RUN mkdir -p /backend/static && npm run build
 
-ARG BUILD_FROM
 FROM $BUILD_FROM
 
 # Set version labels
@@ -41,7 +43,8 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Copy Python application files from backend directory
-COPY backend/app.py backend/api.py backend/plan_api.py backend/sensor_api.py backend/log_config.py backend/requirements.txt ./
+# Every backend module (a wildcard, so that a new module cannot be forgotten)
+COPY backend/*.py backend/requirements.txt ./
 
 # Copy static files (UI)
 COPY backend/static/ ./static/

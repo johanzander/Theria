@@ -1,6 +1,6 @@
 name: "Theria"
 description: "Smart heating optimization using electricity price-based heat capacitor strategy"
-version: "0.6.0"
+version: "0.7.0"
 image: "ghcr.io/johanzander/theria-{arch}"
 
 slug: "theria"
@@ -31,9 +31,11 @@ options:
 
   influxdb:
     enabled: true
-    # Credentials are read from .env file (HA_DB_URL, HA_DB_USER_NAME, HA_DB_PASSWORD)
-    # Leave blank to use environment variables
-    url: ""
+    # The same url, username and password as the home-analytics add-on (InfluxQL, GET /query);
+    # the bucket is fixed to home_assistant/autogen. Fill in username and password in the
+    # add-on options. Locally, empty values fall back to HA_DB_URL / HA_DB_USER_NAME /
+    # HA_DB_PASSWORD in .env.
+    url: "http://192.168.2.9:8086/query"
     username: ""
     password: ""
 
