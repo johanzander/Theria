@@ -1,10 +1,12 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fetchModelHealth, fetchParameters } from '../api'
 import { Card, useLoaded } from '../ui'
-import { fitQuality, parameterSeries, type ParameterHistory } from '../model'
+import { fitQuality, parameterSeries, warmupText, type ParameterHistory } from '../model'
 
 const TRACKED: { key: string; title: string; unit: string }[] = [
   { key: 'room_gain_c_per_c', title: 'Room response (°C per °C flow)', unit: '' },
+  { key: 'warmup_scale', title: 'Warm-up speed: measured / model', unit: '' },
+  { key: 'cooling_scale', title: 'Cooling speed: measured / model', unit: '' },
   { key: 'night_slope_c_per_c', title: 'Night cooling: less per °C warmer', unit: '' },
   { key: 'night_intercept_c', title: 'Night change at 0 °C outdoors', unit: ' °C' },
   { key: 'night_level_c_per_c', title: 'Night: extra per °C warmer room', unit: '' },
@@ -113,6 +115,25 @@ export function Models() {
             </tbody>
           </table>
           <p className="note">The room model gives a sensitivity, not a forecast: it does not beat "no change" at predicting the room.</p>
+        </div>
+      )}
+      {data.models.warmup.fit ? (
+        <div className="panel">
+          <h2>Warm-up and cooling speed</h2>
+          <p>
+            {warmupText(data.models.warmup.fit)} Raising the setpoint 1 °C warmed the room {data.models.warmup.fit.response_c_per_c.toFixed(2)} °C over 24 h
+            (the model implies {data.models.warmup.fit.predicted_c_per_c.toFixed(2)}); lowering it cooled the room {data.models.warmup.fit.cooling_response_c_per_c.toFixed(2)} °C per degree,
+            {' '}{data.models.warmup.fit.cooling_scale.toFixed(1)} ± {data.models.warmup.fit.cooling_se.toFixed(1)} x the model. {data.models.warmup.fit.windows} days, {data.models.warmup.fit.step_windows} with a setpoint change.
+          </p>
+          <p className="note">
+            Warming is hard to see in the history because the LK thermostats stop heat above their setpoint; the planned LK boost gives clean data once the plan is active.
+            Cooling looks faster than the model, but the old manual changes were often made when the room was already warm, so it may be overstated.
+          </p>
+        </div>
+      ) : (
+        <div className="panel">
+          <h2>Warm-up and cooling speed</h2>
+          <p className="note">Not measured yet: {data.models.warmup.fit_error ?? 'waiting for the first refit'}</p>
         </div>
       )}
       {data.models.night.fit ? (

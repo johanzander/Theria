@@ -135,6 +135,16 @@ Learned continuously (see the Models tab and `GET /api/plan/parameters`, which k
 - stage (trust region).
 Defaults: `night_target_c` 18.5, `night_floor_c` 17.5 (careful until cold nights are measured).
 
-- [x] Estimated lead time before comfort starts: `comfort_outlook` in every plan (room at 06:00, deficit, extra warm-up rate, hours of maximum heating the deficit would need), shown on the Overview. Live 2026-10-11: 19.47 C, 0.03 C short, about 2 h. - [ ] The warm-up speed itself is still the model's `k_slab`; learn it from measured rises after pre-heating.
+- [x] Estimated lead time before comfort starts: `comfort_outlook` in every plan (room at 06:00, deficit, extra warm-up rate, hours of maximum heating the deficit would need), shown on the Overview. Live 2026-10-11: 19.47 C, 0.03 C short, about 2 h. - [ ] Done below (warm-up scale).
 - [x] Residuals checked on 301 real nights: no weekday pattern, a weak evening-warmth effect (not worth a term), but the **room level at the start of the night matters** (a warmer room loses more): added. Fit error 0.35 -> 0.31 C; the outdoor effect then shows: about -1.3 C at -10 C and -0.3 C at +10 C for a 19.5 C room.
 - [x] Alert (notification, dismissed again when fine) if the recent nights are missed by more than max(0.4 C, 1.8 x the fit error).
+
+## Warm-up speed (2026-10-11)
+
+`warmup.py` measures how the room answers setpoint changes: per 24 h window the room change is regressed on the change of the mean setpoint (raising and lowering separately), with weather change, outdoor temperature and room level as controls, recent windows weighted more (half-life 365 days), and compared like for like with what the model's own simulated room gives for the same setpoints. The warm-up scale is applied to `k_slab` in the planner only when it differs from 1 by more than 2 standard errors (clipped 0.5-1.5).
+
+Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 1.6 (not identifiable; 1.0 is used), cooling scale 2.2 +- 1.2 (about 0.25 C per C of setpoint over 24 h against 0.09 for the model).
+- Why warming is not seen: the LK thermostats stood at 19.5 C, so a higher pump setpoint did nothing once the room was there. With the room below 19.3 C (valves open) the warming looked like 0.10-0.14 +- 0.08 per C, in line with the model.
+- Why cooling may be overstated: the old manual cuts were mostly made when the room was already warm (sun, stove), so part of the cooling is not caused by the cut.
+- [ ] Re-read the Models tab after the first active nights: the plan's own setpoint changes (and the LK boost) are clean experiments and will show the real warm-up and cooling speed.
+- [ ] If cooling stays 2x the model: give the room model an asymmetric response (cooling faster than warming) so that cuts are costed correctly.

@@ -56,6 +56,7 @@ from core.theria.plan.stages import (
     shrink_for_trouble,
 )
 from core.theria.plan.state_store import PlanState, PlanStateStore
+from core.theria.plan.warmup import WarmupFit
 from core.theria.plan.weather import OpenMeteoClient, WeatherHour
 from core.theria.sensor_guard import SensorGuard
 
@@ -143,6 +144,8 @@ class PlanService:
         self._margin_changed_on: date | None = None
         self._morning_rules = MorningRules()
         self._night_error: str | None = None
+        self._warmup: WarmupFit | None = None
+        self._warmup_error: str | None = None
         self._next_refit_at: datetime | None = None
         self._scoreboard = ScoreBoard()
         self._parameter_log = parameter_log
@@ -258,6 +261,12 @@ class PlanService:
                 params["room_gain_c_per_c"] = response.gain_c_per_c
                 params["room_rate_per_day"] = response.rate_per_day
                 params["room_time_constant_days"] = response.time_constant_days
+        if self._warmup is not None:
+            params["warmup_scale"] = self._warmup.scale
+            params["warmup_applied_scale"] = self._warmup.applied_scale
+            params["warmup_response_c_per_c"] = self._warmup.response_c_per_c
+            params["cooling_response_c_per_c"] = self._warmup.cooling_response_c_per_c
+            params["cooling_scale"] = self._warmup.cooling_scale
         if self._night is not None:
             params["night_intercept_c"] = self._night.intercept_c
             params["night_slope_c_per_c"] = self._night.slope_c_per_c
@@ -333,6 +342,14 @@ class PlanService:
                     lead,
                 )
         return None
+
+    def _warmed_room(self) -> RoomParams:
+        """The room model with its warming speed corrected by what has been measured."""
+        if self._warmup is None:
+            return self._room
+        return replace(
+            self._room, k_slab=self._room.k_slab * self._warmup.applied_scale
+        )
 
     def _effective_settings(self) -> PlanSettings:
         """The settings the plan runs on: the night kept warmer by the learned margin."""
@@ -487,6 +504,8 @@ class PlanService:
         self._models = models
         self._night = models.night_drift
         self._night_error = models.night_drift_error
+        self._warmup = models.warmup
+        self._warmup_error = models.warmup_error
         self._pump = models.pump.params
         if models.room is not None:
             self._room = models.room.params
@@ -511,6 +530,12 @@ class PlanService:
             and previous.night_drift is not None
         ):
             models = replace(models, night_drift=previous.night_drift)
+        if (
+            models.warmup is None
+            and previous is not None
+            and previous.warmup is not None
+        ):
+            models = replace(models, warmup=previous.warmup)
         self._apply_models(models)
         self._record_parameters("refit", "nightly refit of the models")
         self._check_night_model()
@@ -553,6 +578,11 @@ class PlanService:
                 "source": "none" if self._night is None else "fitted",
                 "fit": self._night,
                 "fit_error": self._night_error,
+            },
+            "warmup": {
+                "source": "none" if self._warmup is None else "fitted",
+                "fit": self._warmup,
+                "fit_error": self._warmup_error,
             },
             "fitted_at": None if fitted is None else fitted.fitted_at,
             "window": (
@@ -636,7 +666,7 @@ class PlanService:
             flow_target(self._pump, t_out, s.rts_base_c), dtype=float
         )
         room_params = anchored_room_params(
-            self._room, room_c, t_out, baseline_flow, s.lk_setpoint_c
+            self._warmed_room(), room_c, t_out, baseline_flow, s.lk_setpoint_c
         )
         result = plan(inputs, self._effective_settings(), self._pump, room_params)
         snapshot = PlanSnapshot(

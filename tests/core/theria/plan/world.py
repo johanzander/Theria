@@ -127,6 +127,9 @@ class World:
         # the history is labelled by hour: hour i holds the temperature at the START of hour i
         self.room = np.concatenate([[19.0], end_of_hour[:-1]])
 
+    def hours_list(self) -> list[datetime]:
+        return [self.start + timedelta(hours=i) for i in range(len(self.t_out))]
+
     def points(self, values: np.ndarray) -> list[tuple[datetime, float]]:
         return [
             (self.start + timedelta(hours=i, minutes=30), float(v))

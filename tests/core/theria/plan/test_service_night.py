@@ -159,3 +159,74 @@ def test_without_a_night_window_there_is_no_outlook(settings):
     service, *_ = make(settings)
     service.run_once()
     assert service.latest().comfort_outlook is None
+
+
+def warm(scale, applied=None):
+    from core.theria.plan.warmup import WarmupFit
+
+    return WarmupFit(
+        scale,
+        0.05,
+        scale if applied is None else applied,
+        0.15,
+        0.14,
+        0.2,
+        1.0,
+        0.1,
+        380,
+        90,
+    )
+
+
+def test_the_planner_warms_the_room_at_the_measured_speed(night_settings):
+    slow, fast = make_active(night_settings)[0], make_active(night_settings)[0]
+    slow._apply_models(
+        replace(fitted_models(), night_drift=COLD_NIGHTS, warmup=warm(0.5))
+    )
+    fast._apply_models(
+        replace(fitted_models(), night_drift=COLD_NIGHTS, warmup=warm(1.5))
+    )
+    slow.run_once()
+    fast.run_once()
+    assert fast.latest().comfort_outlook.extra_rate_c_per_h == pytest.approx(
+        3 * slow.latest().comfort_outlook.extra_rate_c_per_h, rel=0.05
+    )
+
+
+def test_a_scale_that_is_not_significant_changes_nothing(night_settings):
+    plain, noisy = make_active(night_settings)[0], make_active(night_settings)[0]
+    plain._apply_models(replace(fitted_models(), night_drift=COLD_NIGHTS))
+    noisy._apply_models(
+        replace(fitted_models(), night_drift=COLD_NIGHTS, warmup=warm(1.1, applied=1.0))
+    )
+    plain.run_once()
+    noisy.run_once()
+    assert noisy.latest().comfort_outlook.extra_rate_c_per_h == pytest.approx(
+        plain.latest().comfort_outlook.extra_rate_c_per_h
+    )
+
+
+def test_the_model_status_reports_the_warm_up_fit(night_settings):
+    service, *_ = make_active(night_settings)
+    service._apply_models(replace(fitted_models(), warmup=warm(1.2)))
+    assert service.model_status()["warmup"]["fit"].scale == 1.2
+    assert service.model_status()["warmup"]["source"] == "fitted"
+
+
+def test_a_rejected_warm_up_fit_keeps_the_accepted_one(night_settings):
+    good = replace(fitted_models(), warmup=warm(1.2))
+    rejected = replace(fitted_models(), warmup=None, warmup_error="ModelFitError: x")
+    calibrator = FakeCalibrator(good)
+    service = make_service(night_settings, calibrator=calibrator)
+    service.refit()
+    calibrator.result = rejected
+    service.refit()
+    status = service.model_status()["warmup"]
+    assert status["fit"].scale == 1.2 and status["fit_error"] == "ModelFitError: x"
+
+
+def test_the_warm_up_scale_is_in_the_parameter_values(night_settings):
+    service, *_ = make_active(night_settings)
+    service._apply_models(replace(fitted_models(), warmup=warm(1.2)))
+    params = service.parameters()
+    assert params["warmup_scale"] == 1.2 and params["warmup_applied_scale"] == 1.2

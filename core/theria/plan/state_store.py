@@ -14,6 +14,7 @@ from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.room_model import RoomParams
 from core.theria.plan.settings import SUPPORTED_MODES
 from core.theria.plan.stages import StageState
+from core.theria.plan.warmup import WarmupFit
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,11 @@ def _night_from_dict(d: dict[str, Any]) -> NightDrift:
     )
 
 
+def _warmup_from_dict(d: dict[str, Any]) -> WarmupFit:
+    values = {key: d.get(key, float("nan")) for key in WarmupFit.__dataclass_fields__}
+    return WarmupFit(**values)  # fields added later are NaN in older state files
+
+
 def _models_to_dict(m: FittedModels) -> dict[str, Any]:
     return {
         "pump": {
@@ -136,6 +142,8 @@ def _models_to_dict(m: FittedModels) -> dict[str, Any]:
         "room_error": m.room_error,
         "night_drift": None if m.night_drift is None else _night_to_dict(m.night_drift),
         "night_drift_error": m.night_drift_error,
+        "warmup": None if m.warmup is None else m.warmup.__dict__,
+        "warmup_error": m.warmup_error,
         "fitted_at": m.fitted_at.isoformat(),
         "window_start": m.window_start.isoformat(),
         "window_end": m.window_end.isoformat(),
@@ -166,6 +174,8 @@ def _models_from_dict(d: dict[str, Any]) -> FittedModels:
             None if d.get("night_drift") is None else _night_from_dict(d["night_drift"])
         ),  # absent in older state files
         night_drift_error=d.get("night_drift_error"),
+        warmup=None if d.get("warmup") is None else _warmup_from_dict(d["warmup"]),
+        warmup_error=d.get("warmup_error"),
         fitted_at=datetime.fromisoformat(d["fitted_at"]),
         window_start=datetime.fromisoformat(d["window_start"]),
         window_end=datetime.fromisoformat(d["window_end"]),

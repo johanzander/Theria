@@ -28,8 +28,13 @@ from core.theria.plan.pump_model import (
     fit_energy_model,
     fit_flow_curve,
 )
-from core.theria.plan.room_model import RoomParams
+from core.theria.plan.room_model import (
+    PRIOR_GAIN_C_PER_C,
+    PRIOR_RATE_PER_DAY,
+    RoomParams,
+)
 from core.theria.plan.settings import PlanSettings
+from core.theria.plan.warmup import WarmupFit, fit_warmup
 
 # The heat curve is changed by hand; only recent data describes it.
 FLOW_WINDOW_DAYS = 240
@@ -76,6 +81,8 @@ class FittedModels:
         None  # how much the room cools at night, by outdoor temp
     )
     night_drift_error: str | None = None
+    warmup: WarmupFit | None = None  # measured warm-up speed against the model
+    warmup_error: str | None = None
 
 
 def fit_pump(inputs: CalibrationInputs) -> PumpFit:
@@ -226,9 +233,33 @@ class Calibrator:
             ModelFitError
         ) as e:  # the plan then simply does not know about night cooling
             night, night_error = None, f"{type(e).__name__}: {e}"
+        # compared with the room model in use: the fitted one, or the prior when none was accepted
+        gain, rate = (
+            (room.response.gain_c_per_c, room.response.rate_per_day)
+            if room is not None
+            else (PRIOR_GAIN_C_PER_C, PRIOR_RATE_PER_DAY)
+        )
+        try:
+            warmup, warmup_error = (
+                fit_warmup(
+                    inputs.hours,
+                    inputs.room_reference_c,
+                    inputs.t_out_c,
+                    inputs.rts_c,
+                    gain,
+                    rate,
+                    pump.params.flow_per_rts,
+                    self._settings.target_c,
+                ),
+                None,
+            )
+        except ModelFitError as e:
+            warmup, warmup_error = None, f"{type(e).__name__}: {e}"
         return FittedModels(
             pump=pump,
             room=room,
+            warmup=warmup,
+            warmup_error=warmup_error,
             night_drift=night,
             night_drift_error=night_error,
             room_error=room_error,

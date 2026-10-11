@@ -107,3 +107,16 @@ describe('outlookText', () => {
     expect(outlookText({ ...base, lead_hours: null }).note).toContain('cannot be recovered')
   })
 })
+
+import { warmupText, type WarmupFit } from './model'
+
+describe('warmupText', () => {
+  const fit: WarmupFit = { scale: 1.1, se: 0.2, applied_scale: 1, response_c_per_c: 0.15, predicted_c_per_c: 0.14, cooling_response_c_per_c: 0.2, cooling_scale: 2.1, cooling_se: 0.4, windows: 600, step_windows: 80 }
+  it('says when the measured speed is not used', () => {
+    expect(warmupText(fit)).toContain('1.10 ± 0.20')
+    expect(warmupText(fit)).toContain('not used')
+  })
+  it('says what the planner uses when the difference is real', () => {
+    expect(warmupText({ ...fit, scale: 1.4, applied_scale: 1.4 })).toContain('1.40 x the model')
+  })
+})

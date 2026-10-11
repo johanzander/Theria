@@ -86,3 +86,13 @@ def test_the_night_cooling_model_survives_a_restart(tmp_path):
     store.save(PlanState(mode="shadow", models=replace(fitted(), night_drift=drift)))
     loaded = store.load().models
     assert loaded.night_drift == drift and loaded.night_drift_error is None
+
+
+def test_the_warm_up_fit_survives_a_restart(tmp_path):
+    from core.theria.plan.warmup import WarmupFit
+
+    warmup = WarmupFit(1.2, 0.08, 1.2, 0.17, 0.14, 0.2, 1.1, 0.1, 380, 90)
+    store = PlanStateStore(str(tmp_path / "state.json"))
+    store.save(PlanState(mode="shadow", models=replace(fitted(), warmup=warmup)))
+    loaded = store.load().models
+    assert loaded.warmup == warmup and loaded.warmup_error is None

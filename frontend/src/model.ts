@@ -180,6 +180,11 @@ export interface ModelHealth {
       } | null
       fit_error: string | null
     }
+    warmup: {
+      source: string
+      fit: WarmupFit | null
+      fit_error: string | null
+    }
     night: {
       source: string
       fit: NightFit | null
@@ -211,6 +216,24 @@ export interface LogEntry {
 
 export function statusTone(status: string): string {
   return status === 'ok' ? 'good' : status === 'warn' ? 'warn' : 'bad'
+}
+
+export interface WarmupFit {
+  scale: number
+  se: number
+  applied_scale: number
+  response_c_per_c: number
+  predicted_c_per_c: number
+  cooling_response_c_per_c: number
+  cooling_scale: number
+  cooling_se: number
+  windows: number
+  step_windows: number
+}
+
+export function warmupText(w: WarmupFit): string {
+  const used = w.applied_scale === 1 ? 'not used (not different from the model)' : `used: the planner warms at ${w.applied_scale.toFixed(2)} x the model`
+  return `Warming: ${w.scale.toFixed(2)} ± ${w.se.toFixed(2)} x the model, ${used}.`
 }
 
 export interface NightFit {

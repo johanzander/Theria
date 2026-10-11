@@ -39,10 +39,12 @@ class RoomParams:
 # Medians of the four winters' daily fits on Johan's data (2026-10-11): one degree of flow
 # temperature moves the room about 0.39 C in the long run, and the room closes about 21 % of
 # the gap per day (time constant about 4.7 days). The sun and the drift are not modelled.
+PRIOR_GAIN_C_PER_C = 0.39
+PRIOR_RATE_PER_DAY = 0.21
 PRIOR_ROOM_PARAMS = RoomParams(
     tau_slab_h=1.0,
-    k_slab=0.39 * 0.21 / 24,
-    k_out=0.61 * 0.21 / 24,
+    k_slab=PRIOR_GAIN_C_PER_C * PRIOR_RATE_PER_DAY / 24,
+    k_out=(1 - PRIOR_GAIN_C_PER_C) * PRIOR_RATE_PER_DAY / 24,
     k_sun=0.0,
     sun_lag_h=1.0,
     drift_c_per_h=0.0,
