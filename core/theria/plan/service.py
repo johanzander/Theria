@@ -25,6 +25,7 @@ from core.theria.exceptions import (
 from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
+from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.outcomes import DayOutcome
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
 from core.theria.plan.prices import (
@@ -99,6 +100,7 @@ class PlanService:
         retry_interval_hours: float = 6.0,
         sensor_guard: SensorGuard | None = None,
         executor: PlanExecutor | None = None,
+        lk_executor: LKExecutor | None = None,
         safety: Safety | None = None,
         notifier: Notifier | None = None,
         outcome_loader: OutcomeLoader | None = None,
@@ -125,6 +127,7 @@ class PlanService:
         self._next_refit_at: datetime | None = None
         self._scoreboard = ScoreBoard()
         self._executor = executor
+        self._lk = lk_executor
         self._safety = safety
         self._notifier = notifier
         self._outcome_loader = outcome_loader
@@ -187,10 +190,10 @@ class PlanService:
                 if not was_active:
                     self._refuse_while_automation_is_on()
             if was_active and mode != "active" and self._executor is not None:
-                result = self._executor.restore_base()
-                if result.action == "failed":
+                failure = self._restore_all()
+                if failure is not None:
                     raise SetpointRestoreError(
-                        f"the base setpoint could not be restored ({result.reason}); "
+                        f"the base setpoints could not be restored ({failure}); "
                         "the mode stays active"
                     )
             if mode == "active" and not was_active:
@@ -203,6 +206,19 @@ class PlanService:
                 self._stage_checked_on = None
             self._mode = mode
             self._save_state()
+
+    def _restore_all(self) -> str | None:
+        """Pump setpoint and LK thermostats back to their base; a failure reason or None."""
+        assert self._executor is not None
+        failures = []
+        pump = self._executor.restore_base()
+        if pump.action == "failed":
+            failures.append(f"pump: {pump.reason}")
+        if self._lk is not None:
+            lk = self._lk.restore_base()
+            if lk.action == "failed":
+                failures.append(f"LK: {lk.reason}")
+        return "; ".join(failures) or None
 
     def _automation_is_on(self) -> bool:
         state = self._ha.get_state(self._settings.conflicting_automation_entity)
@@ -260,6 +276,7 @@ class PlanService:
         result: ExecutionResult | None = (
             None if self._executor is None else self._executor.last_result
         )
+        lk_result: LKResult | None = None if self._lk is None else self._lk.last_result
         return {
             "mode": self._mode,
             "stage": {
@@ -271,6 +288,7 @@ class PlanService:
             },
             "stage_checked_on": self._stage_checked_on,
             "last_execution": result,
+            "last_lk": lk_result,
             "last_trouble": self._last_trouble,
             "last_stage_note": self._last_stage_note,
         }
@@ -447,16 +465,13 @@ class PlanService:
                 pass
             self._task = None
         if self._mode == "active" and self._executor is not None:
-            result = await asyncio.to_thread(self._restore_locked)
-            if result.action == "failed":
-                logger.error(
-                    "base setpoint not restored at shutdown: %s", result.reason
-                )
+            failure = await asyncio.to_thread(self._restore_locked)
+            if failure is not None:
+                logger.error("base setpoints not restored at shutdown: %s", failure)
 
-    def _restore_locked(self) -> ExecutionResult:
-        assert self._executor is not None
+    def _restore_locked(self) -> str | None:
         with self._lock:
-            return self._executor.restore_base()
+            return self._restore_all()
 
     async def cycle(self) -> None:
         """One supervisor pass: refit when due, then plan. Never raises."""
@@ -501,7 +516,7 @@ class PlanService:
                 None if self._safety is None else self._safety.check(raised, deviated)
             )
             if trouble is not None and deviated:
-                self._executor.restore_base()
+                self._restore_all()
                 decision = shrink_for_trouble(
                     self._stage, today, self._rules, f"during the day: {trouble}"
                 )
@@ -513,6 +528,10 @@ class PlanService:
                 )
                 return
             self._executor.execute(self.latest(), self._stage)
+            if self._lk is not None:
+                applied = self._current_setpoint()
+                if applied is not None:
+                    self._lk.execute(applied)
 
     def _automation_conflict(self) -> bool:
         entity = self._settings.conflicting_automation_entity

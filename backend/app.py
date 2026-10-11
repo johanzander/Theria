@@ -32,6 +32,7 @@ from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
+from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import DayOutcome, day_outcomes, load_outcome_inputs
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
@@ -236,6 +237,7 @@ async def lifespan(app: FastAPI):
                     state_store=PlanStateStore(state_path),
                     sensor_guard=sensor_guard,
                     executor=PlanExecutor(ha_client, plan_settings),
+                    lk_executor=LKExecutor(ha_client, plan_settings),
                     safety=SafetyMonitor(ha_client, plan_settings),
                     notifier=HANotifier(ha_client),
                     outcome_loader=outcome_loader,

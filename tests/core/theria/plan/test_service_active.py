@@ -6,6 +6,7 @@ import pytest
 
 from core.theria.exceptions import ConfigurationError
 from core.theria.plan.executor import PlanExecutor
+from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.service import PlanService
 from core.theria.plan.stages import StageState
 from core.theria.plan.state_store import PlanState, PlanStateStore
@@ -25,6 +26,9 @@ class WritableHA(FakeHA):
         self.writes = []
         self.automation = "off"  # the old setpoint automation
         self.fail_writes = False
+        self.lk = {}  # LK thermostat setpoints (default 19.5)
+        self.lk_writes = []
+        self.fail_lk_writes = False
 
     def get_state(self, entity_id):
         if entity_id == "automation.set_room_temp_setpoint":
@@ -32,9 +36,17 @@ class WritableHA(FakeHA):
         return super().get_state(entity_id)
 
     def get_climate_state(self, entity_id):
+        if entity_id.startswith("climate.lk"):
+            return {"target_temperature": self.lk.get(entity_id, 19.5)}
         return {"target_temperature": self.setpoint}
 
     def set_temperature(self, entity_id, temperature):
+        if entity_id.startswith("climate.lk"):
+            if self.fail_lk_writes:
+                raise RuntimeError("LK unreachable")
+            self.lk_writes.append(temperature)
+            self.lk[entity_id] = temperature
+            return
         if self.fail_writes:
             raise RuntimeError("HA unreachable")
         self.writes.append(temperature)
@@ -87,6 +99,7 @@ def make(
         FakeWeather(),
         now=now,
         executor=PlanExecutor(ha, settings, now=now),
+        lk_executor=LKExecutor(ha, settings, now=now),
         safety=FakeSafety(trouble),
         notifier=notifier,
         outcome_loader=loader,

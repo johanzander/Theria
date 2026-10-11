@@ -21,6 +21,11 @@ export function Control() {
         <Card label="Mode" value={mode} />
         <Card label="Stage" value={execution.data ? `± ${execution.data.stage.max_deviation_c} °C` : '-'} note={execution.data ? `raise at most ${execution.data.stage.max_rise_per_hour_c} °C per hour` : undefined} />
         <Card label="Last write" value={execution.data?.last_execution?.action ?? '-'} note={execution.data?.last_execution?.reason} />
+        <Card
+          label="LK thermostats"
+          value={execution.data?.last_lk ? `${execution.data.last_lk.action} ${execution.data.last_lk.target_c ?? ''}`.trim() : '-'}
+          note={execution.data?.last_lk?.reason}
+        />
       </div>
       <div className="panel">
         <h2>Mode</h2>

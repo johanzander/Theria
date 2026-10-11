@@ -34,7 +34,10 @@ class PlanSettings:
     extreme_floor_c: float = 17.0
     target_c: float = 19.5
     ceiling_c: float = 21.0
-    lk_setpoint_c: float = 21.0
+    lk_setpoint_c: float = 21.0  # LK thermostat setpoint while pre-heating (the boost)
+    lk_base_c: float = (
+        19.5  # LK thermostat setpoint otherwise (never lowered below this)
+    )
     comfort_cost_sek_per_c_hour: float = 1.0
     # Stands in for the rooms that react faster than the ground floor (salon, guest house):
     # every degree-hour the setpoint is away from the base setpoint costs this much.
@@ -69,6 +72,10 @@ class PlanSettings:
         if not self.extreme_floor_c <= self.floor_c <= self.target_c <= self.ceiling_c:
             raise ConfigurationError(
                 "plan temperatures must satisfy extreme_floor <= floor <= target <= ceiling"
+            )
+        if not self.floor_c <= self.lk_base_c <= self.lk_setpoint_c:
+            raise ConfigurationError(
+                "LK setpoints must satisfy floor <= lk_base_c <= lk_setpoint_c"
             )
         if not self.rts_min_c <= self.rts_base_c <= self.rts_max_c:
             raise ConfigurationError(

@@ -49,7 +49,7 @@
 - [x] Plan 4: active mode built (executor with write guards, read-back, fallback; safety monitor; stages; savings). Not yet run against the real pump: switch with `POST /api/plan/mode {"mode":"active","confirm":true}` only after shadow scores look sane. Kill switch: `POST /api/plan/mode {"mode":"shadow"}` writes the base setpoint back.
 - [ ] Watch `/api/plan/execution` and `/api/savings?days=14` in the first active week; check the compressor never stops and the aux heater stays quiet.
 - [ ] (minor, plan 4) `PlanSettings` rejects `mode: active` in the config on purpose; the persisted state file is what keeps active across restarts.
-- [ ] Plan 4 design: joint pump + LK decision (LK setpoint between target and ceiling per hour) and LK write guards.
+- [x] LK lever (decided with Johan 2026-10-11): thermostats go to `lk_setpoint_c` (21 C) only while the pump setpoint is actually above its base, otherwise `lk_base_c` (19.5 C); never lowered below the base; hand changes pause it 6 h; thermostats set below the base by hand are left alone; restored with the pump setpoint. Lowering LK below 19.5 to coast is NOT done (needs the buffer-tank/defrost check first).
 - [ ] Re-check the 4 h sun lag with Open-Meteo's end-of-hour labels (may be about 3.5 h) and with stove evenings excluded.
 - [ ] Existing `PriceOptimizer` parses `raw_today[].price` (SEK/MWh); retire it or fix it to use the SEK/kWh lists.
 - [ ] **Adjust the heat curve manually on the pump (Johan does this; do it when the weather turns, before the cold).**
