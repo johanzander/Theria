@@ -213,3 +213,9 @@ def test_trouble_is_reported_once_and_the_count_starts_over(settings):
     monitor = SafetyMonitor(FakeStates(speed="0"), settings)
     assert [monitor.check() for _ in range(3)][-1] is not None
     assert monitor.check() is None  # not repeated every cycle
+
+
+def test_a_raise_never_goes_further_than_the_rate_limit_allows(make):
+    executor, ha, _ = make(17.8)  # off the 0.5 grid, e.g. set by hand earlier
+    executor.execute(snapshot([19.0]), STAGE1)
+    assert ha.writes == [18.0]  # 17.8 + 0.5 = 18.3, and 18.5 would be too much

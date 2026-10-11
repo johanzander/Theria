@@ -16,6 +16,7 @@ from .test_service import price_attributes
 from .test_service_active import (
     EVENING,
     WritableHA,
+    good_days,
     make,
     run_cycle,
 )
@@ -144,3 +145,22 @@ def test_active_mode_is_refused_while_the_old_automation_is_on(settings):
     service._control()
     assert ha.writes == []  # it does not fight the automation
     assert "automation" in service.execution_status()["last_trouble"]
+
+
+def test_a_daily_summary_of_yesterday_is_sent_when_the_day_is_judged(settings):
+    service, _, notifier, _, _ = make(
+        settings, outcomes=good_days(date(2026, 10, 7))  # the last day is 2026-10-11
+    )
+    service.set_mode("active", confirm=True)
+    run_cycle(service)
+    summary = [m for i, m in notifier.created if i == "theria_plan_daily"]
+    assert len(summary) == 1
+    assert "2026-10-11" in summary[0] and "2 SEK" in summary[0]
+    assert "room" in summary[0].lower()
+
+
+def test_no_summary_is_sent_without_a_measured_yesterday(settings):
+    service, _, notifier, _, _ = make(settings, outcomes=[])
+    service.set_mode("active", confirm=True)
+    run_cycle(service)
+    assert not [i for i, _ in notifier.created if i == "theria_plan_daily"]

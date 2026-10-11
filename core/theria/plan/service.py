@@ -28,6 +28,7 @@ from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.outcomes import DayOutcome
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
+from core.theria.plan.preflight import Check, preflight_checks
 from core.theria.plan.prices import (
     PriceHistory,
     extreme_threshold,
@@ -59,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 SLAB_INIT_FRACTION = 0.5  # rough prior: slab sits half way between room and flow target
 SUN_WARMUP_HOURS = 24
+LOG_KEPT = 200
 SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
 
 
@@ -75,6 +77,7 @@ class Notifier(Protocol):
 OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
 TROUBLE_NOTIFICATION = "theria_plan_trouble"
 STAGE_NOTIFICATION = "theria_plan_stage"
+DAILY_NOTIFICATION = "theria_plan_daily"
 OUTCOME_LOOKBACK_DAYS = 30
 
 
@@ -136,9 +139,9 @@ class PlanService:
         self._stage_checked_on: date | None = None
         self._last_trouble: str | None = None
         self._last_stage_note: str | None = None
-        self._lock = (
-            threading.RLock()
-        )  # set_mode and the control cycle never interleave
+        # set_mode and the control cycle never interleave
+        self._lock = threading.RLock()
+        self._events: deque[dict[str, Any]] = deque(maxlen=LOG_KEPT)
         if state_store is not None:
             state = state_store.load()
             if state.mode is not None:
@@ -149,6 +152,10 @@ class PlanService:
             if state.stage is not None:
                 self._stage = state.stage
             self._stage_checked_on = state.stage_checked_on
+            if state.executor is not None and executor is not None:
+                executor.load_state(state.executor)
+            if state.lk is not None and lk_executor is not None:
+                lk_executor.load_state(state.lk)
 
     def now(self) -> datetime:
         return self._now()
@@ -204,8 +211,32 @@ class PlanService:
                     stage_started_on=today if revert is None else max(today, revert),
                 )
                 self._stage_checked_on = None
+            if mode != self._mode:
+                self._log("mode", mode, f"from {self._mode}")
             self._mode = mode
             self._save_state()
+
+    def _log(self, kind: str, action: str, detail: str) -> None:
+        self._events.append(
+            {"at": self._now(), "kind": kind, "action": action, "detail": detail}
+        )
+
+    def action_log(self) -> list[dict[str, Any]]:
+        """What the plan did (oldest first): setpoint writes, trouble, stage and mode changes."""
+        return list(self._events)
+
+    def preflight(self) -> list[Check]:
+        """What to read before activating: the state of everything active mode depends on."""
+        fitted = self._models
+        return preflight_checks(
+            self._ha,
+            self._settings,
+            self.latest(),
+            pump_fitted=fitted is not None,
+            room_fitted=fitted is not None and fitted.room is not None,
+            stage=self._stage,
+            now=self._now(),
+        )
 
     def _restore_all(self) -> str | None:
         """Pump setpoint and LK thermostats back to their base; a failure reason or None."""
@@ -243,6 +274,12 @@ class PlanService:
                     models=self._models,
                     stage=self._stage,
                     stage_checked_on=self._stage_checked_on,
+                    executor=(
+                        None
+                        if self._executor is None
+                        else self._executor.export_state()
+                    ),
+                    lk=None if self._lk is None else self._lk.export_state(),
                 )
             )
 
@@ -522,16 +559,22 @@ class PlanService:
                 )
                 self._stage = decision.state
                 self._last_trouble = decision.reason
+                self._log("trouble", "stepped back", decision.reason)
                 self._save_state()
                 self._notify(
                     TROUBLE_NOTIFICATION, "Theria: plan stopped", decision.reason
                 )
                 return
-            self._executor.execute(self.latest(), self._stage)
+            pump = self._executor.execute(self.latest(), self._stage)
+            if pump.action != "kept":
+                self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
             if self._lk is not None:
                 applied = self._current_setpoint()
                 if applied is not None:
-                    self._lk.execute(applied)
+                    lk = self._lk.execute(applied)
+                    if lk.action != "kept":
+                        self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")
+            self._save_state()
 
     def _automation_conflict(self) -> bool:
         entity = self._settings.conflicting_automation_entity
@@ -569,7 +612,28 @@ class PlanService:
         self._stage = decision.state
         self._stage_checked_on = today
         self._last_stage_note = f"{decision.action}: {decision.reason}"
+        if decision.action != "hold":
+            self._log("stage", decision.action, decision.reason)
         self._save_state()
+        yesterday = next(
+            (
+                d
+                for d in outcomes
+                if d.day == today - timedelta(days=1) and d.coverage > 0
+            ),
+            None,
+        )
+        if yesterday is not None:
+            self._notify(
+                DAILY_NOTIFICATION,
+                "Theria: yesterday",
+                f"{yesterday.day}: saving {yesterday.saving_sek:.0f} SEK "
+                f"(cost {yesterday.actual_cost_sek:.0f} SEK against "
+                f"{yesterday.baseline_cost_sek:.0f} SEK at the base setpoint). "
+                f"Room {yesterday.room_min_c:.1f}-{yesterday.room_mean_c:.1f} C (min, mean), "
+                f"electric heater {yesterday.aux_kwh:.1f} kWh, "
+                f"compressor stopped {yesterday.compressor_stopped_hours} h.",
+            )
         if decision.action == "widen":
             self._notify(
                 STAGE_NOTIFICATION,

@@ -9,7 +9,7 @@ from backend import plan_api
 from core.theria.plan.executor import PlanExecutor
 from core.theria.plan.service import PlanService
 
-from .test_service import NOW, FakeWeather, price_attributes
+from .test_service import NOW, FakeWeather, fitted_models, price_attributes
 from .test_service_active import FakeNotifier, FakeSafety, WritableHA, good_days
 
 
@@ -26,6 +26,10 @@ def client(settings):
         notifier=FakeNotifier(),
         outcome_loader=lambda start, stop: good_days(date(2026, 10, 6)),
     )
+    service._apply_models(
+        fitted_models()
+    )  # a healthy system: models fitted, plan fresh
+    service.run_once()
     app = FastAPI()
     app.include_router(plan_api.router)
     app.dependency_overrides[plan_api.get_service] = lambda: service

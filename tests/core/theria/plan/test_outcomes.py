@@ -158,3 +158,23 @@ def test_the_rooms_lowest_and_mean_temperature_of_each_day_are_reported():
         19.8
     ) and second.room_min_c == pytest.approx(19.2)
     assert second.room_mean_c == pytest.approx(np.mean(room[24:]))
+
+
+def test_heater_use_and_stops_in_hours_with_a_little_hot_water_still_count_as_trouble():
+    inputs = make_inputs(18.0, 1.5, hours=24)
+    inputs.hot_water[5] = 0.3  # mostly heating: not used for the cost, but watched
+    inputs.aux_kwh[5] = 2.0
+    inputs.compressor_speed_percent[5] = 0.0
+    day = day_outcomes(inputs, PUMP, rts_base_c=18.0)[0]
+    assert day.aux_kwh == pytest.approx(2.0)
+    assert day.compressor_stopped_hours == 1
+    assert day.heating_hours == 23  # the hour is still left out of the cost
+
+
+def test_hours_that_are_mostly_hot_water_are_not_watched_for_heating_trouble():
+    inputs = make_inputs(18.0, 1.5, hours=24)
+    inputs.hot_water[5] = 0.9
+    inputs.aux_kwh[5] = 2.0
+    inputs.compressor_speed_percent[5] = 0.0
+    day = day_outcomes(inputs, PUMP, rts_base_c=18.0)[0]
+    assert day.aux_kwh == 0.0 and day.compressor_stopped_hours == 0

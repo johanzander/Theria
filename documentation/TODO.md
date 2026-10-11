@@ -110,10 +110,18 @@
 Fixed with tests: stage-judgement failure no longer stops control (C1); one lock between `set_mode` and the control cycle, mode changes run in a worker thread (C2); leaving active restores the base first and keeps the mode (502) if that fails (C3); a hand change is noticed before the first write (I1); the base is written back at shutdown (I2); the compressor-stop check only counts while the setpoint deviates from the base, and a reported trouble starts the count over (I3); the heater check uses the real setpoint (I4); activating during a revert starts counting after it, widening needs a real saving (>= 0.5 SEK/day) (I5); trouble is judged on days with little data (I6, stages only); active is refused while `automation.set_room_temp_setpoint` is on (I7).
 
 Deferred:
-- [ ] Executor state (`_last_written`, pause) is not persisted; after a restart a hand change made during downtime is not seen until the first write.
+- [x] Executor state (`_last_written`, pause) is persisted in the state file, so a hand change made during downtime is seen after a restart.
 - [ ] Startup with persisted `active` but a service that fails to build leaves the pump where it was (needs a base write at startup).
 - [ ] Widening should also require realised saving >= 70 % of the predicted one and aux/room measured against the baseline (spec section 12); today fixed limits.
-- [ ] Hot-water hours are dropped from aux and stopped-compressor counts in `outcomes.py`; trouble on those hours is invisible.
-- [ ] Raise limit rounds up to the step (17.8 + 0.5 -> 18.5); fallback/restore jump straight to the base without a rate limit.
+- [x] Hours that are mostly heating (hot water < 50 %) are watched for aux use and a stopped compressor, although they are left out of the cost.
+- [x] Raise limit rounds down to the step. [ ] Fallback/restore still jump straight to the base without a rate limit.
 - [ ] Trouble notification is never dismissed; the HA `requests.Session` is shared by threads; savings days are UTC days.
 - [ ] Counterfactual baseline scales each hour alone (recovery energy after a coast is charged to the baseline).
+
+## Before the first active night (2026-10-11)
+
+- `GET /api/plan/preflight` (and the Control tab) lists what active mode depends on; `POST /api/plan/mode` refuses `active` while a check fails.
+- `GET /api/plan/log` and the Control tab list every setpoint write, trouble, stage and mode change since the add-on started (in memory: lost at restart).
+- A persistent notification "Theria: yesterday" summarises the previous day (saving, room min/mean, heater kWh, compressor stops) when the day is judged (first cycle after 00:00 UTC).
+- [ ] Persist the action log across restarts.
+- [ ] Startup in persisted `active` mode with a service that cannot be built leaves the pump where it was.

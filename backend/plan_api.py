@@ -81,6 +81,13 @@ async def set_plan_mode(
     svc: Annotated[PlanService, Depends(get_service)], request: ModeRequest
 ) -> dict[str, str]:
     """Switch between off, shadow and active (active needs confirm=true)."""
+    if request.mode == "active" and svc.mode != "active":
+        failing = [
+            c for c in await asyncio.to_thread(svc.preflight) if c.status == "fail"
+        ]
+        if failing:
+            detail = "; ".join(f"{c.name}: {c.detail}" for c in failing)
+            raise HTTPException(status_code=422, detail=f"preflight failed: {detail}")
     try:
         await asyncio.to_thread(svc.set_mode, request.mode, request.confirm)
     except ConfigurationError as e:
@@ -121,3 +128,18 @@ async def get_savings(
     except ConfigurationError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return jsonable_encoder(body)
+
+
+@router.get("/plan/preflight")
+async def get_preflight(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
+    """Checks to read before activating: models, plan, automation, setpoints, compressor."""
+    checks = await asyncio.to_thread(svc.preflight)
+    return jsonable_encoder(
+        {"ok": all(c.status != "fail" for c in checks), "checks": checks}
+    )
+
+
+@router.get("/plan/log")
+async def get_action_log(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
+    """Setpoint writes, trouble, stage and mode changes, newest last."""
+    return jsonable_encoder(svc.action_log())

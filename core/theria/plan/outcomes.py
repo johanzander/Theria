@@ -35,6 +35,9 @@ FloatArray = npt.NDArray[np.float64]
 SETPOINT_FFILL_HOURS = 24 * 60  # the setpoint is only logged when it changes
 MIN_MODEL_KWH = 0.2  # keeps the scaling from exploding when the model energy is tiny
 MIN_SCALE, MAX_SCALE = 0.5, 2.0
+MOSTLY_HOT_WATER = (
+    0.5  # hours with more hot water than this are not watched for heating trouble
+)
 STOPPED_PERCENT = 1.0  # compressor speed below this counts as stopped
 
 
@@ -95,12 +98,20 @@ def day_outcomes(
         & np.isfinite(inputs.aux_kwh)
         & (inputs.hot_water == 0.0)
     )
+    watched = (
+        np.isfinite(inputs.aux_kwh)
+        & np.isfinite(inputs.compressor_speed_percent)
+        & (inputs.hot_water < MOSTLY_HOT_WATER)
+    )
     by_day: dict[date, list[int]] = defaultdict(list)
+    watched_by_day: dict[date, list[int]] = defaultdict(list)
     hours_in_day: dict[date, int] = defaultdict(int)
     for i, moment in enumerate(inputs.hours):
         hours_in_day[moment.date()] += 1
         if counts[i]:
             by_day[moment.date()].append(i)
+        if watched[i]:
+            watched_by_day[moment.date()].append(i)
     outcomes = []
     for day in sorted(hours_in_day):
         idx = np.array(by_day.get(day, []), dtype=int)
@@ -112,7 +123,8 @@ def day_outcomes(
         baseline_kwh = compressor * scale[idx] + np.where(raised, 0.0, aux)
         actual_cost = float(np.sum(price * actual_kwh))
         baseline_cost = float(np.sum(price * baseline_kwh))
-        speed = inputs.compressor_speed_percent[idx]
+        seen = np.array(watched_by_day.get(day, []), dtype=int)
+        speed = inputs.compressor_speed_percent[seen]
         day_rooms = np.array(
             [inputs.room_c[i] for i, m in enumerate(inputs.hours) if m.date() == day]
         )
@@ -125,7 +137,7 @@ def day_outcomes(
                 heating_hours=len(idx),
                 coverage=len(idx) / hours_in_day[day],
                 compressor_kwh=float(np.sum(compressor)),
-                aux_kwh=float(np.sum(aux)),
+                aux_kwh=float(np.sum(inputs.aux_kwh[seen])),
                 actual_cost_sek=actual_cost,
                 baseline_cost_sek=baseline_cost,
                 saving_sek=baseline_cost - actual_cost,

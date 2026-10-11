@@ -7,6 +7,7 @@ or when asked to restore, the base setpoint is written.
 """
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -45,6 +46,14 @@ class ExecutionResult:
     at: datetime
 
 
+def _iso(moment: datetime | None) -> str | None:
+    return None if moment is None else moment.isoformat()
+
+
+def _moment(text: str | None) -> datetime | None:
+    return None if text is None else datetime.fromisoformat(text)
+
+
 class SetpointClient(Protocol):
     def get_climate_state(self, entity_id: str) -> dict[str, Any]: ...
 
@@ -67,6 +76,19 @@ class PlanExecutor:
         self._last_raise_at: datetime | None = None
         self._pause_until: datetime | None = None
         self.last_result: ExecutionResult | None = None
+
+    def export_state(self) -> dict[str, Any]:
+        """What the executor remembers, so that a restart does not forget a hand change."""
+        return {
+            "last_written": self._last_written,
+            "last_raise_at": _iso(self._last_raise_at),
+            "pause_until": _iso(self._pause_until),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        self._last_written = state["last_written"]
+        self._last_raise_at = _moment(state["last_raise_at"])
+        self._pause_until = _moment(state["pause_until"])
 
     def execute(
         self, snapshot: PlanSnapshot | None, stage: StageState
@@ -142,8 +164,12 @@ class PlanExecutor:
                     )
                 )
             rise = allowed_rise_per_hour_c(stage)
-            desired = min(desired, current + rise)
-            desired = round(desired / self._s.rts_step_c) * self._s.rts_step_c
+            limit = current + rise
+            if desired > limit:
+                # round down to the step: rounding to the nearest could exceed the limit
+                desired = (
+                    math.floor(limit / self._s.rts_step_c + 1e-9) * self._s.rts_step_c
+                )
         return self._write(
             desired, current, "wrote", "plan", now, desired > current + 1e-9
         )

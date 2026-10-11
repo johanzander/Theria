@@ -26,6 +26,11 @@ class WritableHA(FakeHA):
         self.writes = []
         self.automation = "off"  # the old setpoint automation
         self.fail_writes = False
+        self.pump_states = {
+            "sensor.compressor_speed": "45",
+            "binary_sensor.switch_valve_1": "off",
+            "sensor.add_heat_status": "0",
+        }
         self.lk = {}  # LK thermostat setpoints (default 19.5)
         self.lk_writes = []
         self.fail_lk_writes = False
@@ -33,6 +38,8 @@ class WritableHA(FakeHA):
     def get_state(self, entity_id):
         if entity_id == "automation.set_room_temp_setpoint":
             return {"state": self.automation, "attributes": {}}
+        if entity_id in self.pump_states:
+            return {"state": self.pump_states[entity_id], "attributes": {}}
         return super().get_state(entity_id)
 
     def get_climate_state(self, entity_id):

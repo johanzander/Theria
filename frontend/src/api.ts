@@ -14,7 +14,7 @@ export const fetchPlan = () => get<PlanResponse>('plan')
 export const fetchExecution = () => get<Execution>('plan/execution')
 export const fetchSavings = (days: number) => get<SavingsResponse>(`savings?days=${days}`)
 
-import type { ComfortResponse, ModelHealth } from './model'
+import type { ComfortResponse, LogEntry, ModelHealth, Preflight } from './model'
 
 export const fetchModelHealth = () => get<ModelHealth>('model/health')
 export const fetchComfort = () => get<ComfortResponse>('comfort-sensors')
@@ -29,3 +29,6 @@ export async function setMode(mode: string, confirm: boolean): Promise<string | 
   const body = (await response.json()) as { detail?: string }
   return body.detail ?? `HTTP ${response.status}`
 }
+
+export const fetchPreflight = () => get<Preflight>('plan/preflight')
+export const fetchLog = () => get<LogEntry[]>('plan/log')

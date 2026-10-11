@@ -21,6 +21,8 @@ class PlanState:
     models: FittedModels | None
     stage: StageState | None = None
     stage_checked_on: date | None = None
+    executor: dict[str, Any] | None = None  # what the executors remember
+    lk: dict[str, Any] | None = None
 
 
 def _stage_to_dict(s: StageState) -> dict[str, Any]:
@@ -143,6 +145,8 @@ class PlanStateStore:
                 stage_checked_on=(
                     None if checked is None else date.fromisoformat(checked)
                 ),
+                executor=raw.get("executor"),
+                lk=raw.get("lk"),
             )
         except (
             OSError,
@@ -159,6 +163,8 @@ class PlanStateStore:
             "mode": state.mode,
             "models": None if state.models is None else _models_to_dict(state.models),
             "stage": None if state.stage is None else _stage_to_dict(state.stage),
+            "executor": state.executor,
+            "lk": state.lk,
             "stage_checked_on": (
                 None
                 if state.stage_checked_on is None

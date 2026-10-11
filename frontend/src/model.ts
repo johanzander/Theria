@@ -168,3 +168,25 @@ export interface ModelHealth {
   }
   scores: { lead_h: number; n: number; mae_c: number; bias_c: number }[]
 }
+
+export interface PreflightCheck {
+  name: string
+  status: 'ok' | 'warn' | 'fail'
+  detail: string
+}
+
+export interface Preflight {
+  ok: boolean
+  checks: PreflightCheck[]
+}
+
+export interface LogEntry {
+  at: string
+  kind: string
+  action: string
+  detail: string
+}
+
+export function statusTone(status: string): string {
+  return status === 'ok' ? 'good' : status === 'warn' ? 'warn' : 'bad'
+}

@@ -51,6 +51,19 @@ class LKExecutor:
         self._pause_until: datetime | None = None
         self.last_result: LKResult | None = None
 
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "last_written": self._last_written,
+            "pause_until": (
+                None if self._pause_until is None else self._pause_until.isoformat()
+            ),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        self._last_written = state["last_written"]
+        pause = state["pause_until"]
+        self._pause_until = None if pause is None else datetime.fromisoformat(pause)
+
     def execute(self, pump_setpoint_c: float) -> LKResult:
         now = self._now()
         current = self._read_all()

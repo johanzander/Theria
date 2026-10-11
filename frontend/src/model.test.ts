@@ -60,3 +60,13 @@ describe('fitQuality', () => {
     expect(fitQuality(0.3, 0.5)).toBe('better than assuming no change')
   })
 })
+
+import { statusTone } from './model'
+
+describe('statusTone', () => {
+  it('maps check statuses to colours', () => {
+    expect(statusTone('ok')).toBe('good')
+    expect(statusTone('warn')).toBe('warn')
+    expect(statusTone('fail')).toBe('bad')
+  })
+})
