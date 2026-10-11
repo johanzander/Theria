@@ -1,8 +1,8 @@
 import {
-  Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { fetchExecution, fetchPlan, fetchSavings } from '../api'
-import { planRows, savingsSummary, type Execution, type PlanResponse, type SavingsResponse } from '../model'
+import { outlookText, planRows, savingsSummary, type Execution, type PlanResponse, type SavingsResponse } from '../model'
 import { Card, useLoaded } from '../ui'
 
 function Status({ plan, execution }: { plan: PlanResponse | null; execution: Execution | null }) {
@@ -21,6 +21,14 @@ function Status({ plan, execution }: { plan: PlanResponse | null; execution: Exe
         note={saving ? `${saving.percent.toFixed(1)} % of the model cost` : undefined}
         tone={saving && saving.savingSek >= 0 ? 'good' : undefined}
       />
+      {plan?.comfort_outlook && (
+        <Card
+          label="Room when comfort starts"
+          value={outlookText(plan.comfort_outlook).value}
+          note={outlookText(plan.comfort_outlook).note}
+          tone={plan.comfort_outlook.deficit_c > 0.3 ? 'bad' : undefined}
+        />
+      )}
       <Card
         label="Stage"
         value={execution ? `± ${execution.stage.max_deviation_c} °C` : '-'}
@@ -68,7 +76,7 @@ function PlanChart({ plan }: { plan: PlanResponse }) {
             <YAxis domain={[roomLow, roomHigh]} unit="°" />
             <Tooltip />
             <Legend />
-            <ReferenceLine y={rows[0].floor} stroke="#b42318" strokeDasharray="4 3" label="floor" />
+            <Line type="stepAfter" dataKey="floor" name="Floor" stroke="#b42318" strokeDasharray="4 3" dot={false} />
             <Line type="monotone" dataKey="room" name="With plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="baselineRoom" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
           </ComposedChart>

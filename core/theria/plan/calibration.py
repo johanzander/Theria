@@ -19,6 +19,7 @@ from core.theria.plan.daily_room import (
     fit_daily_room,
     room_params_from_fit,
 )
+from core.theria.plan.night_drift import NightDrift, fit_night_drift
 from core.theria.plan.pump_model import (
     DEFAULT_FLOW_PER_RTS,
     PumpParams,
@@ -71,6 +72,10 @@ class FittedModels:
     fitted_at: datetime
     window_start: datetime
     window_end: datetime
+    night_drift: NightDrift | None = (
+        None  # how much the room cools at night, by outdoor temp
+    )
+    night_drift_error: str | None = None
 
 
 def fit_pump(inputs: CalibrationInputs) -> PumpFit:
@@ -203,9 +208,29 @@ class Calibrator:
             room, room_error = fit_room(inputs), None
         except ModelFitError as e:  # the pump fit is still useful without a room model
             room, room_error = None, f"{type(e).__name__}: {e}"
+        try:
+            night, night_error = (
+                fit_night_drift(
+                    inputs.hours,
+                    inputs.room_reference_c,
+                    inputs.t_out_c,
+                    inputs.rts_c,
+                    self._settings.night_start_hour,
+                    self._settings.night_end_hour,
+                    self._settings.timezone,
+                    self._settings.target_c,
+                ),
+                None,
+            )
+        except (
+            ModelFitError
+        ) as e:  # the plan then simply does not know about night cooling
+            night, night_error = None, f"{type(e).__name__}: {e}"
         return FittedModels(
             pump=pump,
             room=room,
+            night_drift=night,
+            night_drift_error=night_error,
             room_error=room_error,
             fitted_at=now,
             window_start=inputs.hours[0],

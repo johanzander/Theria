@@ -29,6 +29,7 @@ def settings() -> PlanSettings:
         aux_status_entity="sensor.add_heat_status",
         latitude=55.578,
         longitude=12.927,
+        night_end_hour=0,  # the night window is off unless a test turns it on
     )
 
 

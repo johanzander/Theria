@@ -284,3 +284,24 @@ def test_the_default_setpoint_range_is_the_old_manual_one():
     assert (s.rts_min_c, s.rts_base_c, s.rts_max_c) == (16.0, 18.0, 20.0)
     assert s.max_rts_step_per_hour_c == 1.0
     assert s.boost_flow_limit_c == 42.0
+
+
+def test_a_cooling_that_would_break_the_night_floor_makes_the_plan_push_as_hard_as_it_can(
+    settings, make_inputs
+):
+    from dataclasses import replace
+
+    night = replace(settings, night_start_hour=0, night_end_hour=6)
+    index = np.arange(HORIZON)
+    # START is 02:00 local: the night is indices 0-3. The room is expected to lose 0.6 C per
+    # night hour and to win it back by day (the pattern has zero mean, like the anchoring).
+    pattern = np.where(index < 4, -0.6, 2.4 / (HORIZON - 4))
+    prices = np.full(HORIZON, 1.0)
+    plain_inputs = make_inputs(prices, room_c=19.5)
+    plain = run(plain_inputs, night)
+    cold = run(replace(plain_inputs, extra_drift_c_per_h=pattern), night)
+    assert cold.baseline_hours[3].room_c_end < plain.baseline_hours[3].room_c_end - 2.0
+    assert (
+        cold.floor_violation_hours >= 1
+    ), "the night floor cannot be held in this case"
+    assert sum(h.rts_c for h in cold.hours[:4]) > sum(h.rts_c for h in plain.hours[:4])

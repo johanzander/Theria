@@ -50,3 +50,4 @@ build/
 # Built React page
 backend/static/plan/
 frontend/dist/
+.plan_parameters.jsonl

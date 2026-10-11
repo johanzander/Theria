@@ -14,10 +14,27 @@ export interface HourPlan {
   reason: { binding?: string }
 }
 
+export interface ComfortOutlook {
+  start: string
+  room_c: number
+  target_c: number
+  deficit_c: number
+  extra_rate_c_per_h: number
+  lead_hours: number | null
+}
+
+export function outlookText(o: ComfortOutlook): { value: string; note: string } {
+  const time = o.start.slice(11, 16)
+  if (o.deficit_c < 0.05) return { value: `${o.room_c.toFixed(1)} °C`, note: `at the target when comfort starts (${time} UTC)` }
+  const lead = o.lead_hours === null ? 'cannot be recovered' : `would need about ${Math.round(o.lead_hours)} h of maximum heating`
+  return { value: `${o.room_c.toFixed(1)} °C`, note: `${o.deficit_c.toFixed(1)} °C under the target; ${lead}` }
+}
+
 export interface PlanResponse {
   computed_at: string
   mode: string
   age_seconds: number
+  comfort_outlook: ComfortOutlook | null
   plan: {
     hours: HourPlan[]
     baseline_hours: HourPlan[]
@@ -163,6 +180,11 @@ export interface ModelHealth {
       } | null
       fit_error: string | null
     }
+    night: {
+      source: string
+      fit: NightFit | null
+      fit_error: string | null
+    }
     fitted_at: string | null
     last_fit_error: string | null
   }
@@ -189,4 +211,38 @@ export interface LogEntry {
 
 export function statusTone(status: string): string {
   return status === 'ok' ? 'good' : status === 'warn' ? 'warn' : 'bad'
+}
+
+export interface NightFit {
+  intercept_c: number
+  slope_c_per_c: number
+  level_c_per_c: number
+  level_ref_c: number
+  night_hours: number
+  nights: number
+  rmse_c: number
+  recent: { day: string; t_out_c: number; measured_change_c: number; predicted_change_c: number }[]
+}
+
+export interface ParameterRecord {
+  at: string
+  kind: string
+  note: string
+  params: Record<string, number>
+}
+
+export interface ParameterHistory {
+  current: Record<string, number>
+  history: ParameterRecord[]
+}
+
+export interface SeriesPoint {
+  label: string
+  value: number
+}
+
+export function parameterSeries(history: ParameterRecord[], key: string): SeriesPoint[] {
+  return history
+    .filter((r) => typeof r.params[key] === 'number')
+    .map((r) => ({ label: r.at.slice(0, 10), value: r.params[key] }))
 }

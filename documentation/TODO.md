@@ -125,3 +125,16 @@ Deferred:
 - A persistent notification "Theria: yesterday" summarises the previous day (saving, room min/mean, heater kWh, compressor stops) when the day is judged (first cycle after 00:00 UTC).
 - [ ] Persist the action log across restarts.
 - [ ] Startup in persisted `active` mode with a service that cannot be built leaves the pump where it was.
+
+## Self-learning (2026-10-11)
+
+Learned continuously (see the Models tab and `GET /api/plan/parameters`, which keeps one record per refit and per change, persisted in `plan_parameters.jsonl`):
+- pump flow curve, energy per setpoint, electric heater coefficient, room response (nightly refit)
+- **night cooling** (`night_drift.py`): room change over the night window by outdoor temperature, steady-setpoint nights only, half-life 150 days. Live fit 2026-10-11: -0.48 C per night, almost independent of outdoor temperature (slope 0.01), 302 nights, error 0.35 C. Few cold nights, so the cold end is uncertain; the table of recent nights (predicted vs measured) shows how it follows.
+- **night margin** (`morning.py`): raised 0.25 C when the room at 06:00 local was more than 0.3 C under the target, lowered 0.1 C after 3 comfortable mornings; lifts the night target and floor (cap: target - night_target). Learns only in active mode.
+- stage (trust region).
+Defaults: `night_target_c` 18.5, `night_floor_c` 17.5 (careful until cold nights are measured).
+
+- [x] Estimated lead time before comfort starts: `comfort_outlook` in every plan (room at 06:00, deficit, extra warm-up rate, hours of maximum heating the deficit would need), shown on the Overview. Live 2026-10-11: 19.47 C, 0.03 C short, about 2 h. - [ ] The warm-up speed itself is still the model's `k_slab`; learn it from measured rises after pre-heating.
+- [x] Residuals checked on 301 real nights: no weekday pattern, a weak evening-warmth effect (not worth a term), but the **room level at the start of the night matters** (a warmer room loses more): added. Fit error 0.35 -> 0.31 C; the outdoor effect then shows: about -1.3 C at -10 C and -0.3 C at +10 C for a 19.5 C room.
+- [x] Alert (notification, dismissed again when fine) if the recent nights are missed by more than max(0.4 C, 1.8 x the fit error).

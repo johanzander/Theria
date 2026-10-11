@@ -1,7 +1,7 @@
 """Dynamic-programming planner: choose the room setpoint for each coming hour."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -41,6 +41,9 @@ class PlanInputs:
     sun_wm2: FloatArray
     initial: RoomState
     previous_rts_c: float
+    # What the room does on its own, per hour (the learned night cooling and the warming by day
+    # that balances it); None when nothing is known and the anchored drift is all there is.
+    extra_drift_c_per_h: FloatArray | None = None
 
 
 @dataclass(frozen=True)
@@ -124,11 +127,28 @@ class _Problem:
         self.actions = np.arange(
             settings.rts_min_c, settings.rts_max_c + 1e-9, settings.rts_step_c
         )
+        self.extra_drift = (
+            np.zeros(self.horizon)
+            if inputs.extra_drift_c_per_h is None
+            else np.asarray(inputs.extra_drift_c_per_h, dtype=float)
+        )
         self.sun_f = sun_filtered_sequence(
             room, inputs.initial.sun_filtered_wm2, inputs.sun_wm2
         )
+        # The room is judged at the end of each hour, so the night ends (and comfort is due)
+        # when the state at 06:00 is reached.
+        night = np.array(
+            [
+                settings.in_night(start + timedelta(hours=1))
+                for start in inputs.hour_starts
+            ],
+            dtype=bool,
+        )
+        self.targets = np.where(night, settings.night_target_c, settings.target_c)
         self.floors = np.where(
-            inputs.extreme, settings.extreme_floor_c, settings.floor_c
+            inputs.extreme,
+            settings.extreme_floor_c,
+            np.where(night, settings.night_floor_c, settings.floor_c),
         )
         # Setpoints whose flow target exceeds the floor limit are not allowed; the lowest
         # setpoint always is, so that a plan exists.
@@ -172,12 +192,17 @@ class _Problem:
             self.inputs.sun_wm2[t],
             self.settings.lk_setpoint_c,
         )
-        return np.asarray(room_next, dtype=float), np.asarray(slab_next, dtype=float)
+        return (
+            np.asarray(room_next, dtype=float) + self.extra_drift[t],
+            np.asarray(slab_next, dtype=float),
+        )
 
-    def comfort_cost(self, room_c: FloatArray, floor_c: float) -> FloatArray:
+    def comfort_cost(
+        self, room_c: FloatArray, floor_c: float, target_c: float
+    ) -> FloatArray:
         s = self.settings
         return np.asarray(
-            s.comfort_cost_sek_per_c_hour * np.maximum(0.0, s.target_c - room_c)
+            s.comfort_cost_sek_per_c_hour * np.maximum(0.0, target_c - room_c)
             + VIOLATION_COST_SEK_PER_C_HOUR * np.maximum(0.0, floor_c - room_c)
             + VIOLATION_COST_SEK_PER_C_HOUR * np.maximum(0.0, room_c - s.ceiling_c),
             dtype=float,
@@ -196,7 +221,9 @@ class _Problem:
         return (
             energy_cost
             + other_rooms
-            + self.comfort_cost(room_next, float(self.floors[t]))
+            + self.comfort_cost(
+                room_next, float(self.floors[t]), float(self.targets[t])
+            )
         )
 
     def q_value(
@@ -279,7 +306,11 @@ class _Problem:
             room_c_end=room_end,
             slab_c_end=slab_end,
             energy_cost_sek=price * energy,
-            comfort_cost_sek=float(self.comfort_cost(np.array([room_end]), floor_c)[0]),
+            comfort_cost_sek=float(
+                self.comfort_cost(
+                    np.array([room_end]), floor_c, float(self.targets[t])
+                )[0]
+            ),
             tail=tail,
             reason=reason,
         )
@@ -348,7 +379,9 @@ class _Problem:
                 self.inputs.sun_wm2[t],
                 self.settings.lk_setpoint_c,
             )
-            room_c, slab_c = float(room_next), float(slab_next)
+            room_c, slab_c = float(room_next) + float(self.extra_drift[t]), float(
+                slab_next
+            )
             hours.append(
                 self.hour_plan(
                     t, rts_c, room_c, slab_c, {"binding": "baseline"}, tail=False

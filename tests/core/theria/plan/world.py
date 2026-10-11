@@ -62,6 +62,7 @@ class World:
         room_params: RoomParams = TRUE_ROOM,
         late_room_params: RoomParams | None = None,
         late_days: int = 0,
+        cold_swing_c: float = 0.0,
     ):
         rng = np.random.default_rng(seed)
         n = days * 24
@@ -71,6 +72,7 @@ class World:
             3
             + 5 * np.sin(2 * np.pi * hrs / 24 - 1)
             + 3 * np.sin(2 * np.pi * hrs / (24 * 9))
+            + cold_swing_c * np.sin(2 * np.pi * hrs / (24 * 60))  # cold and mild spells
         )
         self.sun = np.clip(300 * np.sin(2 * np.pi * (hrs % 24 - 6) / 24), 0, None) * (
             0.4 + 0.6 * (np.sin(hrs / 41) > 0)

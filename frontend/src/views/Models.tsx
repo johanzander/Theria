@@ -1,9 +1,65 @@
-import { fetchModelHealth } from '../api'
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { fetchModelHealth, fetchParameters } from '../api'
 import { Card, useLoaded } from '../ui'
-import { fitQuality } from '../model'
+import { fitQuality, parameterSeries, type ParameterHistory } from '../model'
+
+const TRACKED: { key: string; title: string; unit: string }[] = [
+  { key: 'room_gain_c_per_c', title: 'Room response (°C per °C flow)', unit: '' },
+  { key: 'night_slope_c_per_c', title: 'Night cooling: less per °C warmer', unit: '' },
+  { key: 'night_intercept_c', title: 'Night change at 0 °C outdoors', unit: ' °C' },
+  { key: 'night_level_c_per_c', title: 'Night: extra per °C warmer room', unit: '' },
+  { key: 'aux_per_flow_c', title: 'Electric heater (kWh per °C above 44)', unit: '' },
+  { key: 'energy_per_rts', title: 'Energy per °C setpoint (kWh/h)', unit: '' },
+  { key: 'morning_margin_c', title: 'Night margin (learned from mornings)', unit: ' °C' },
+]
+
+function Learning({ history }: { history: ParameterHistory }) {
+  const events = history.history.filter((r) => r.kind !== 'refit').slice(-15).reverse()
+  return (
+    <div className="panel">
+      <h2>What it has learned over time</h2>
+      <p className="note">
+        One point per refit (nightly) and per change of the night margin or the stage. {history.history.length} records so far.
+      </p>
+      <div className="mini-charts">
+        {TRACKED.map(({ key, title }) => {
+          const series = parameterSeries(history.history, key)
+          return (
+            <div key={key} className="mini">
+              <div className="label">{title}</div>
+              <div className="value">{history.current[key] === undefined ? '-' : history.current[key].toFixed(3)}</div>
+              {series.length > 1 && (
+                <ResponsiveContainer width="100%" height={70}>
+                  <LineChart data={series}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" hide />
+                    <YAxis domain={['auto', 'auto']} hide />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="value" stroke="#0b6bcb" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {events.length > 0 && (
+        <table>
+          <thead><tr><th>When (UTC)</th><th>What</th><th>Why</th></tr></thead>
+          <tbody>
+            {events.map((e, i) => (
+              <tr key={i}><td>{e.at.slice(0, 16).replace('T', ' ')}</td><td>{e.kind}</td><td>{e.note}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
 
 export function Models() {
   const { data, error } = useLoaded(fetchModelHealth)
+  const learned = useLoaded(fetchParameters)
   if (error) return <p className="bad">{error}</p>
   if (!data) return <p>Loading...</p>
   const { pump, room, fitted_at, last_fit_error } = data.models
@@ -59,6 +115,36 @@ export function Models() {
           <p className="note">The room model gives a sensitivity, not a forecast: it does not beat "no change" at predicting the room.</p>
         </div>
       )}
+      {data.models.night.fit ? (
+        <div className="panel">
+          <h2>Night cooling</h2>
+          <p>
+            Over a night ({data.models.night.fit.night_hours} h) the room changes {data.models.night.fit.intercept_c.toFixed(2)} °C at 0 °C outdoors,
+            and {data.models.night.fit.slope_c_per_c.toFixed(3)} °C less for every degree warmer outdoors; a room that starts the night 1 °C warmer than{' '}
+            {data.models.night.fit.level_ref_c.toFixed(1)} °C changes {data.models.night.fit.level_c_per_c.toFixed(2)} °C more ({data.models.night.fit.nights} nights, error{' '}
+            {data.models.night.fit.rmse_c.toFixed(2)} °C).
+          </p>
+          <table>
+            <thead><tr><th>Night</th><th>Outdoors</th><th>Measured</th><th>Predicted</th></tr></thead>
+            <tbody>
+              {[...data.models.night.fit.recent].reverse().map((n) => (
+                <tr key={n.day}>
+                  <td>{n.day}</td>
+                  <td>{n.t_out_c.toFixed(1)} °C</td>
+                  <td>{n.measured_change_c.toFixed(2)} °C</td>
+                  <td>{n.predicted_change_c.toFixed(2)} °C</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="panel">
+          <h2>Night cooling</h2>
+          <p className="note">Not learned yet: {data.models.night.fit_error ?? 'waiting for the first refit'}</p>
+        </div>
+      )}
+      {learned.data && <Learning history={learned.data} />}
       <div className="panel">
         <h2>Live prediction error (shadow plans vs measured room)</h2>
         {data.scores.length === 0 ? (

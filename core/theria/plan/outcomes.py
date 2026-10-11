@@ -11,6 +11,7 @@ saving. Hours with hot water are left out because the plan does not control them
 """
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -72,12 +73,22 @@ class DayOutcome:
     mean_rts_c: float
     room_min_c: float  # NaN when the day has no room reading
     room_mean_c: float
+    room_at_morning_c: float = float(
+        "nan"
+    )  # room when comfort starts (NaN: not measured)
 
 
 def day_outcomes(
-    inputs: OutcomeInputs, pump: PumpParams, rts_base_c: float | FloatArray
+    inputs: OutcomeInputs,
+    pump: PumpParams,
+    rts_base_c: float | FloatArray,
+    comfort_hour: Callable[[datetime], bool] = lambda moment: True,
+    morning_hour: Callable[[datetime], bool] = lambda moment: False,
 ) -> list[DayOutcome]:
-    """One outcome per UTC day in the inputs."""
+    """One outcome per UTC day in the inputs.
+
+    `comfort_hour` says which hours count for the room minimum (comfort is not needed at night).
+    """
     base = np.broadcast_to(np.asarray(rts_base_c, dtype=float), (len(inputs.hours),))
     model_actual = np.maximum(
         np.asarray(
@@ -126,8 +137,20 @@ def day_outcomes(
         seen = np.array(watched_by_day.get(day, []), dtype=int)
         speed = inputs.compressor_speed_percent[seen]
         day_rooms = np.array(
-            [inputs.room_c[i] for i, m in enumerate(inputs.hours) if m.date() == day]
+            [
+                inputs.room_c[i]
+                for i, m in enumerate(inputs.hours)
+                if m.date() == day and comfort_hour(m)
+            ]
         )
+        morning = np.array(
+            [
+                inputs.room_c[i]
+                for i, m in enumerate(inputs.hours)
+                if m.date() == day and morning_hour(m)
+            ]
+        )
+        morning = morning[np.isfinite(morning)]
         known = day_rooms[np.isfinite(day_rooms)]
         room_min = float(np.min(known)) if len(known) else float("nan")
         room_mean = float(np.mean(known)) if len(known) else float("nan")
@@ -151,6 +174,7 @@ def day_outcomes(
                 ),
                 room_min_c=room_min,
                 room_mean_c=room_mean,
+                room_at_morning_c=float(morning[0]) if len(morning) else float("nan"),
             )
         )
     return outcomes

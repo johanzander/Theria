@@ -9,6 +9,7 @@ from typing import Any
 from core.theria.exceptions import StateStoreError
 from core.theria.plan.calibration import FittedModels, PumpFit, RoomFit
 from core.theria.plan.daily_room import DailyRoomFit, SeasonFit
+from core.theria.plan.night_drift import NightDrift, NightObservation
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.room_model import RoomParams
 from core.theria.plan.settings import SUPPORTED_MODES
@@ -23,6 +24,8 @@ class PlanState:
     stage_checked_on: date | None = None
     executor: dict[str, Any] | None = None  # what the executors remember
     lk: dict[str, Any] | None = None
+    morning_margin_c: float = 0.0  # learned: how much warmer the night is kept
+    margin_changed_on: date | None = None
 
 
 def _stage_to_dict(s: StageState) -> dict[str, Any]:
@@ -70,6 +73,48 @@ def _response_from_dict(d: dict[str, Any]) -> DailyRoomFit:
     )
 
 
+def _night_to_dict(n: NightDrift) -> dict[str, Any]:
+    return {
+        "intercept_c": n.intercept_c,
+        "slope_c_per_c": n.slope_c_per_c,
+        "level_c_per_c": n.level_c_per_c,
+        "level_ref_c": n.level_ref_c,
+        "night_hours": n.night_hours,
+        "nights": n.nights,
+        "rmse_c": n.rmse_c,
+        "recent": [
+            {
+                "day": o.day.isoformat(),
+                "t_out_c": o.t_out_c,
+                "measured_change_c": o.measured_change_c,
+                "predicted_change_c": o.predicted_change_c,
+            }
+            for o in n.recent
+        ],
+    }
+
+
+def _night_from_dict(d: dict[str, Any]) -> NightDrift:
+    return NightDrift(
+        intercept_c=float(d["intercept_c"]),
+        slope_c_per_c=float(d["slope_c_per_c"]),
+        level_c_per_c=float(d.get("level_c_per_c", 0.0)),  # absent in older state files
+        level_ref_c=float(d.get("level_ref_c", 19.5)),
+        night_hours=int(d["night_hours"]),
+        nights=int(d["nights"]),
+        rmse_c=float(d["rmse_c"]),
+        recent=tuple(
+            NightObservation(
+                day=date.fromisoformat(o["day"]),
+                t_out_c=float(o["t_out_c"]),
+                measured_change_c=float(o["measured_change_c"]),
+                predicted_change_c=float(o["predicted_change_c"]),
+            )
+            for o in d["recent"]
+        ),
+    )
+
+
 def _models_to_dict(m: FittedModels) -> dict[str, Any]:
     return {
         "pump": {
@@ -89,6 +134,8 @@ def _models_to_dict(m: FittedModels) -> dict[str, Any]:
             }
         ),
         "room_error": m.room_error,
+        "night_drift": None if m.night_drift is None else _night_to_dict(m.night_drift),
+        "night_drift_error": m.night_drift_error,
         "fitted_at": m.fitted_at.isoformat(),
         "window_start": m.window_start.isoformat(),
         "window_end": m.window_end.isoformat(),
@@ -115,6 +162,10 @@ def _models_from_dict(d: dict[str, Any]) -> FittedModels:
             )
         ),
         room_error=d["room_error"],
+        night_drift=(
+            None if d.get("night_drift") is None else _night_from_dict(d["night_drift"])
+        ),  # absent in older state files
+        night_drift_error=d.get("night_drift_error"),
         fitted_at=datetime.fromisoformat(d["fitted_at"]),
         window_start=datetime.fromisoformat(d["window_start"]),
         window_end=datetime.fromisoformat(d["window_end"]),
@@ -147,6 +198,12 @@ class PlanStateStore:
                 ),
                 executor=raw.get("executor"),
                 lk=raw.get("lk"),
+                morning_margin_c=float(raw.get("morning_margin_c", 0.0)),
+                margin_changed_on=(
+                    None
+                    if raw.get("margin_changed_on") is None
+                    else date.fromisoformat(raw["margin_changed_on"])
+                ),
             )
         except (
             OSError,
@@ -165,6 +222,12 @@ class PlanStateStore:
             "stage": None if state.stage is None else _stage_to_dict(state.stage),
             "executor": state.executor,
             "lk": state.lk,
+            "morning_margin_c": state.morning_margin_c,
+            "margin_changed_on": (
+                None
+                if state.margin_changed_on is None
+                else state.margin_changed_on.isoformat()
+            ),
             "stage_checked_on": (
                 None
                 if state.stage_checked_on is None

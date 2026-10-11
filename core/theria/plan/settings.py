@@ -1,6 +1,8 @@
 """Configuration for the price-driven heating plan."""
 
 from dataclasses import dataclass, fields
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from core.theria.exceptions import ConfigurationError
 from core.theria.options import load_options
@@ -34,6 +36,13 @@ class PlanSettings:
     extreme_floor_c: float = 17.0
     target_c: float = 19.5
     ceiling_c: float = 21.0
+    # Comfort is wanted from 06:00 to 24:00 (local time); nobody is in the ground-floor rooms at
+    # night, so the room may be cooler then. start == end switches the night window off.
+    timezone: str = "Europe/Stockholm"
+    night_start_hour: int = 0
+    night_end_hour: int = 6
+    night_target_c: float = 18.5
+    night_floor_c: float = 17.5
     lk_setpoint_c: float = 21.0  # LK thermostat setpoint while pre-heating (the boost)
     lk_base_c: float = (
         19.5  # LK thermostat setpoint otherwise (never lowered below this)
@@ -59,6 +68,22 @@ class PlanSettings:
     # when it is cold). The plan does not boost above it unless the baseline already is above.
     boost_flow_limit_c: float = 42.0
 
+    def in_night(self, moment: datetime) -> bool:
+        """Whether the local time of `moment` is inside the night window (comfort not needed)."""
+        if self.night_start_hour == self.night_end_hour:
+            return False
+        hour = moment.astimezone(ZoneInfo(self.timezone)).hour
+        if self.night_start_hour < self.night_end_hour:
+            return self.night_start_hour <= hour < self.night_end_hour
+        return hour >= self.night_start_hour or hour < self.night_end_hour
+
+    def comfort_starts_at(self, moment: datetime) -> bool:
+        """Whether `moment` falls in the first hour of comfort (the hour the night ends)."""
+        if self.night_start_hour == self.night_end_hour:
+            return False
+        local = moment.astimezone(ZoneInfo(self.timezone))
+        return local.hour == self.night_end_hour % 24
+
     def __post_init__(self) -> None:
         if self.mode == "active":
             raise ConfigurationError(
@@ -72,6 +97,16 @@ class PlanSettings:
         if not self.extreme_floor_c <= self.floor_c <= self.target_c <= self.ceiling_c:
             raise ConfigurationError(
                 "plan temperatures must satisfy extreme_floor <= floor <= target <= ceiling"
+            )
+        if not (0 <= self.night_start_hour <= 23 and 0 <= self.night_end_hour <= 24):
+            raise ConfigurationError("night hours must be between 0 and 24")
+        if not (
+            self.extreme_floor_c <= self.night_floor_c <= self.floor_c
+            and self.night_floor_c <= self.night_target_c <= self.target_c
+        ):
+            raise ConfigurationError(
+                "night temperatures must satisfy extreme_floor <= night_floor <= floor and "
+                "night_floor <= night_target <= target"
             )
         if not self.floor_c <= self.lk_base_c <= self.lk_setpoint_c:
             raise ConfigurationError(

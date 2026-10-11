@@ -143,3 +143,14 @@ async def get_preflight(svc: Annotated[PlanService, Depends(get_service)]) -> An
 async def get_action_log(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
     """Setpoint writes, trouble, stage and mode changes, newest last."""
     return jsonable_encoder(svc.action_log())
+
+
+@router.get("/plan/parameters")
+async def get_parameter_history(
+    svc: Annotated[PlanService, Depends(get_service)],
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
+) -> Any:
+    """What the plan has learned over time: every refit and every margin or stage change."""
+    return jsonable_encoder(
+        {"current": svc.parameters(), "history": svc.parameter_history(limit)}
+    )

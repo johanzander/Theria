@@ -20,3 +20,6 @@ th { color: #6b7785; font-weight: 500; } tr.extreme td { background: #fff4e5; }
 button { padding: 6px 14px; border: 1px solid #b8c1cc; background: #fff; border-radius: 6px; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; } button.danger { border-color: #b42318; color: #b42318; }
 .warn { color: #b54708; }
+.mini-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.mini { background: #f9fafb; border-radius: 6px; padding: 8px 10px; }
+.mini .value { font-size: 1.1rem; }

@@ -65,3 +65,24 @@ def test_unwritable_location_raises(tmp_path):
     store = PlanStateStore(str(tmp_path / "missing_dir" / "state.json"))
     with pytest.raises(StateStoreError):
         store.save(PlanState(mode="shadow", models=None))
+
+
+def test_the_night_cooling_model_survives_a_restart(tmp_path):
+    from datetime import date
+
+    from core.theria.plan.night_drift import NightDrift, NightObservation
+
+    drift = NightDrift(
+        -0.5,
+        0.06,
+        -0.2,
+        19.5,
+        6,
+        120,
+        0.12,
+        (NightObservation(date(2026, 10, 10), 3.0, -0.3, -0.32),),
+    )
+    store = PlanStateStore(str(tmp_path / "state.json"))
+    store.save(PlanState(mode="shadow", models=replace(fitted(), night_drift=drift)))
+    loaded = store.load().models
+    assert loaded.night_drift == drift and loaded.night_drift_error is None

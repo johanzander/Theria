@@ -26,7 +26,10 @@ from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
+from core.theria.plan.morning import MorningRules, update_margin
+from core.theria.plan.night_drift import NightDrift, drift_pattern
 from core.theria.plan.outcomes import DayOutcome
+from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
 from core.theria.plan.preflight import Check, preflight_checks
 from core.theria.plan.prices import (
@@ -44,7 +47,7 @@ from core.theria.plan.room_model import (
 )
 from core.theria.plan.scoring import LeadScore, ScoreBoard
 from core.theria.plan.settings import SUPPORTED_MODES, PlanSettings
-from core.theria.plan.snapshot import PlanSnapshot
+from core.theria.plan.snapshot import ComfortOutlook, PlanSnapshot
 from core.theria.plan.stages import (
     STAGES,
     StageRules,
@@ -78,6 +81,12 @@ OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
 TROUBLE_NOTIFICATION = "theria_plan_trouble"
 STAGE_NOTIFICATION = "theria_plan_stage"
 DAILY_NOTIFICATION = "theria_plan_daily"
+MARGIN_NOTIFICATION = "theria_plan_margin"
+NIGHT_MODEL_NOTIFICATION = "theria_plan_night_model"
+NIGHT_ALERT_FACTOR = (
+    1.8  # recent night errors this much above the fit error are a warning
+)
+NIGHT_ALERT_MIN_C = 0.4  # ... and at least this large
 OUTCOME_LOOKBACK_DAYS = 30
 
 
@@ -108,6 +117,7 @@ class PlanService:
         notifier: Notifier | None = None,
         outcome_loader: OutcomeLoader | None = None,
         stage_rules: StageRules | None = None,
+        parameter_log: ParameterLog | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -127,8 +137,15 @@ class PlanService:
         self._retry_interval = timedelta(hours=retry_interval_hours)
         self._models: FittedModels | None = None
         self._last_fit_error: str | None = None
+        self._night: NightDrift | None = None
+        self._morning_margin_c = 0.0
+        self._night_alert_active = False
+        self._margin_changed_on: date | None = None
+        self._morning_rules = MorningRules()
+        self._night_error: str | None = None
         self._next_refit_at: datetime | None = None
         self._scoreboard = ScoreBoard()
+        self._parameter_log = parameter_log
         self._executor = executor
         self._lk = lk_executor
         self._safety = safety
@@ -151,6 +168,8 @@ class PlanService:
                 self._next_refit_at = state.models.fitted_at + self._refit_interval
             if state.stage is not None:
                 self._stage = state.stage
+            self._morning_margin_c = state.morning_margin_c
+            self._margin_changed_on = state.margin_changed_on
             self._stage_checked_on = state.stage_checked_on
             if state.executor is not None and executor is not None:
                 executor.load_state(state.executor)
@@ -216,6 +235,137 @@ class PlanService:
             self._mode = mode
             self._save_state()
 
+    def parameters(self) -> dict[str, Any]:
+        """Everything that is adjusted over time, as plain numbers."""
+        pump = self._pump
+        params: dict[str, Any] = {
+            "flow_intercept": pump.flow_intercept,
+            "flow_slope": pump.flow_slope,
+            "flow_per_rts": pump.flow_per_rts,
+            "energy_intercept": pump.energy_intercept,
+            "energy_per_outdoor": pump.energy_per_outdoor,
+            "energy_per_rts": pump.energy_per_rts,
+            "aux_per_flow_c": pump.aux_per_flow_c,
+            "morning_margin_c": self._morning_margin_c,
+            "stage": self._stage.index + 1,
+        }
+        fitted = self._models
+        if fitted is not None:
+            params["flow_rmse_c"] = fitted.pump.flow_rmse_c
+            params["energy_rmse_kwh"] = fitted.pump.energy_rmse_kwh
+            if fitted.room is not None:
+                response = fitted.room.response
+                params["room_gain_c_per_c"] = response.gain_c_per_c
+                params["room_rate_per_day"] = response.rate_per_day
+                params["room_time_constant_days"] = response.time_constant_days
+        if self._night is not None:
+            params["night_intercept_c"] = self._night.intercept_c
+            params["night_slope_c_per_c"] = self._night.slope_c_per_c
+            params["night_level_c_per_c"] = self._night.level_c_per_c
+            params["night_nights"] = self._night.nights
+            params["night_rmse_c"] = self._night.rmse_c
+        return params
+
+    def parameter_history(self, limit: int) -> list[dict[str, Any]]:
+        return [] if self._parameter_log is None else self._parameter_log.read(limit)
+
+    def _record_parameters(self, kind: str, note: str) -> None:
+        if self._parameter_log is None:
+            return
+        try:
+            self._parameter_log.append(self._now(), kind, note, self.parameters())
+        except OSError:
+            logger.exception("could not write the parameter history")
+
+    def _check_night_model(self) -> None:
+        """Warn when the night model misses the recent nights by much more than it should."""
+        night = self._night
+        if night is None or not night.recent:
+            return
+        errors = np.array(
+            [o.measured_change_c - o.predicted_change_c for o in night.recent]
+        )
+        recent_rmse = float(np.sqrt(np.mean(errors**2)))
+        bad = recent_rmse > max(NIGHT_ALERT_MIN_C, NIGHT_ALERT_FACTOR * night.rmse_c)
+        if bad and not self._night_alert_active:
+            message = (
+                f"The night cooling model missed the last {len(night.recent)} nights by "
+                f"{recent_rmse:.2f} C (rms), against {night.rmse_c:.2f} C when it was fitted. "
+                "Something in the house or the sensors has changed."
+            )
+            self._log("model", "night model off", message)
+            self._notify(NIGHT_MODEL_NOTIFICATION, "Theria: night model off", message)
+        if not bad and self._night_alert_active and self._notifier is not None:
+            try:
+                self._notifier.dismiss(NIGHT_MODEL_NOTIFICATION)
+            except Exception:  # a failed dismissal must not stop the refit
+                logger.exception("could not dismiss the night model notification")
+        self._night_alert_active = bad
+
+    @staticmethod
+    def _comfort_outlook(
+        result: Any,
+        settings: PlanSettings,
+        room: RoomParams,
+        baseline_flow: Any,
+    ) -> ComfortOutlook | None:
+        hours = result.hours
+        for k in range(len(hours) - 1):
+            if settings.in_night(hours[k].start) and not settings.in_night(
+                hours[k + 1].start
+            ):
+                hour = hours[k]
+                deficit = max(0.0, settings.target_c - hour.room_c_end)
+                cap = min(
+                    settings.max_flow_c,
+                    max(settings.boost_flow_limit_c, float(baseline_flow[k])),
+                )
+                extra = room.k_slab * max(0.0, cap - hour.flow_target_c)
+                lead = (
+                    0.0 if deficit == 0.0 else (deficit / extra if extra > 0 else None)
+                )
+                return ComfortOutlook(
+                    hour.start + timedelta(hours=1),
+                    hour.room_c_end,
+                    settings.target_c,
+                    deficit,
+                    extra,
+                    lead,
+                )
+        return None
+
+    def _effective_settings(self) -> PlanSettings:
+        """The settings the plan runs on: the night kept warmer by the learned margin."""
+        s = self._settings
+        if self._morning_margin_c <= 0.0 or s.night_start_hour == s.night_end_hour:
+            return s
+        return replace(
+            s,
+            night_target_c=min(s.target_c, s.night_target_c + self._morning_margin_c),
+            night_floor_c=min(s.floor_c, s.night_floor_c + self._morning_margin_c),
+        )
+
+    def _learn_morning_margin(self, outcomes: list[DayOutcome], today: date) -> None:
+        s = self._settings
+        if s.night_start_hour == s.night_end_hour:
+            return
+        decision = update_margin(
+            self._morning_margin_c,
+            outcomes,
+            s.target_c,
+            today,
+            self._margin_changed_on or date.min,
+            self._morning_rules,
+            cap_c=s.target_c - s.night_target_c,
+        )
+        if decision.action == "hold":
+            return
+        self._morning_margin_c = decision.margin_c
+        self._margin_changed_on = decision.changed_on
+        self._log("margin", decision.action, decision.reason)
+        self._record_parameters("margin", decision.reason)
+        self._notify(MARGIN_NOTIFICATION, "Theria: night margin", decision.reason)
+
     def _log(self, kind: str, action: str, detail: str) -> None:
         self._events.append(
             {"at": self._now(), "kind": kind, "action": action, "detail": detail}
@@ -274,6 +424,8 @@ class PlanService:
                     models=self._models,
                     stage=self._stage,
                     stage_checked_on=self._stage_checked_on,
+                    morning_margin_c=self._morning_margin_c,
+                    margin_changed_on=self._margin_changed_on,
                     executor=(
                         None
                         if self._executor is None
@@ -326,12 +478,15 @@ class PlanService:
             "stage_checked_on": self._stage_checked_on,
             "last_execution": result,
             "last_lk": lk_result,
+            "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
             "last_stage_note": self._last_stage_note,
         }
 
     def _apply_models(self, models: FittedModels) -> None:
         self._models = models
+        self._night = models.night_drift
+        self._night_error = models.night_drift_error
         self._pump = models.pump.params
         if models.room is not None:
             self._room = models.room.params
@@ -350,7 +505,15 @@ class PlanService:
         if models.room is None and previous is not None and previous.room is not None:
             # a rejected room fit must not discard the one that was accepted before
             models = replace(models, room=previous.room)
+        if (
+            models.night_drift is None
+            and previous is not None
+            and previous.night_drift is not None
+        ):
+            models = replace(models, night_drift=previous.night_drift)
         self._apply_models(models)
+        self._record_parameters("refit", "nightly refit of the models")
+        self._check_night_model()
         self._last_fit_error = None
         self._next_refit_at = now + self._refit_interval
         self._save_state()
@@ -385,6 +548,11 @@ class PlanService:
                 "params": self._room,
                 "fit": None if fitted is None else fitted.room,
                 "fit_error": None if fitted is None else fitted.room_error,
+            },
+            "night": {
+                "source": "none" if self._night is None else "fitted",
+                "fit": self._night,
+                "fit_error": self._night_error,
             },
             "fitted_at": None if fitted is None else fitted.fitted_at,
             "window": (
@@ -458,6 +626,11 @@ class PlanService:
             sun_wm2=sun,
             initial=initial,
             previous_rts_c=previous_rts,
+            extra_drift_c_per_h=(
+                None
+                if self._night is None
+                else drift_pattern(self._night, s.in_night, starts, t_out, room_c)
+            ),
         )
         baseline_flow = np.asarray(
             flow_target(self._pump, t_out, s.rts_base_c), dtype=float
@@ -465,7 +638,7 @@ class PlanService:
         room_params = anchored_room_params(
             self._room, room_c, t_out, baseline_flow, s.lk_setpoint_c
         )
-        result = plan(inputs, s, self._pump, room_params)
+        result = plan(inputs, self._effective_settings(), self._pump, room_params)
         snapshot = PlanSnapshot(
             computed_at=now,
             mode=self._mode,
@@ -473,6 +646,9 @@ class PlanService:
             extreme_threshold_sek_per_kwh=threshold,
             outdoor_bias_c=bias,
             initial=initial,
+            comfort_outlook=self._comfort_outlook(
+                result, self._effective_settings(), room_params, baseline_flow
+            ),
             model_status={
                 "pump": "prior" if self._models is None else "fitted",
                 "room": "fitted" if self._models and self._models.room else "prior",
@@ -560,6 +736,7 @@ class PlanService:
                 self._stage = decision.state
                 self._last_trouble = decision.reason
                 self._log("trouble", "stepped back", decision.reason)
+                self._record_parameters("stage", decision.reason)
                 self._save_state()
                 self._notify(
                     TROUBLE_NOTIFICATION, "Theria: plan stopped", decision.reason
@@ -611,9 +788,11 @@ class PlanService:
         )
         self._stage = decision.state
         self._stage_checked_on = today
+        self._learn_morning_margin(outcomes, today)
         self._last_stage_note = f"{decision.action}: {decision.reason}"
         if decision.action != "hold":
             self._log("stage", decision.action, decision.reason)
+            self._record_parameters("stage", decision.reason)
         self._save_state()
         yesterday = next(
             (

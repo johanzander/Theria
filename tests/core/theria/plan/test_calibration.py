@@ -199,3 +199,17 @@ def test_a_house_where_the_heater_never_runs_gets_no_heater_term(settings):
         END
     )
     assert fitted.pump.params.aux_per_flow_c == 0.0
+
+
+def test_the_night_cooling_is_learned_with_the_other_models(settings):
+    from dataclasses import replace
+
+    night = replace(settings, night_start_hour=0, night_end_hour=6)
+    fitted = calibrator(night, World(cold_swing_c=8.0)).run(END)
+    assert fitted.night_drift is not None and fitted.night_drift_error is None
+    assert fitted.night_drift.slope_c_per_c > 0 and fitted.night_drift.nights >= 25
+
+
+def test_without_a_night_window_there_is_no_night_model_and_no_failure(settings):
+    fitted = calibrator(settings, World()).run(END)  # the fixture has no night window
+    assert fitted.night_drift is None and "night" in fitted.night_drift_error

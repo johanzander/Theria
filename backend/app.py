@@ -34,6 +34,7 @@ from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import DayOutcome, day_outcomes, load_outcome_inputs
+from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.state_store import PlanStateStore
@@ -215,6 +216,13 @@ async def lifespan(app: FastAPI):
                         os.path.dirname(__file__), "..", ".plan_state.json"
                     )
                 )
+                parameter_path = (
+                    "/data/plan_parameters.jsonl"
+                    if os.path.isdir("/data")
+                    else os.path.join(
+                        os.path.dirname(__file__), "..", ".plan_parameters.jsonl"
+                    )
+                )
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -225,6 +233,8 @@ async def lifespan(app: FastAPI):
                         load_outcome_inputs(history_source, plan_settings, start, stop),
                         built[0].pump_params,
                         plan_settings.rts_base_c,
+                        lambda moment: not plan_settings.in_night(moment),
+                        plan_settings.comfort_starts_at,
                     )
 
                 plan_service = PlanService(
@@ -241,6 +251,7 @@ async def lifespan(app: FastAPI):
                     safety=SafetyMonitor(ha_client, plan_settings),
                     notifier=HANotifier(ha_client),
                     outcome_loader=outcome_loader,
+                    parameter_log=ParameterLog(parameter_path),
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service
