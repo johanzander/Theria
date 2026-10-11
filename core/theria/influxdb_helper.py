@@ -17,8 +17,9 @@ from dotenv import load_dotenv
 
 _LOGGER = logging.getLogger(__name__)
 
-DATABASE = (
-    "home_assistant"  # the bucket home_assistant/autogen is database/retention policy
+OPTIONS_PATH = "/data/options.json"
+DEFAULT_BUCKET = (
+    "home_assistant/autogen"  # "database/retention policy", as in home-analytics
 )
 SAFE_NAME = re.compile(
     r"^[A-Za-z0-9_.]+$"
@@ -29,42 +30,34 @@ NO_DATA = "no_data"
 
 
 def get_influxdb_config():
-    """Load InfluxDB config from options.json or fallback to .env."""
-    config = {"url": "", "username": "", "password": ""}
+    """InfluxDB url, credentials and bucket: add-on options first, then .env (local runs).
 
-    # 1. Try load from Home Assistant options.json
+    The bucket is `database/retention policy` (as in home-analytics); it falls back to
+    HA_DB_BUCKET and finally to the Home Assistant default.
+    """
+    config = {"url": "", "username": "", "password": "", "bucket": ""}
+
     try:
-        if os.path.exists("/data/options.json"):
-            with open("/data/options.json") as f:
+        if os.path.exists(OPTIONS_PATH):
+            with open(OPTIONS_PATH) as f:
                 options = json.load(f)
             influxdb_config = options.get("influxdb", {})
-            config.update(
-                {
-                    "url": influxdb_config.get("url", ""),
-                    "username": influxdb_config.get("username", ""),
-                    "password": influxdb_config.get("password", ""),
-                }
-            )
+            for key in config:
+                config[key] = influxdb_config.get(key, "")
             _LOGGER.debug("Loaded InfluxDB config from options.json")
     except Exception as e:
         _LOGGER.warning("Failed to load options.json: %s", str(e))
 
-    # 2. Fallback to .env if necessary
-    if not config["url"] or not config["username"] or not config["password"]:
-        try:
-            load_dotenv()  # this loads from .env automatically
-            config.update(
-                {
-                    "url": os.getenv("HA_DB_URL", ""),
-                    "username": os.getenv("HA_DB_USER_NAME", ""),
-                    "password": os.getenv("HA_DB_PASSWORD", ""),
-                }
-            )
-            _LOGGER.debug("Loaded InfluxDB config from .env file")
-        except Exception as e:
-            _LOGGER.warning("Failed to load .env file: %s", str(e))
+    load_dotenv()  # local runs: HA_DB_URL, HA_DB_USER_NAME, HA_DB_PASSWORD, HA_DB_BUCKET
+    for key, variable in (
+        ("url", "HA_DB_URL"),
+        ("username", "HA_DB_USER_NAME"),
+        ("password", "HA_DB_PASSWORD"),
+        ("bucket", "HA_DB_BUCKET"),
+    ):
+        config[key] = config[key] or os.getenv(variable, "")
+    config["bucket"] = config["bucket"] or DEFAULT_BUCKET
 
-    # 3. Final check
     if not config["url"] or not config["username"] or not config["password"]:
         _LOGGER.error("InfluxDB configuration is incomplete.")
 
@@ -104,6 +97,7 @@ def get_sensor_timeseries(
 
     config = get_influxdb_config()
     url, username, password = config["url"], config["username"], config["password"]
+    database = config["bucket"].split("/", 1)[0]  # InfluxQL takes the database only
     if not url or not username or not password:
         _LOGGER.error("InfluxDB configuration is incomplete")
         return {"status": "error", "message": "Incomplete InfluxDB configuration"}
@@ -125,7 +119,7 @@ def get_sensor_timeseries(
         response = requests.get(
             url,
             auth=(username, password),
-            params={"db": DATABASE, "q": query, "epoch": "ms"},
+            params={"db": database, "q": query, "epoch": "ms"},
             timeout=30,
         )
     except requests.RequestException as e:

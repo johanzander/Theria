@@ -12,7 +12,10 @@ mkdir -p ./build/theria
 
 # Copy Dockerfile and configuration
 echo "📦 Copying Dockerfile and configuration..."
-cp Dockerfile .dockerignore config.yaml build.json ./build/theria/
+cp Dockerfile .dockerignore build.json ./build/theria/
+# config.yaml is the single source of truth; strip the GHCR image line so that Home Assistant
+# builds the add-on locally instead of pulling the released image
+sed '/^image:/d' config.yaml > ./build/theria/config.yaml
 
 # The Dockerfile copies backend/, core/ and frontend/ (it builds the React page itself)
 echo "📦 Copying backend, core and frontend sources..."

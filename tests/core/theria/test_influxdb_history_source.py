@@ -36,7 +36,12 @@ def influx_config(monkeypatch):
     monkeypatch.setattr(
         influxdb_helper,
         "get_influxdb_config",
-        lambda: {"url": "http://influx/query", "username": "u", "password": "p"},
+        lambda: {
+            "url": "http://influx/query",
+            "username": "u",
+            "password": "p",
+            "bucket": "home_assistant/autogen",
+        },
     )
 
 
@@ -75,6 +80,49 @@ def test_helper_asks_influxql_for_the_entity_between_the_two_times(
     assert result["status"] == "success"
     moment, value = result["data"][0]
     assert moment == START and value == 4.5
+
+
+def test_the_database_is_taken_from_the_configured_bucket(monkeypatch):
+    monkeypatch.setattr(
+        influxdb_helper,
+        "get_influxdb_config",
+        lambda: {
+            "url": "http://i/query",
+            "username": "u",
+            "password": "p",
+            "bucket": "other_db/rp",
+        },
+    )
+    calls = serve(monkeypatch, FakeResponse(200, {"results": [{}]}))
+    influxdb_helper.get_sensor_timeseries("outdoor", START, STOP)
+    assert calls[0][1]["params"]["db"] == "other_db"
+
+
+@pytest.fixture
+def clean_env(monkeypatch, tmp_path):
+    monkeypatch.setattr(influxdb_helper, "load_dotenv", lambda *a, **k: None)
+    for name in ("HA_DB_URL", "HA_DB_USER_NAME", "HA_DB_PASSWORD", "HA_DB_BUCKET"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(influxdb_helper, "OPTIONS_PATH", str(tmp_path / "options.json"))
+    return tmp_path / "options.json"
+
+
+def test_the_bucket_comes_from_the_add_on_options(clean_env):
+    clean_env.write_text(
+        '{"influxdb": {"url": "u", "username": "n", "password": "p", "bucket": "a/b"}}'
+    )
+    assert influxdb_helper.get_influxdb_config()["bucket"] == "a/b"
+
+
+def test_the_bucket_comes_from_the_environment_when_the_options_do_not_have_one(
+    clean_env, monkeypatch
+):
+    monkeypatch.setenv("HA_DB_BUCKET", "env_db/autogen")
+    assert influxdb_helper.get_influxdb_config()["bucket"] == "env_db/autogen"
+
+
+def test_the_bucket_defaults_to_the_home_assistant_database(clean_env):
+    assert influxdb_helper.get_influxdb_config()["bucket"] == "home_assistant/autogen"
 
 
 def test_helper_reads_attribute_fields_and_string_values(monkeypatch, influx_config):

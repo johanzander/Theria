@@ -31,13 +31,13 @@ options:
 
   influxdb:
     enabled: true
-    # The same url, username and password as the home-analytics add-on (InfluxQL, GET /query);
-    # the bucket is fixed to home_assistant/autogen. Fill in username and password in the
-    # add-on options. Locally, empty values fall back to HA_DB_URL / HA_DB_USER_NAME /
-    # HA_DB_PASSWORD in .env.
+    # The same url, username and password as the home-analytics add-on (InfluxQL, GET /query).
+    # Fill in username and password in the add-on options. Locally, empty values fall back to
+    # HA_DB_URL / HA_DB_USER_NAME / HA_DB_PASSWORD / HA_DB_BUCKET in .env.
     url: "http://192.168.2.9:8086/query"
     username: ""
     password: ""
+    bucket: "home_assistant/autogen"  # database/retention policy, as in home-analytics
 
   price_optimization:
     enabled: true
@@ -163,6 +163,7 @@ schema:
     url: str?
     username: str?
     password: str?
+    bucket: str?
   price_optimization:
     enabled: bool?
     price_sensor: str?
