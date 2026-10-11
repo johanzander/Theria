@@ -5,6 +5,7 @@ Minimal client for reading sensors and controlling climate entities.
 """
 
 import logging
+from datetime import datetime
 from typing import Any
 
 import requests
@@ -179,3 +180,75 @@ class HAClient:
             logger.info(f"Set {entity_id} HVAC mode to {mode}")
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to set HVAC mode for {entity_id}: {e}") from e
+
+    def get_numeric_history(
+        self, entity_id: str, start: datetime, stop: datetime
+    ) -> list[tuple[datetime, float]]:
+        """Numeric state changes of an entity between `start` and `stop` (read only).
+
+        Returns (time, value) for every recorded change; non-numeric states such as
+        "unavailable" are left out.
+
+        Raises:
+            RuntimeError: If the API request fails
+        """
+        url = f"{self.base_url}/api/history/period/{start.isoformat()}"
+        params = {
+            "filter_entity_id": entity_id,
+            "end_time": stop.isoformat(),
+            "minimal_response": "",
+            "no_attributes": "",
+        }
+        try:
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"HA history request failed for {entity_id}: {e}") from e
+        points: list[tuple[datetime, float]] = []
+        for record in payload[0] if payload else []:
+            try:
+                value = float(record["state"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            points.append(
+                (
+                    datetime.fromisoformat(
+                        record["last_changed"].replace("Z", "+00:00")
+                    ),
+                    value,
+                )
+            )
+        return points
+
+    def call_service(self, domain: str, service: str, data: dict[str, Any]) -> None:
+        """Call a Home Assistant service.
+
+        Raises:
+            RuntimeError: If the service call fails
+        """
+        url = f"{self.base_url}/api/services/{domain}/{service}"
+        try:
+            response = self.session.post(url, json=data, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"HA service {domain}.{service} failed: {e}") from e
+
+
+class HANotifier:
+    """Home Assistant persistent notifications (the bell in the HA sidebar)."""
+
+    def __init__(self, ha_client: HAClient):
+        self._ha = ha_client
+
+    def notify(self, notification_id: str, title: str, message: str) -> None:
+        self._ha.call_service(
+            "persistent_notification",
+            "create",
+            {"notification_id": notification_id, "title": title, "message": message},
+        )
+
+    def dismiss(self, notification_id: str) -> None:
+        self._ha.call_service(
+            "persistent_notification", "dismiss", {"notification_id": notification_id}
+        )

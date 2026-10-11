@@ -9,7 +9,7 @@ Tests follow Home Assistant best practices:
 - Edge case coverage
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -454,14 +454,14 @@ class TestEdgeCases:
 
         # Should be converted to timezone-aware
         assert measurement.timestamp.tzinfo is not None
-        assert measurement.timestamp.tzinfo == timezone.utc
+        assert measurement.timestamp.tzinfo == UTC
 
     def test_cleanup_old_measurements(self, learner, create_measurement):
         """Test that old measurements are removed based on max_history_hours."""
         # Learner max_history_hours = 168 (7 days)
 
         # Add old measurements (8 days ago)
-        old_time = datetime.now(timezone.utc) - timedelta(hours=200)
+        old_time = datetime.now(UTC) - timedelta(hours=200)
         old_measurement = EntityMeasurement(
             timestamp=old_time,
             temperature=20.0,
@@ -473,7 +473,7 @@ class TestEdgeCases:
 
         # Add recent measurement
         learner.add_measurement(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             temperature=21.0,
             outdoor_temp=6.0,
             heating_active=True,

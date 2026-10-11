@@ -8,7 +8,7 @@ For production, this should use InfluxDB or similar.
 import threading
 from collections import deque
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 @dataclass
@@ -82,6 +82,30 @@ class HeatPumpSnapshot:
     hotwater_setpoint: float | None = None  # °C
 
 
+@dataclass
+class SensorFailureEvent:
+    """A sensor transitioning into 'unavailable' or 'stale' status."""
+
+    id: int
+    timestamp: str  # ISO format
+    entity_id: str
+    device_group: str  # zone id, or "heat_pump"
+    status: str  # "unavailable" or "stale"
+    message: str
+    acknowledged: bool = False
+
+
+@dataclass
+class SensorRecoveryEvent:
+    """A sensor transitioning back to 'ok' status after a failure."""
+
+    id: int
+    timestamp: str  # ISO format
+    entity_id: str
+    device_group: str
+    message: str
+
+
 class HistoryTracker:
     """Tracks temperature history and control events."""
 
@@ -106,6 +130,9 @@ class HistoryTracker:
         self.heat_pump_snapshots: deque[HeatPumpSnapshot] = deque(
             maxlen=10080
         )  # 7 days at 1/min
+        self.sensor_failures: deque[SensorFailureEvent] = deque(maxlen=1000)
+        self.sensor_recoveries: deque[SensorRecoveryEvent] = deque(maxlen=1000)
+        self._next_event_id = 1
 
         self.lock = threading.Lock()
 
@@ -133,11 +160,7 @@ class HistoryTracker:
             skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
         # Use provided timestamp for historical backfill, or current time for real-time
-        ts = (
-            timestamp.isoformat()
-            if timestamp
-            else datetime.now(timezone.utc).isoformat()
-        )
+        ts = timestamp.isoformat() if timestamp else datetime.now(UTC).isoformat()
 
         reading = TemperatureReading(
             timestamp=ts,
@@ -166,7 +189,7 @@ class HistoryTracker:
             temperature: Temperature set (if applicable)
         """
         event = ControlEvent(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             zone_id=zone_id,
             action=action,
             details=details,
@@ -198,7 +221,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
             readings = [
                 r for r in readings if datetime.fromisoformat(r.timestamp) > cutoff
             ]
@@ -226,7 +249,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
             events = [e for e in events if datetime.fromisoformat(e.timestamp) > cutoff]
 
         return [asdict(e) for e in events]
@@ -255,7 +278,7 @@ class HistoryTracker:
             outdoor_temp_coefficient: Outdoor temperature coefficient
         """
         snapshot = ThermalCharacteristicsSnapshot(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             zone_id=zone_id,
             heating_rate=heating_rate,
             heating_rate_confidence=heating_rate_confidence,
@@ -291,7 +314,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
             snapshots = [
                 s for s in snapshots if datetime.fromisoformat(s.timestamp) > cutoff
             ]
@@ -318,11 +341,7 @@ class HistoryTracker:
             skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
         # Use provided timestamp for historical backfill, or current time for real-time
-        ts = (
-            timestamp.isoformat()
-            if timestamp
-            else datetime.now(timezone.utc).isoformat()
-        )
+        ts = timestamp.isoformat() if timestamp else datetime.now(UTC).isoformat()
 
         snapshot = HeatingPowerSnapshot(
             timestamp=ts,
@@ -362,7 +381,7 @@ class HistoryTracker:
 
         # Filter by time
         if hours:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
             snapshots = [
                 s for s in snapshots if datetime.fromisoformat(s.timestamp) > cutoff
             ]
@@ -400,11 +419,7 @@ class HistoryTracker:
             timestamp: Optional timestamp (defaults to now for real-time snapshots)
             skip_cleanup: Skip cleanup (use during backfill to preserve historical data)
         """
-        ts = (
-            timestamp.isoformat()
-            if timestamp
-            else datetime.now(timezone.utc).isoformat()
-        )
+        ts = timestamp.isoformat() if timestamp else datetime.now(UTC).isoformat()
 
         snapshot = HeatPumpSnapshot(
             timestamp=ts,
@@ -437,16 +452,95 @@ class HistoryTracker:
             snapshots = list(self.heat_pump_snapshots)
 
         if hours:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
             snapshots = [
                 s for s in snapshots if datetime.fromisoformat(s.timestamp) > cutoff
             ]
 
         return [asdict(s) for s in snapshots]
 
+    def add_sensor_failure(
+        self, entity_id: str, device_group: str, status: str, message: str
+    ) -> int:
+        """Record a sensor transitioning into a failed state.
+
+        Returns:
+            The new event's id (used for acknowledgement).
+        """
+        with self.lock:
+            event_id = self._next_event_id
+            self._next_event_id += 1
+            self.sensor_failures.append(
+                SensorFailureEvent(
+                    id=event_id,
+                    timestamp=datetime.now(UTC).isoformat(),
+                    entity_id=entity_id,
+                    device_group=device_group,
+                    status=status,
+                    message=message,
+                )
+            )
+        return event_id
+
+    def add_sensor_recovery(
+        self, entity_id: str, device_group: str, message: str
+    ) -> int:
+        """Record a sensor recovering back to 'ok'.
+
+        Returns:
+            The new event's id.
+        """
+        with self.lock:
+            event_id = self._next_event_id
+            self._next_event_id += 1
+            self.sensor_recoveries.append(
+                SensorRecoveryEvent(
+                    id=event_id,
+                    timestamp=datetime.now(UTC).isoformat(),
+                    entity_id=entity_id,
+                    device_group=device_group,
+                    message=message,
+                )
+            )
+        return event_id
+
+    def acknowledge_sensor_failure(self, event_id: int) -> bool:
+        """Mark a sensor failure event as acknowledged.
+
+        Returns:
+            True if the event was found and acknowledged, False otherwise.
+        """
+        with self.lock:
+            for event in self.sensor_failures:
+                if event.id == event_id:
+                    event.acknowledged = True
+                    return True
+        return False
+
+    def get_sensor_failures(self, unacknowledged_only: bool = False) -> list[dict]:
+        """Get recorded sensor failure events, newest first."""
+        with self.lock:
+            events = list(self.sensor_failures)
+
+        if unacknowledged_only:
+            events = [e for e in events if not e.acknowledged]
+
+        return [asdict(e) for e in reversed(events)]
+
+    def get_sensor_recoveries(self, hours: int | None = None) -> list[dict]:
+        """Get recorded sensor recovery events, newest first."""
+        with self.lock:
+            events = list(self.sensor_recoveries)
+
+        if hours:
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
+            events = [e for e in events if datetime.fromisoformat(e.timestamp) > cutoff]
+
+        return [asdict(e) for e in reversed(events)]
+
     def _cleanup_old_data(self):
         """Remove data older than max_hours."""
-        cutoff = datetime.now(timezone.utc) - self.max_age
+        cutoff = datetime.now(UTC) - self.max_age
 
         # Clean temperature readings
         while (
@@ -463,7 +557,7 @@ class HistoryTracker:
             self.control_events.popleft()
 
         # Clean thermal snapshots (keep 7 days, don't use max_hours)
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        seven_days_ago = datetime.now(UTC) - timedelta(days=7)
         while (
             self.thermal_snapshots
             and datetime.fromisoformat(self.thermal_snapshots[0].timestamp)

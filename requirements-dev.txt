@@ -4,6 +4,7 @@ pytest
 pytest-cov
 ruff
 black
-mypy
+mypy==2.3.1
 types-requests
 types-PyYAML
+httpx

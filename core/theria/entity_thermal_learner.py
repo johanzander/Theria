@@ -9,7 +9,7 @@ and long-term reliability.
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import numpy as np
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def now_utc() -> datetime:
     """Get current time as timezone-aware UTC datetime."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # Timeframe definitions in hours
@@ -103,7 +103,7 @@ class ClimateEntityThermalLearner:
         """Add a new measurement and return it."""
         # Ensure timestamp is timezone-aware
         if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
+            timestamp = timestamp.replace(tzinfo=UTC)
 
         measurement = EntityMeasurement(
             timestamp=timestamp,

@@ -5,7 +5,7 @@ Theria API Endpoints
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
@@ -33,6 +33,9 @@ ZONES: list[ZoneSettings] = []
 
 # Thermal learning service (set by app.py during startup)
 learning_service = None
+
+# Health monitor service (set by app.py during startup)
+health_monitor_service = None
 
 
 def load_zones_from_config():
@@ -375,8 +378,8 @@ async def get_zone_period_stats(
             status_code=400, detail="Both 'from' and 'to' parameters required"
         )
 
-    start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
-    end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+    start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=UTC)
+    end_dt = datetime.fromtimestamp(to / 1000.0, tz=UTC)
 
     # Calculate hours for fetching data
     hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
@@ -475,9 +478,7 @@ async def get_zone_period_stats(
     # Determine period label
     if duration_hours <= 24:
         period_label = (
-            "Today"
-            if end_dt.date() == datetime.now(timezone.utc).date()
-            else "Yesterday"
+            "Today" if end_dt.date() == datetime.now(UTC).date() else "Yesterday"
         )
     elif duration_hours <= 168:
         period_label = "Week"
@@ -547,19 +548,19 @@ async def get_zone_history(
     # INDUSTRY STANDARD: Accept Unix timestamps (like Grafana/Kibana)
     if from_ms is not None and to is not None:
         # Unix timestamps in milliseconds - convert to UTC timezone-aware datetime
-        start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
-        end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+        start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=UTC)
+        end_dt = datetime.fromtimestamp(to / 1000.0, tz=UTC)
         # Calculate hours from start_dt to NOW (not just the range duration)
         # This ensures we fetch enough historical data
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
     elif start_date and end_date:
         # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
         start_dt = datetime.fromisoformat(start_date).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
         )
         end_dt = datetime.fromisoformat(end_date).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
         )
         hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
     elif hours is None:
@@ -709,6 +710,61 @@ async def get_heat_pump_history(hours: int = 24):
     }
 
 
+@router.get("/api/system-health")
+async def get_system_health():
+    """Full per-sensor health detail."""
+    if not health_monitor_service:
+        return {"enabled": False, "message": "Health monitoring not enabled"}
+
+    return {"enabled": True, **health_monitor_service.get_full_status()}
+
+
+@router.get("/api/dashboard-health-summary")
+async def get_dashboard_health_summary():
+    """Lightweight, device-grouped health summary for a UI banner."""
+    if not health_monitor_service:
+        return {"enabled": False, "status": "disabled", "devices": []}
+
+    return {"enabled": True, **health_monitor_service.get_dashboard_summary()}
+
+
+@router.post("/api/system-health/recheck")
+async def recheck_system_health():
+    """Trigger an immediate sensor health recheck."""
+    if not health_monitor_service:
+        raise HTTPException(status_code=404, detail="Health monitoring not enabled")
+
+    await health_monitor_service.recheck()
+    return {"status": "ok", **health_monitor_service.get_dashboard_summary()}
+
+
+@router.get("/api/runtime-failures")
+async def get_runtime_failures(unacknowledged_only: bool = False):
+    """Get recorded sensor failure events."""
+    events = history_tracker.get_sensor_failures(
+        unacknowledged_only=unacknowledged_only
+    )
+    return {"count": len(events), "failures": events}
+
+
+@router.post("/api/runtime-failures/{event_id}/acknowledge")
+async def acknowledge_runtime_failure(event_id: int):
+    """Acknowledge a sensor failure event."""
+    found = history_tracker.acknowledge_sensor_failure(event_id)
+    if not found:
+        raise HTTPException(
+            status_code=404, detail=f"Failure event {event_id} not found"
+        )
+    return {"status": "acknowledged", "event_id": event_id}
+
+
+@router.get("/api/health-recoveries")
+async def get_health_recoveries(hours: int = 24):
+    """Get recorded sensor recovery events."""
+    events = history_tracker.get_sensor_recoveries(hours=hours)
+    return {"count": len(events), "recoveries": events}
+
+
 @router.get("/api/thermal/characteristics/history")
 async def get_thermal_characteristics_history(
     zone_id: str | None = None, hours: int = 24
@@ -769,19 +825,19 @@ async def get_heating_timeline(
     # INDUSTRY STANDARD: Accept Unix timestamps (like Grafana/Kibana)
     if from_ms is not None and to is not None:
         # Unix timestamps in milliseconds - convert to UTC timezone-aware datetime
-        start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
-        end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+        start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=UTC)
+        end_dt = datetime.fromtimestamp(to / 1000.0, tz=UTC)
         # Calculate hours from start_dt to NOW (not just the range duration)
         # This ensures we fetch enough historical data
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
     elif start_date and end_date:
         # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
         start_dt = datetime.fromisoformat(start_date).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
         )
         end_dt = datetime.fromisoformat(end_date).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
         )
         hours = int((end_dt - start_dt).total_seconds() / 3600) + 2
     elif hours is None:
@@ -1251,21 +1307,21 @@ async def get_zone_chart_data(
         # INDUSTRY STANDARD: Accept Unix timestamps (like Grafana/Kibana)
         if from_ms is not None and to is not None:
             # Unix timestamps in milliseconds - convert to UTC timezone-aware datetime
-            start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=timezone.utc)
-            end_dt = datetime.fromtimestamp(to / 1000.0, tz=timezone.utc)
+            start_dt = datetime.fromtimestamp(from_ms / 1000.0, tz=UTC)
+            end_dt = datetime.fromtimestamp(to / 1000.0, tz=UTC)
             # Calculate hours from start_dt to NOW (not just the range duration)
             # This ensures we fetch enough historical data
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
             hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
         elif start_date and end_date:
             # Legacy format: Date strings (YYYY-MM-DD) - assume UTC
             start_dt = datetime.fromisoformat(start_date).replace(
-                hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
             )
             end_dt = datetime.fromisoformat(end_date).replace(
-                hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
             )
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
             hours = int((now_utc - start_dt).total_seconds() / 3600) + 2
         elif hours is None:
             hours = 24  # Default
@@ -1418,9 +1474,9 @@ async def verify_thermal_calculations(entity_id: str, hours: int = 24):
 
     try:
         # Get raw measurements from learner
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff_time = datetime.now(UTC) - timedelta(hours=hours)
         filtered_measurements = [
             m for m in learner.measurements if m.timestamp >= cutoff_time
         ]

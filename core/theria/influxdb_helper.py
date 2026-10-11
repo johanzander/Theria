@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 
 _LOGGER = logging.getLogger(__name__)
 
+# `reason` value on an error result when the query worked but returned no points.
+NO_DATA = "no_data"
+
 
 def get_influxdb_config():
     """Load InfluxDB config from options.json or fallback to .env."""
@@ -269,7 +272,7 @@ def get_sensor_timeseries(
 
         if response.status_code == 204:
             _LOGGER.warning(f"No data found for sensor {sensor_name}")
-            return {"status": "error", "message": "No data found"}
+            return {"status": "error", "reason": NO_DATA, "message": "No data found"}
 
         if response.status_code != 200:
             _LOGGER.error(f"Error from InfluxDB: {response.status_code}")
@@ -284,7 +287,11 @@ def get_sensor_timeseries(
         )
 
         if not timeseries_data:
-            return {"status": "error", "message": "No valid data points found"}
+            return {
+                "status": "error",
+                "reason": NO_DATA,
+                "message": "No valid data points found",
+            }
 
         _LOGGER.info(
             f"Fetched {len(timeseries_data)} data points for {sensor_name} "

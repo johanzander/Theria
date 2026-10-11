@@ -33,3 +33,27 @@ class OptimizationError(TheriaError):
     """MPC optimization failed."""
 
     pass
+
+
+class PriceDataError(TheriaError):
+    """Electricity price data is missing or malformed."""
+
+    pass
+
+
+class ModelFitError(TheriaError):
+    """A model cannot be fitted from the supplied data."""
+
+    pass
+
+
+class WeatherDataError(TheriaError):
+    """Weather forecast data is missing or malformed."""
+
+    pass
+
+
+class StateStoreError(TheriaError):
+    """The persisted plan state cannot be read or written."""
+
+    pass

@@ -4,6 +4,10 @@ loguru
 python-dotenv
 pyyaml
 requests
-numpy<2.1
+# Exact pin, not a range: matches bess-manager's numpy==2.4.6 (has wheels for
+# Python 3.11-3.13, and keeps the two projects' pinned-dependency reasoning
+# consistent). An unpinned/ranged numpy previously drifted to a version
+# mypy's pinned rev couldn't parse and, separately, to one with no 3.13 wheel.
+numpy==2.4.6
 scipy
 watchdog
