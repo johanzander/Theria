@@ -1,3 +1,11 @@
+FROM node:22-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+# vite.config.ts writes to ../backend/static/plan
+RUN mkdir -p /backend/static && npm run build
+
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
@@ -33,10 +41,11 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Copy Python application files from backend directory
-COPY backend/app.py backend/api.py backend/log_config.py backend/requirements.txt ./
+COPY backend/app.py backend/api.py backend/plan_api.py backend/sensor_api.py backend/log_config.py backend/requirements.txt ./
 
 # Copy static files (UI)
 COPY backend/static/ ./static/
+COPY --from=frontend /backend/static/plan/ ./static/plan/
 
 # Copy core directory
 COPY core/ /app/core/

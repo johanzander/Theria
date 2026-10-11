@@ -318,6 +318,8 @@
                 <a href="./">← Dashboard</a>
                 <span style="color: #4a5568;">|</span>
                 <a href="zone-insights">Zone Insights →</a>
+                <span style="color: #4a5568;">|</span>
+                <a href="static/plan/">Price and plan →</a>
             </div>
         </div>
 
@@ -380,6 +382,7 @@
 
     <!-- Load external scripts (respects base tag) -->
     <script src="static/js/date-picker.js"></script>
+    <script src="static/js/health-banner.js"></script>
 
     <script>
 
@@ -495,6 +498,7 @@
                 // Load data for all zones in parallel
                 const hours = datePicker.getHoursFromRange();
                 await Promise.all([
+                    loadHealthBanner(),
                     loadHeatPumpStatus(),
                     loadMainHeatingChart(hours),
                     loadTemperatureChart(hours),

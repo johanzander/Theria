@@ -45,3 +45,8 @@ build/
 
 # Miscellaneous
 *.log
+.plan_state.json
+
+# Built React page
+backend/static/plan/
+frontend/dist/

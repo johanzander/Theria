@@ -1,0 +1,21 @@
+body { margin: 0; font-family: system-ui, sans-serif; background: #f5f6f8; color: #1f2933; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.4rem; } h2 { font-size: 1rem; margin: 0 0 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.card, .panel { background: #fff; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.panel { margin-bottom: 16px; }
+.label { font-size: .75rem; color: #6b7785; text-transform: uppercase; }
+.value { font-size: 1.4rem; font-weight: 600; }
+.note { font-size: .85rem; color: #52606d; margin-top: 4px; }
+.bad { color: #b42318; } .good { color: #067647; }
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #d5dae0; align-items: flex-end; }
+.tabs a { padding: 8px 14px; color: #3e4c59; text-decoration: none; border-radius: 6px 6px 0 0; }
+.tabs a:hover { background: #e4e7eb; }
+.tabs a.current { background: #fff; font-weight: 600; box-shadow: 0 -1px 2px rgba(0,0,0,.08); }
+.tabs .spacer { flex: 1; } .tabs a.old { font-size: .8rem; color: #7b8794; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #eef0f3; }
+th { color: #6b7785; font-weight: 500; } tr.extreme td { background: #fff4e5; }
+.buttons { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+button { padding: 6px 14px; border: 1px solid #b8c1cc; background: #fff; border-radius: 6px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; } button.danger { border-color: #b42318; color: #b42318; }
