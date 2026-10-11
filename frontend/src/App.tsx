@@ -5,9 +5,10 @@ import { Overview } from './views/Overview'
 import { PlanTable } from './views/PlanTable'
 import { Sensors } from './views/Sensors'
 
-// The page is served at <root>/static/plan/, the old pages at <root>/
+// The page is the start page but is resolved against <root>/static/plan/ (see the base tag the
+// backend injects); the old pages are at <root>/legacy, /zone-insights and /system-insights
 const OLD_PAGES = [
-  { href: '../../', label: 'Dashboard' },
+  { href: '../../legacy', label: 'Old dashboard' },
   { href: '../../zone-insights', label: 'Zone insights' },
   { href: '../../system-insights', label: 'System insights' },
 ]

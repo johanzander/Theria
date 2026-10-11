@@ -12,7 +12,7 @@ from datetime import datetime
 import log_config  # noqa: F401
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -327,75 +327,48 @@ if os.path.exists(static_dir):
     logger.info(f"Mounted static files from {static_dir}")
 
 
+def _html_page(request: Request, path: str, base_suffix: str = "") -> HTMLResponse:
+    """Serve an HTML file with a <base> tag so that relative links work behind HA ingress."""
+    ingress_path = request.headers.get("X-Ingress-Path", "")
+    with open(path) as f:
+        html_content = f.read()
+    base_tag = f'<base href="{ingress_path}/{base_suffix}">'
+    if ingress_path or base_suffix:
+        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}", 1)
+    return HTMLResponse(content=html_content)
+
+
 @app.get("/")
 async def root(request: Request):
-    """Root endpoint - serve UI with proper base path."""
-    from fastapi.responses import HTMLResponse
+    """Start page: the React app (built from frontend/ into static/plan)."""
+    index = os.path.join(plan_ui_dir, "index.html")
+    if not os.path.exists(index):
+        return HTMLResponse(
+            status_code=503,
+            content="The frontend is not built: run `npm run build` in frontend/.",
+        )
+    # The built page uses relative asset and API urls, resolved against static/plan/
+    return _html_page(request, index, "static/plan/")
 
-    # Get ingress path from Home Assistant header
-    ingress_path = request.headers.get("X-Ingress-Path", "")
-    logger.info(f"Serving root with X-Ingress-Path: '{ingress_path}'")
 
-    # Read index.html
-    index_path = os.path.join(static_dir, "index.html")
-    with open(index_path) as f:
-        html_content = f.read()
-
-    # Inject base tag if ingress path exists
-    if ingress_path:
-        base_tag = f'<base href="{ingress_path}/">'
-        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}")
-        logger.info(f"Injected base tag: {base_tag}")
-
-    return HTMLResponse(content=html_content)
+@app.get("/legacy")
+async def legacy_dashboard(request: Request):
+    """The old dashboard, kept for reference."""
+    return _html_page(request, os.path.join(static_dir, "index.html"))
 
 
 @app.get("/zone-insights")
 @app.get("/zone-insights.html")
 async def zone_insights(request: Request):
-    """Zone insights page (Butik zone) with proper base path."""
-    from fastapi.responses import HTMLResponse
-
-    # Get ingress path from Home Assistant header
-    ingress_path = request.headers.get("X-Ingress-Path", "")
-    logger.info(f"Serving zone-insights with X-Ingress-Path: '{ingress_path}'")
-
-    # Read zone-insights.html
-    insights_path = os.path.join(static_dir, "zone-insights.html")
-    with open(insights_path) as f:
-        html_content = f.read()
-
-    # Inject base tag if ingress path exists
-    if ingress_path:
-        base_tag = f'<base href="{ingress_path}/">'
-        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}")
-        logger.info(f"Injected base tag: {base_tag}")
-
-    return HTMLResponse(content=html_content)
+    """Zone insights page (old UI)."""
+    return _html_page(request, os.path.join(static_dir, "zone-insights.html"))
 
 
 @app.get("/system-insights")
 @app.get("/system-insights.html")
 async def system_insights(request: Request):
-    """System insights page (main heating system) with proper base path."""
-    from fastapi.responses import HTMLResponse
-
-    # Get ingress path from Home Assistant header
-    ingress_path = request.headers.get("X-Ingress-Path", "")
-    logger.info(f"Serving system-insights with X-Ingress-Path: '{ingress_path}'")
-
-    # Read system-insights.html
-    insights_path = os.path.join(static_dir, "system-insights.html")
-    with open(insights_path) as f:
-        html_content = f.read()
-
-    # Inject base tag if ingress path exists
-    if ingress_path:
-        base_tag = f'<base href="{ingress_path}/">'
-        html_content = html_content.replace("<head>", f"<head>\n    {base_tag}")
-        logger.info(f"Injected base tag: {base_tag}")
-
-    return HTMLResponse(content=html_content)
+    """System insights page (old UI)."""
+    return _html_page(request, os.path.join(static_dir, "system-insights.html"))
 
 
 # For development
