@@ -29,7 +29,12 @@ class StageRules:
     aux_limit_kwh_per_day: float = 1.0  # electric heater energy that counts as trouble
     room_margin_bad_c: float = 0.5  # room lower than target by this much is trouble
     room_margin_widen_c: float = 0.2  # ... by this much blocks widening
-    min_coverage: float = 0.5  # days with less data than this are not judged
+    min_coverage: float = (
+        0.5  # days with less data than this do not count for the saving
+    )
+    min_saving_sek_per_day: float = (
+        0.5  # widening needs a real saving, not days at the base
+    )
 
 
 @dataclass(frozen=True)
@@ -73,12 +78,12 @@ def evaluate_stage(
         return StageDecision(
             state, "hold", f"reverted to the base until {state.revert_until}"
         )
-    days = [
+    seen = [
         d
         for d in outcomes
-        if state.stage_started_on <= d.day < today and d.coverage >= rules.min_coverage
+        if state.stage_started_on <= d.day < today and d.coverage > 0
     ]
-    bad = [d for d in days if _trouble(d, target_c, rules)]
+    bad = [d for d in seen if _trouble(d, target_c, rules)]
     if bad:
         worst = bad[0]
         return shrink_for_trouble(
@@ -87,6 +92,7 @@ def evaluate_stage(
             rules,
             f"trouble on {worst.day}: {_trouble(worst, target_c, rules)}",
         )
+    days = [d for d in seen if d.coverage >= rules.min_coverage]
     total = float(sum(d.saving_sek for d in days))
     room_ok = all(
         not np.isfinite(d.room_min_c)
@@ -95,7 +101,7 @@ def evaluate_stage(
     )
     if (
         len(days) >= rules.min_days
-        and total >= 0.0
+        and total >= rules.min_saving_sek_per_day * len(days)
         and room_ok
         and state.index + 1 < len(STAGES)
     ):

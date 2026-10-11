@@ -23,11 +23,20 @@ class WritableHA(FakeHA):
         super().__init__(attrs)
         self.setpoint = setpoint
         self.writes = []
+        self.automation = "off"  # the old setpoint automation
+        self.fail_writes = False
+
+    def get_state(self, entity_id):
+        if entity_id == "automation.set_room_temp_setpoint":
+            return {"state": self.automation, "attributes": {}}
+        return super().get_state(entity_id)
 
     def get_climate_state(self, entity_id):
         return {"target_temperature": self.setpoint}
 
     def set_temperature(self, entity_id, temperature):
+        if self.fail_writes:
+            raise RuntimeError("HA unreachable")
         self.writes.append(temperature)
         self.setpoint = temperature
 
@@ -35,8 +44,10 @@ class WritableHA(FakeHA):
 class FakeSafety:
     def __init__(self, trouble=None):
         self.trouble = trouble
+        self.calls = []
 
-    def check(self, raised=False):
+    def check(self, raised=False, deviated=True):
+        self.calls.append({"raised": raised, "deviated": deviated})
         return self.trouble
 
 

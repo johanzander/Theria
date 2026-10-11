@@ -26,6 +26,10 @@ class PumpParams:
     energy_intercept: float
     energy_per_outdoor: float
     energy_per_rts: float
+    # The pump's electric heater starts helping above a flow target of about 44 C (2022-2026
+    # history); its energy then grows roughly linearly with the flow target. Zero = not fitted.
+    aux_onset_c: float = 44.0
+    aux_per_flow_c: float = 0.0
 
 
 # Priors from the measured winter 2025/26 curve and the rough counter regression
@@ -58,6 +62,37 @@ def energy_kwh_per_hour(params: PumpParams, t_out_c: Array, rts_c: Array) -> Arr
         + params.energy_per_rts * rts_c
     )
     return np.maximum(raw, 0.0)
+
+
+def aux_kwh_per_hour(params: PumpParams, t_out_c: Array, rts_c: Array) -> Array:
+    """Electric heater electricity (kWh per hour) at the flow target the pump will ask for."""
+    flow = flow_target(params, t_out_c, rts_c)
+    return params.aux_per_flow_c * np.maximum(flow - params.aux_onset_c, 0.0)
+
+
+def total_kwh_per_hour(params: PumpParams, t_out_c: Array, rts_c: Array) -> Array:
+    """Compressor plus electric heater electricity (kWh per hour)."""
+    return energy_kwh_per_hour(params, t_out_c, rts_c) + aux_kwh_per_hour(
+        params, t_out_c, rts_c
+    )
+
+
+MIN_AUX_ROWS = 20  # heating hours above the onset needed to fit the heater
+
+
+def fit_aux_per_flow_c(
+    flow_c: np.ndarray, aux_kwh: np.ndarray, onset_c: float
+) -> float:
+    """Least-squares slope of heater energy against the flow target above `onset_c`."""
+    excess = np.maximum(flow_c - onset_c, 0.0)
+    rows = excess > 0.0
+    if int(rows.sum()) < MIN_AUX_ROWS:
+        raise ModelFitError(
+            f"heater fit needs {MIN_AUX_ROWS} hours above a flow target of {onset_c} C, "
+            f"found {int(rows.sum())}"
+        )
+    slope = float(np.sum(excess[rows] * aux_kwh[rows]) / np.sum(excess[rows] ** 2))
+    return max(slope, 0.0)
 
 
 def fit_flow_curve(

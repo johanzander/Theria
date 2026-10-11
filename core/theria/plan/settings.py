@@ -27,6 +27,8 @@ class PlanSettings:
     aux_status_entity: str  # electric heater status (above 0 = running)
     latitude: float
     longitude: float
+    # The old automation that wrote the room setpoint; the plan must not run alongside it.
+    conflicting_automation_entity: str = "automation.set_room_temp_setpoint"
     mode: str = "off"
     floor_c: float = 18.0
     extreme_floor_c: float = 17.0

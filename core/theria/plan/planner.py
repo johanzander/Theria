@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 
 from core.theria.exceptions import OptimizationError
-from core.theria.plan.pump_model import PumpParams, energy_kwh_per_hour, flow_target
+from core.theria.plan.pump_model import PumpParams, flow_target, total_kwh_per_hour
 from core.theria.plan.room_model import RoomParams, RoomState, step
 from core.theria.plan.settings import PlanSettings
 
@@ -184,7 +184,7 @@ class _Problem:
         )
 
     def energy_kwh(self, t: int, rts_c: float) -> float:
-        return float(energy_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
+        return float(total_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
 
     def stage_cost(self, t: int, a: int, room_next: FloatArray) -> FloatArray:
         energy_cost = float(self.inputs.price_sek_per_kwh[t]) * self.energy_kwh(

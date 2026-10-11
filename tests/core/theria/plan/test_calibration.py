@@ -175,3 +175,27 @@ def test_the_older_sensor_is_scaled_to_the_amplitude_of_the_lk_sensors_before_it
     )
     early = slice(200 * 24, 300 * 24)
     assert np.allclose(inputs.room_reference_c[early], world.room[early], atol=0.15)
+
+
+def test_the_electric_heater_is_fitted_from_its_own_counter(settings):
+    fitted = calibrator(settings, World()).run(END)
+    assert fitted.pump.params.aux_per_flow_c == pytest.approx(0.15, abs=0.03)
+    assert fitted.pump.aux_rows > 20
+
+
+def test_aux_energy_is_aligned_like_the_compressor_energy(settings):
+    world = World(days=20)
+    inputs = load_calibration_inputs(
+        FakeSource(world), FakeWeatherHistory(world), settings, END, days=20
+    )
+    assert np.isnan(inputs.aux_kwh[0])
+    assert np.allclose(inputs.aux_kwh[1:], np.round(world.aux[1:] * 4) / 4)
+
+
+def test_a_house_where_the_heater_never_runs_gets_no_heater_term(settings):
+    world = World()
+    quiet = np.full(len(world.aux_counter), 50.0)
+    fitted = calibrator(settings, world, {(ENTITIES["aux_counter"], None): quiet}).run(
+        END
+    )
+    assert fitted.pump.params.aux_per_flow_c == 0.0

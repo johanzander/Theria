@@ -202,3 +202,14 @@ def test_trouble_clears_when_the_condition_ends(settings):
     assert monitor.check() is None
     states.values["sensor.compressor_speed"] = "0"
     assert monitor.check() is None  # the count starts over
+
+
+def test_the_compressor_stopping_at_the_base_setpoint_is_not_the_plans_doing(settings):
+    monitor = SafetyMonitor(FakeStates(speed="0"), settings)
+    assert [monitor.check(deviated=False) for _ in range(5)] == [None] * 5
+
+
+def test_trouble_is_reported_once_and_the_count_starts_over(settings):
+    monitor = SafetyMonitor(FakeStates(speed="0"), settings)
+    assert [monitor.check() for _ in range(3)][-1] is not None
+    assert monitor.check() is None  # not repeated every cycle

@@ -176,7 +176,7 @@ class PlanExecutor:
         raising: bool,
     ) -> ExecutionResult:
         if abs(value - current) < 1e-9:
-            self._last_written = value if self._last_written is not None else None
+            self._last_written = value  # a later hand change is then noticed
             return self._record(ExecutionResult("kept", value, None, reason, now))
         try:
             self._ha.set_temperature(self._s.room_setpoint_entity, value)
@@ -225,10 +225,16 @@ class SafetyMonitor:
         self._stopped = 0
         self._aux = 0
 
-    def check(self, raised: bool = False) -> str | None:
+    def check(self, raised: bool = False, deviated: bool = True) -> str | None:
+        """Trouble worth stepping back for, or None.
+
+        `deviated` says whether the setpoint differs from the base: a compressor that stops
+        while the pump sits at the base setpoint is not the plan's doing. A reported trouble
+        starts the counting over.
+        """
         heating = self._text(self._s.heating_mode_entity) == "off"
         speed = self._number(self._s.compressor_speed_entity)
-        if heating and speed is not None and speed < STOPPED_PERCENT:
+        if deviated and heating and speed is not None and speed < STOPPED_PERCENT:
             self._stopped += 1
         else:
             self._stopped = 0
@@ -237,11 +243,14 @@ class SafetyMonitor:
             self._aux += 1
         else:
             self._aux = 0
+        message = None
         if self._stopped >= STOPPED_CHECKS:
-            return "the compressor has been stopped for 45 minutes while heating"
-        if self._aux >= AUX_CHECKS:
-            return "the electric heater is running while the setpoint is raised"
-        return None
+            message = "the compressor has been stopped for 45 minutes while heating"
+        elif self._aux >= AUX_CHECKS:
+            message = "the electric heater is running while the setpoint is raised"
+        if message is not None:
+            self._stopped = self._aux = 0
+        return message
 
     def _text(self, entity_id: str) -> str | None:
         try:

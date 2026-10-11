@@ -101,6 +101,19 @@
 - [ ] (minor) An old-format `plan_state.json` stops the plan service at start; migrate or ignore it with a clear log line.
 - [ ] Tune `setpoint_deviation_cost_sek_per_c_hour` (0.1 SEK per degree-hour, stands in for salon and guest house) and `comfort_cost` together with Johan once shadow plans can be compared with what the house did.
 - [ ] **Plan 4: adaptive stages (trust region)** - see spec section 12: stage state, daily outcome measurement against a counterfactual baseline, widen/shrink rules, electric-heater term in the energy model.
-- [ ] Add the electric heater (`aux_cons_heating`) to the energy model; today the model is fitted to the compressor counter only.
+- [x] Electric heater in the energy model: hinge on the flow target above 44 C, fitted from `aux_cons_heating` (live fit 2026-10-11: 0.20 kWh per C above 44 C, 921 hours). The planner now values the heater energy that lowering the setpoint saves in the cold. Not used by the savings backtest (`outcomes.py` still uses measured aux).
 - [ ] The heater analysis has few hours for deep or long drops (below -3 C, more than a few hours): the first active stages must measure them rather than assume.
 
+
+## Active-control review (2026-10-11) - fixed and deferred
+
+Fixed with tests: stage-judgement failure no longer stops control (C1); one lock between `set_mode` and the control cycle, mode changes run in a worker thread (C2); leaving active restores the base first and keeps the mode (502) if that fails (C3); a hand change is noticed before the first write (I1); the base is written back at shutdown (I2); the compressor-stop check only counts while the setpoint deviates from the base, and a reported trouble starts the count over (I3); the heater check uses the real setpoint (I4); activating during a revert starts counting after it, widening needs a real saving (>= 0.5 SEK/day) (I5); trouble is judged on days with little data (I6, stages only); active is refused while `automation.set_room_temp_setpoint` is on (I7).
+
+Deferred:
+- [ ] Executor state (`_last_written`, pause) is not persisted; after a restart a hand change made during downtime is not seen until the first write.
+- [ ] Startup with persisted `active` but a service that fails to build leaves the pump where it was (needs a base write at startup).
+- [ ] Widening should also require realised saving >= 70 % of the predicted one and aux/room measured against the baseline (spec section 12); today fixed limits.
+- [ ] Hot-water hours are dropped from aux and stopped-compressor counts in `outcomes.py`; trouble on those hours is invisible.
+- [ ] Raise limit rounds up to the step (17.8 + 0.5 -> 18.5); fallback/restore jump straight to the base without a rate limit.
+- [ ] Trouble notification is never dismissed; the HA `requests.Session` is shared by threads; savings days are UTC days.
+- [ ] Counterfactual baseline scales each hour alone (recovery energy after a coast is charged to the baseline).

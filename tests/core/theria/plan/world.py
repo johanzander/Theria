@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
-from core.theria.plan.pump_model import PumpParams, energy_kwh_per_hour, flow_target
+from core.theria.plan.pump_model import (
+    PumpParams,
+    aux_kwh_per_hour,
+    energy_kwh_per_hour,
+    flow_target,
+)
 from core.theria.plan.room_model import RoomParams, RoomState, simulate
 from core.theria.plan.weather import WeatherHour
 
@@ -18,6 +23,8 @@ TRUE_PUMP = PumpParams(
     energy_intercept=0.4,
     energy_per_outdoor=-0.15,
     energy_per_rts=0.12,
+    aux_onset_c=44.0,
+    aux_per_flow_c=0.15,
 )
 TRUE_ROOM = RoomParams(  # gain 0.4 C per C of flow, closes 20 % of the gap per day
     tau_slab_h=1.0,
@@ -39,6 +46,7 @@ ENTITIES = {
     "valve": "binary_sensor.switch_valve_1",
     "flow": "sensor.radiator_forward",
     "counter": "sensor.compr_cons_heating",
+    "aux_counter": "sensor.aux_cons_heating",
 }
 
 
@@ -74,6 +82,7 @@ class World:
         if hot_water_hours:
             self.hot_water[(hrs % 24) == 4] = 1.0
         self.energy = energy_kwh_per_hour(TRUE_PUMP, self.t_out, self.rts)
+        self.aux = aux_kwh_per_hour(TRUE_PUMP, self.t_out, self.rts)
         self.valve_events: list[tuple[datetime, float]] | None = None
         if hot_water_blocks:
             # every day 04:05-04:40 the pump makes hot water: the heating counter only sees
@@ -88,6 +97,7 @@ class World:
                     (base + timedelta(minutes=40), 0.0),
                 ]
         self.counter = 1000.0 + np.cumsum(np.round(self.energy * 4) / 4)
+        self.aux_counter = 50.0 + np.cumsum(np.round(self.aux * 4) / 4)
         self.flow = self.setpoint - 1.0
         split = n - late_days * 24 if late_room_params is not None else n
         first = simulate(
@@ -140,6 +150,7 @@ class FakeSource:
             (ENTITIES["valve"], None): w.hot_water,
             (ENTITIES["flow"], None): w.flow,
             (ENTITIES["counter"], None): w.counter,
+            (ENTITIES["aux_counter"], None): w.aux_counter,
         }
         self._series.update(overrides or {})
 

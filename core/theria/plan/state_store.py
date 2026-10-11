@@ -76,6 +76,7 @@ def _models_to_dict(m: FittedModels) -> dict[str, Any]:
             "flow_rmse_c": m.pump.flow_rmse_c,
             "energy_rows": m.pump.energy_rows,
             "energy_rmse_kwh": m.pump.energy_rmse_kwh,
+            "aux_rows": m.pump.aux_rows,
         },
         "room": (
             None
@@ -101,6 +102,7 @@ def _models_from_dict(d: dict[str, Any]) -> FittedModels:
             flow_rmse_c=float(pump["flow_rmse_c"]),
             energy_rows=int(pump["energy_rows"]),
             energy_rmse_kwh=float(pump["energy_rmse_kwh"]),
+            aux_rows=int(pump.get("aux_rows", 0)),  # absent in older state files
         ),
         room=(
             None

@@ -76,3 +76,12 @@ def test_savings_is_unavailable_without_an_outcome_source(settings):
     app.include_router(plan_api.router)
     app.dependency_overrides[plan_api.get_service] = lambda: service
     assert TestClient(app).get("/api/savings").status_code == 409
+
+
+def test_a_failed_restore_is_reported_as_a_bad_gateway_and_the_mode_stays(client):
+    http, service, ha = client
+    http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
+    ha.fail_writes = True
+    response = http.post("/api/plan/mode", json={"mode": "off"})
+    assert response.status_code == 502
+    assert service.mode == "active"

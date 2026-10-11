@@ -6,6 +6,7 @@ write the room setpoint within the current stage and steps back at the first sig
 
 import asyncio
 import logging
+import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import replace
@@ -17,6 +18,7 @@ import numpy as np
 from core.theria.exceptions import (
     ConfigurationError,
     SensorError,
+    SetpointRestoreError,
     TheriaError,
     WeatherDataError,
 )
@@ -60,7 +62,7 @@ SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
 
 
 class Safety(Protocol):
-    def check(self, raised: bool = False) -> str | None: ...
+    def check(self, raised: bool = False, deviated: bool = True) -> str | None: ...
 
 
 class Notifier(Protocol):
@@ -131,6 +133,9 @@ class PlanService:
         self._stage_checked_on: date | None = None
         self._last_trouble: str | None = None
         self._last_stage_note: str | None = None
+        self._lock = (
+            threading.RLock()
+        )  # set_mode and the control cycle never interleave
         if state_store is not None:
             state = state_store.load()
             if state.mode is not None:
@@ -160,28 +165,59 @@ class PlanService:
     def set_mode(self, mode: str, confirm: bool = False) -> None:
         """Change the mode; it is persisted so that a restart keeps it.
 
-        Active mode writes to the heat pump, so it needs `confirm`. Leaving it puts the base
-        setpoint back.
+        Active mode writes to the heat pump, so it needs `confirm`, and it is refused while
+        the old setpoint automation is on. Leaving it first puts the base setpoint back; if
+        that fails the mode stays active (and the error says so) so that control can retry.
         """
         if mode not in SUPPORTED_MODES:
             raise ConfigurationError(
                 f"mode must be one of {SUPPORTED_MODES}, got {mode!r}"
             )
-        if mode == "active":
-            if self._executor is None:
-                raise ConfigurationError("active mode is not available: no executor")
-            if not confirm:
-                raise ConfigurationError(
-                    "active mode writes to the heat pump and needs confirm=true"
+        with self._lock:
+            was_active = self._mode == "active"
+            if mode == "active":
+                if self._executor is None:
+                    raise ConfigurationError(
+                        "active mode is not available: no executor"
+                    )
+                if not confirm:
+                    raise ConfigurationError(
+                        "active mode writes to the heat pump and needs confirm=true"
+                    )
+                if not was_active:
+                    self._refuse_while_automation_is_on()
+            if was_active and mode != "active" and self._executor is not None:
+                result = self._executor.restore_base()
+                if result.action == "failed":
+                    raise SetpointRestoreError(
+                        f"the base setpoint could not be restored ({result.reason}); "
+                        "the mode stays active"
+                    )
+            if mode == "active" and not was_active:
+                today = self._now().date()
+                revert = self._stage.revert_until
+                self._stage = replace(
+                    self._stage,
+                    stage_started_on=today if revert is None else max(today, revert),
                 )
-        was_active = self._mode == "active"
-        if mode == "active" and not was_active:
-            self._stage = replace(self._stage, stage_started_on=self._now().date())
-            self._stage_checked_on = None
-        self._mode = mode
-        self._save_state()
-        if was_active and mode != "active" and self._executor is not None:
-            self._executor.restore_base()
+                self._stage_checked_on = None
+            self._mode = mode
+            self._save_state()
+
+    def _automation_is_on(self) -> bool:
+        state = self._ha.get_state(self._settings.conflicting_automation_entity)
+        return str(state["state"]) == "on"
+
+    def _refuse_while_automation_is_on(self) -> None:
+        entity = self._settings.conflicting_automation_entity
+        try:
+            conflict = self._automation_is_on()
+        except (RuntimeError, ValueError, KeyError, TypeError) as e:
+            raise ConfigurationError(f"cannot check {entity}: {e}") from e
+        if conflict:
+            raise ConfigurationError(
+                f"{entity} is on and would fight the plan; turn it off first"
+            )
 
     def _save_state(self) -> None:
         if self._state_store is not None:
@@ -410,6 +446,17 @@ class PlanService:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        if self._mode == "active" and self._executor is not None:
+            result = await asyncio.to_thread(self._restore_locked)
+            if result.action == "failed":
+                logger.error(
+                    "base setpoint not restored at shutdown: %s", result.reason
+                )
+
+    def _restore_locked(self) -> ExecutionResult:
+        assert self._executor is not None
+        with self._lock:
+            return self._executor.restore_base()
 
     async def cycle(self) -> None:
         """One supervisor pass: refit when due, then plan. Never raises."""
@@ -436,26 +483,58 @@ class PlanService:
         """Active mode: judge the stage once a day, watch for trouble, apply the plan."""
         if self._executor is None:
             raise ConfigurationError("active mode without an executor")
-        today = self._now().date()
-        self._judge_stage(today)
-        last = self._executor.last_result
-        raised = (
-            last is not None
-            and last.target_c is not None
-            and last.target_c > self._settings.rts_base_c
-        )
-        trouble = None if self._safety is None else self._safety.check(raised)
-        if trouble is not None:
-            self._executor.restore_base()
-            decision = shrink_for_trouble(
-                self._stage, today, self._rules, f"during the day: {trouble}"
+        with self._lock:
+            if self._mode != "active":  # switched off while this cycle was waiting
+                return
+            today = self._now().date()
+            try:
+                self._judge_stage(today)
+            except Exception:  # a failing history must not leave the pump uncontrolled
+                logger.exception("stage judgement failed; control continues")
+            if self._automation_conflict():
+                return
+            current = self._current_setpoint()
+            base = self._settings.rts_base_c
+            deviated = current is None or abs(current - base) > 1e-9
+            raised = current is not None and current > base + 1e-9
+            trouble = (
+                None if self._safety is None else self._safety.check(raised, deviated)
             )
-            self._stage = decision.state
-            self._last_trouble = decision.reason
-            self._save_state()
-            self._notify(TROUBLE_NOTIFICATION, "Theria: plan stopped", decision.reason)
-            return
-        self._executor.execute(self.latest(), self._stage)
+            if trouble is not None and deviated:
+                self._executor.restore_base()
+                decision = shrink_for_trouble(
+                    self._stage, today, self._rules, f"during the day: {trouble}"
+                )
+                self._stage = decision.state
+                self._last_trouble = decision.reason
+                self._save_state()
+                self._notify(
+                    TROUBLE_NOTIFICATION, "Theria: plan stopped", decision.reason
+                )
+                return
+            self._executor.execute(self.latest(), self._stage)
+
+    def _automation_conflict(self) -> bool:
+        entity = self._settings.conflicting_automation_entity
+        try:
+            conflict = self._automation_is_on()
+        except (RuntimeError, ValueError, KeyError, TypeError):
+            return (
+                False  # HA unreadable: the executor's own read will fail the same way
+            )
+        if conflict:
+            self._last_trouble = f"{entity} is on; the plan is not writing the setpoint"
+        return conflict
+
+    def _current_setpoint(self) -> float | None:
+        try:
+            return float(
+                self._ha.get_climate_state(self._settings.room_setpoint_entity)[
+                    "target_temperature"
+                ]
+            )
+        except (RuntimeError, ValueError, KeyError, TypeError):
+            return None
 
     def _judge_stage(self, today: date) -> None:
         if self._stage_checked_on == today or self._outcome_loader is None:

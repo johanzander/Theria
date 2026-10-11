@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
-from core.theria.exceptions import ConfigurationError, TheriaError
+from core.theria.exceptions import (
+    ConfigurationError,
+    SetpointRestoreError,
+    TheriaError,
+)
 from core.theria.plan.service import PlanService
 from core.theria.plan.snapshot import PlanSnapshot
 
@@ -78,9 +82,11 @@ async def set_plan_mode(
 ) -> dict[str, str]:
     """Switch between off, shadow and active (active needs confirm=true)."""
     try:
-        svc.set_mode(request.mode, confirm=request.confirm)
+        await asyncio.to_thread(svc.set_mode, request.mode, request.confirm)
     except ConfigurationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except SetpointRestoreError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
     return {"mode": svc.mode}
 
 

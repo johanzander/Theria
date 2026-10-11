@@ -1,6 +1,6 @@
 """Fitting the pump and room models to history, with plausibility checks."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 import numpy as np
@@ -23,6 +23,7 @@ from core.theria.plan.pump_model import (
     DEFAULT_FLOW_PER_RTS,
     PumpParams,
     energy_kwh_per_hour,
+    fit_aux_per_flow_c,
     fit_energy_model,
     fit_flow_curve,
 )
@@ -47,6 +48,7 @@ class PumpFit:
     flow_rmse_c: float
     energy_rows: int
     energy_rmse_kwh: float
+    aux_rows: int = 0  # hours above the heater onset that the heater term was fitted on
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,21 @@ def fit_pump(inputs: CalibrationInputs) -> PumpFit:
         energy_per_outdoor=e_out,
         energy_per_rts=e_rts,
     )
+    aux_rows = (
+        heating
+        & np.isfinite(inputs.aux_kwh)
+        & (inputs.heating_setpoint_c > params.aux_onset_c)
+    )
+    try:
+        aux_per_flow_c = fit_aux_per_flow_c(
+            inputs.heating_setpoint_c[aux_rows],
+            inputs.aux_kwh[aux_rows],
+            params.aux_onset_c,
+        )
+    except ModelFitError:
+        # too few cold, high-flow hours to see the heater: leave the term out (zero)
+        aux_per_flow_c, aux_rows = 0.0, np.zeros(len(heating), dtype=bool)
+    params = replace(params, aux_per_flow_c=aux_per_flow_c)
     predicted = energy_kwh_per_hour(
         params, inputs.t_out_c[energy_rows], inputs.rts_c[energy_rows]
     )
@@ -139,6 +156,7 @@ def fit_pump(inputs: CalibrationInputs) -> PumpFit:
         flow_rmse_c=float(
             np.sqrt(np.mean((flow_pred - inputs.heating_setpoint_c[flow_rows]) ** 2))
         ),
+        aux_rows=int(aux_rows.sum()),
         energy_rows=int(energy_rows.sum()),
         energy_rmse_kwh=float(
             np.sqrt(np.mean((predicted - inputs.energy_kwh[energy_rows]) ** 2))

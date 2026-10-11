@@ -106,7 +106,7 @@ def test_a_slightly_low_room_blocks_widening_without_shrinking():
     assert decision.action == "hold"
 
 
-def test_days_before_the_stage_started_and_days_with_little_data_are_ignored():
+def test_days_before_the_stage_started_are_ignored():
     state = StageState(
         index=0, stage_started_on=START + timedelta(days=3), revert_until=None
     )
@@ -115,10 +115,11 @@ def test_days_before_the_stage_started_and_days_with_little_data_are_ignored():
         day(1, stopped=5),
         day(3),
         day(4),
-        day(5, coverage=0.2, stopped=9),
     ]
     decision = run(state, days, today_offset=6)
-    assert decision.action == "hold"  # two good days only; the bad ones do not count
+    assert (
+        decision.action == "hold"
+    )  # two good days only; the earlier bad ones do not count
 
 
 def test_no_new_judgement_during_a_revert():
@@ -127,3 +128,15 @@ def test_no_new_judgement_during_a_revert():
     )
     decision = run(state, [day(i) for i in range(3)], today_offset=3)
     assert decision.action == "hold" and decision.state == state
+
+
+def test_days_without_a_real_saving_do_not_widen_the_stage():
+    days = [day(i, saving=0.0) for i in range(8)]  # paused, fallback or at the base
+    decision = run(fresh(), days, today_offset=8)
+    assert decision.action == "hold" and decision.state.index == 0
+
+
+def test_trouble_is_judged_even_on_days_with_little_normal_heating_data():
+    days = [day(i, coverage=0.2, aux=3.0) for i in range(1)]
+    decision = run(fresh(), days, today_offset=1)
+    assert decision.action == "shrink"

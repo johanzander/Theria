@@ -73,6 +73,7 @@ class CalibrationInputs:
     rts_c: FloatArray
     hot_water: FloatArray  # share of the hour the pump made hot water (0 = all heating)
     energy_kwh: FloatArray
+    aux_kwh: FloatArray  # electric heater energy per hour
     room_c: FloatArray  # mean of the ground-floor room sensors (LK)
     room_reference_c: FloatArray  # room_c, extended back in time with the older sensors
     flow_c: FloatArray
@@ -88,6 +89,7 @@ class CalibrationInputs:
             rts_c=self.rts_c[-n_hours:],
             hot_water=self.hot_water[-n_hours:],
             energy_kwh=self.energy_kwh[-n_hours:],
+            aux_kwh=self.aux_kwh[-n_hours:],
             room_c=self.room_c[-n_hours:],
             room_reference_c=self.room_reference_c[-n_hours:],
             flow_c=self.flow_c[-n_hours:],
@@ -179,6 +181,7 @@ def load_calibration_inputs(
         for e in settings.room_thermostat_entities
     ]
     counter = last(settings.energy_counter_entity, None, SMALL_GAP_HOURS)
+    aux_counter = last(settings.aux_energy_entity, None, SMALL_GAP_HOURS)
     room_c = _mean_of(rooms)
     history = (
         _mean_of(
@@ -205,6 +208,7 @@ def load_calibration_inputs(
             source.series(settings.heating_mode_entity, start, end), start, n
         ),
         energy_kwh=hourly_energy_from_counter(counter, MAX_ENERGY_KWH_PER_HOUR),
+        aux_kwh=hourly_energy_from_counter(aux_counter, MAX_ENERGY_KWH_PER_HOUR),
         room_c=room_c,
         room_reference_c=_extended(room_c, history),
         flow_c=_cleaned(

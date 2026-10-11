@@ -57,3 +57,9 @@ class StateStoreError(TheriaError):
     """The persisted plan state cannot be read or written."""
 
     pass
+
+
+class SetpointRestoreError(TheriaError):
+    """The base room setpoint could not be written back to the heat pump."""
+
+    pass

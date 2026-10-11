@@ -48,3 +48,54 @@ def test_fit_refuses_data_without_variation_or_enough_samples():
         fit_pump_params(t_out, flow, np.full_like(rts, 18.0), energy)
     with pytest.raises(ModelFitError):
         fit_pump_params(np.full_like(t_out, 5.0), flow, rts, energy)
+
+
+from dataclasses import replace  # noqa: E402
+
+from core.theria.plan.pump_model import (  # noqa: E402
+    aux_kwh_per_hour,
+    fit_aux_per_flow_c,
+    total_kwh_per_hour,
+)
+
+WITH_AUX = replace(PRIOR_PUMP_PARAMS, aux_onset_c=44.0, aux_per_flow_c=0.15)
+
+
+def test_the_electric_heater_only_costs_energy_above_its_flow_onset():
+    below = flow_target(WITH_AUX, 8.0, 18.0)
+    assert below < 44.0 and float(aux_kwh_per_hour(WITH_AUX, 8.0, 18.0)) == 0.0
+    cold = float(aux_kwh_per_hour(WITH_AUX, -8.0, 18.0))  # flow target about 46 C
+    assert cold == pytest.approx(0.15 * (flow_target(WITH_AUX, -8.0, 18.0) - 44.0))
+
+
+def test_total_energy_adds_the_heater_to_the_compressor():
+    t, rts = -8.0, 18.0
+    assert float(total_kwh_per_hour(WITH_AUX, t, rts)) == pytest.approx(
+        float(energy_kwh_per_hour(WITH_AUX, t, rts))
+        + float(aux_kwh_per_hour(WITH_AUX, t, rts))
+    )
+    assert float(total_kwh_per_hour(PRIOR_PUMP_PARAMS, t, rts)) == pytest.approx(
+        float(energy_kwh_per_hour(PRIOR_PUMP_PARAMS, t, rts))
+    )  # the prior has no heater term
+
+
+def test_lowering_the_setpoint_in_the_cold_saves_heater_energy_too():
+    cold = -8.0
+    saved = float(total_kwh_per_hour(WITH_AUX, cold, 18.0)) - float(
+        total_kwh_per_hour(WITH_AUX, cold, 17.0)
+    )
+    compressor_only = float(energy_kwh_per_hour(WITH_AUX, cold, 18.0)) - float(
+        energy_kwh_per_hour(WITH_AUX, cold, 17.0)
+    )
+    assert saved > compressor_only
+
+
+def test_the_heater_coefficient_is_recovered_from_hourly_data():
+    flow = np.tile(np.array([30.0, 40.0, 43.0, 45.0, 47.0, 49.0, 51.0]), 10)
+    aux = 0.2 * np.maximum(0.0, flow - 44.0)
+    assert fit_aux_per_flow_c(flow, aux, onset_c=44.0) == pytest.approx(0.2)
+
+
+def test_without_hours_above_the_onset_the_heater_fit_is_refused():
+    with pytest.raises(ModelFitError):
+        fit_aux_per_flow_c(np.full(50, 38.0), np.zeros(50), onset_c=44.0)
