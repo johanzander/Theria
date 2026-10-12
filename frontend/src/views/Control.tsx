@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fetchExecution, fetchLog, fetchPlan, fetchPreflight, setMode } from '../api'
+import { fetchExecution, fetchLog, fetchPlan, fetchPreflight, refitModels, setMode } from '../api'
 import { statusTone } from '../model'
 import { Card, useLoaded } from '../ui'
 
@@ -10,6 +10,8 @@ export function Control() {
   const log = useLoaded(fetchLog)
   const [message, setMessage] = useState<string | null>(null)
   const [armed, setArmed] = useState(false)
+  const [refitting, setRefitting] = useState(false)
+  const [refitMessage, setRefitMessage] = useState<string | null>(null)
   const mode = execution.data?.mode ?? plan.data?.mode ?? '-'
   const canActivate = preflight.data?.ok === true
 
@@ -25,6 +27,13 @@ export function Control() {
     setArmed(false)
     setMessage(error ?? `Mode is now ${next}.`)
     refresh()
+  }
+
+  const refit = async () => {
+    setRefitting(true)
+    const error = await refitModels()
+    setRefitting(false)
+    setRefitMessage(error ?? 'Models refitted. See the Models tab.')
   }
 
   return (
@@ -92,6 +101,15 @@ export function Control() {
           )}
         </div>
         {message && <p className="note">{message}</p>}
+      </div>
+
+      <div className="panel">
+        <h2>Models</h2>
+        <p className="note">The models are refitted to history every night. Refit now to update them after a change (takes several seconds).</p>
+        <div className="buttons">
+          <button onClick={refit} disabled={refitting}>{refitting ? 'Refitting...' : 'Refit models now'}</button>
+        </div>
+        {refitMessage && <p className="note">{refitMessage}</p>}
       </div>
 
       {execution.data && (

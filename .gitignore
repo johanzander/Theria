@@ -51,3 +51,4 @@ build/
 backend/static/plan/
 frontend/dist/
 .plan_parameters.jsonl
+.plan_events.jsonl

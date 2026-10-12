@@ -18,7 +18,7 @@ def client(tmp_path, monkeypatch):
     built = tmp_path / "plan"
     built.mkdir()
     (built / "index.html").write_text(
-        '<!doctype html><html><head><title>Theria - Price and plan</title></head>'
+        "<!doctype html><html><head><title>Theria - Price and plan</title></head>"
         '<body><div id="root"></div></body></html>'
     )
     monkeypatch.setattr(backend_app, "plan_ui_dir", str(built))
@@ -47,3 +47,14 @@ def test_an_unbuilt_frontend_says_so_instead_of_showing_the_old_page(
     monkeypatch.setattr(backend_app, "plan_ui_dir", str(tmp_path / "missing"))
     response = client.get("/")
     assert response.status_code == 503 and "npm run build" in response.text
+
+
+def test_html_pages_are_never_cached_so_a_new_deploy_shows_up_at_once(client):
+    for path in ("/", "/legacy", "/zone-insights"):
+        assert client.get(path).headers["cache-control"] == "no-store", path
+
+
+def test_only_html_is_marked_uncacheable_not_the_json_api(client):
+    response = client.get("/api/plan")
+    assert response.headers["content-type"].startswith("application/json")
+    assert "no-store" not in response.headers.get("cache-control", "")

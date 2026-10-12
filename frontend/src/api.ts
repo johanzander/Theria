@@ -33,3 +33,10 @@ export async function setMode(mode: string, confirm: boolean): Promise<string | 
 export const fetchPreflight = () => get<Preflight>('plan/preflight')
 export const fetchLog = () => get<LogEntry[]>('plan/log')
 export const fetchParameters = () => get<ParameterHistory>('plan/parameters?limit=1000')
+
+export async function refitModels(): Promise<string | null> {
+  const response = await fetch(BASE + 'model/refit', { method: 'POST' })
+  if (response.ok) return null
+  const body = (await response.json()) as { detail?: string }
+  return body.detail ?? `HTTP ${response.status}`
+}

@@ -31,6 +31,7 @@ from core.theria.health_monitor import HealthMonitorService
 from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
+from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import DayOutcome, day_outcomes, load_outcome_inputs
@@ -223,6 +224,13 @@ async def lifespan(app: FastAPI):
                         os.path.dirname(__file__), "..", ".plan_parameters.jsonl"
                     )
                 )
+                event_path = (
+                    "/data/plan_events.jsonl"
+                    if os.path.isdir("/data")
+                    else os.path.join(
+                        os.path.dirname(__file__), "..", ".plan_events.jsonl"
+                    )
+                )
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -252,6 +260,7 @@ async def lifespan(app: FastAPI):
                     notifier=HANotifier(ha_client),
                     outcome_loader=outcome_loader,
                     parameter_log=ParameterLog(parameter_path),
+                    event_log=EventLog(event_path),
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service
@@ -336,6 +345,16 @@ if os.path.exists(plan_ui_dir):
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     logger.info(f"Mounted static files from {static_dir}")
+
+
+@app.middleware("http")
+async def no_cache_for_html(request: Request, call_next):
+    """HTML is never cached: a new deploy has to show up at once (the js and css files have
+    content-hashed names and can be cached as long as anyone likes)."""
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _html_page(request: Request, path: str, base_suffix: str = "") -> HTMLResponse:

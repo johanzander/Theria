@@ -89,6 +89,7 @@ def make(
     clock=None,
     state_store=None,
     outcomes=None,
+    event_log=None,
 ):
     ha = WritableHA(price_attributes(), setpoint)
     current = [EVENING]
@@ -111,6 +112,7 @@ def make(
         notifier=notifier,
         outcome_loader=loader,
         state_store=state_store,
+        event_log=event_log,
     )
     return service, ha, notifier, calls, current
 

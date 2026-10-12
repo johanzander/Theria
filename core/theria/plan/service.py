@@ -24,6 +24,7 @@ from core.theria.exceptions import (
 )
 from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
+from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.morning import MorningRules, update_margin
@@ -119,6 +120,7 @@ class PlanService:
         outcome_loader: OutcomeLoader | None = None,
         stage_rules: StageRules | None = None,
         parameter_log: ParameterLog | None = None,
+        event_log: EventLog | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -161,7 +163,10 @@ class PlanService:
         self._last_stage_note: str | None = None
         # set_mode and the control cycle never interleave
         self._lock = threading.RLock()
-        self._events: deque[dict[str, Any]] = deque(maxlen=LOG_KEPT)
+        self._event_log = event_log
+        self._events: deque[dict[str, Any]] = deque(
+            [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
+        )
         if state_store is not None:
             state = state_store.load()
             if state.mode is not None:
@@ -384,9 +389,10 @@ class PlanService:
         self._notify(MARGIN_NOTIFICATION, "Theria: night margin", decision.reason)
 
     def _log(self, kind: str, action: str, detail: str) -> None:
-        self._events.append(
-            {"at": self._now(), "kind": kind, "action": action, "detail": detail}
-        )
+        event = {"at": self._now(), "kind": kind, "action": action, "detail": detail}
+        self._events.append(event)
+        if self._event_log is not None:
+            self._event_log.append(event)
 
     def action_log(self) -> list[dict[str, Any]]:
         """What the plan did (oldest first): setpoint writes, trouble, stage and mode changes."""

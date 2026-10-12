@@ -123,7 +123,7 @@ Deferred:
 - `GET /api/plan/preflight` (and the Control tab) lists what active mode depends on; `POST /api/plan/mode` refuses `active` while a check fails.
 - `GET /api/plan/log` and the Control tab list every setpoint write, trouble, stage and mode change since the add-on started (in memory: lost at restart).
 - A persistent notification "Theria: yesterday" summarises the previous day (saving, room min/mean, heater kWh, compressor stops) when the day is judged (first cycle after 00:00 UTC).
-- [ ] Persist the action log across restarts.
+- [x] Persist the action log across restarts (`plan_events.jsonl`).
 - [ ] Startup in persisted `active` mode with a service that cannot be built leaves the pump where it was.
 
 ## Self-learning (2026-10-11)

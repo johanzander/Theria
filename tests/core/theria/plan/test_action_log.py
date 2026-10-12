@@ -1,3 +1,5 @@
+from core.theria.plan.event_log import EventLog
+
 from .test_service_active import make, run_cycle
 from .test_service_lk import CHEAP_BEFORE_PEAK
 
@@ -42,3 +44,21 @@ def test_the_log_is_newest_last_and_limited(settings):
         service._log("mode", "x", str(i))
     log = service.action_log()
     assert len(log) == 200 and log[-1]["detail"] == "299"
+
+
+def test_the_log_survives_a_restart(settings, tmp_path):
+    path = str(tmp_path / "events.jsonl")
+    first, *_ = make(settings, event_log=EventLog(path))
+    first.set_mode("shadow")
+    first._log("pump", "wrote", "18.5: cheap")
+    second, *_ = make(settings, event_log=EventLog(path))
+    log = second.action_log()
+    assert [(e["kind"], e["action"]) for e in log][-1] == ("pump", "wrote")
+    assert log[-1]["at"] == first.action_log()[-1]["at"]
+
+
+def test_a_damaged_line_in_the_event_file_is_skipped(tmp_path):
+    path = tmp_path / "events.jsonl"
+    path.write_text("not json\n")
+    log = EventLog(str(path))
+    assert log.read(200) == []
