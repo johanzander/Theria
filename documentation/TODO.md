@@ -167,3 +167,11 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [x] `revert_days` and the pause at the base after trouble are gone. Trouble (electric heater while raised, room more than 0.5 C under the target in a day) narrows the stage one step and starts the judging over; there is no pause.
 - [ ] Without a pause, a heater that runs every time the setpoint is raised makes the plan raise and restore again about once an hour (one raise per 55 minutes is the only brake). Watch the action log for that.
 - [ ] Persist the reason of the stage judgement (`last_stage_note`) and show it on the Control tab (the entry above).
+
+## Control loop (2026-10-12)
+
+- [x] Level 1, fast: `observer.py` compares the room's level now with what the flat-setpoint prediction of a plan 2-4 h old expected and adds the smoothed shortfall (gain 0.3, half-life 4 h, cap 0.3 C/h) to the planner's drift, fading with the horizon. Not persisted. The room level (not the sunny reading) is also what the drift anchoring and the night model use now (that was a bug in the first room-level change).
+- [x] Level 2, daily (first part): `trim.py` limits how far a refit may move what the planner uses per day: night intercept 0.10 C, slope 0.02, level 0.05, warm-up scale 0.10; every cut is named in the parameter history note. The morning margin and the stage already move in small steps.
+- [ ] Level 2, second part: trim the room response (gain and rate) the same way (needs the hourly parameters and the daily fit moved together); learn from nights with a changed setpoint (the night fit only uses steady-setpoint nights, so active nights teach it nothing).
+- [ ] Level 3: recommendations for target, floor and costs (the Tuning tab), approved by Johan.
+- [ ] Check in a few days that the observer does not make the plan flutter (the parameter history records `observer_drift_c_per_h` at every refit).

@@ -30,6 +30,7 @@ from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
+from core.theria.plan.observer import DriftObserver, predicted_room_c
 from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
@@ -59,6 +60,7 @@ from core.theria.plan.stages import (
     shrink_for_trouble,
 )
 from core.theria.plan.state_store import PlanState, PlanStateStore
+from core.theria.plan.trim import trim_night, trim_warmup
 from core.theria.plan.warmup import WarmupFit
 from core.theria.plan.weather import OpenMeteoClient, WeatherHour
 from core.theria.sensor_guard import SensorGuard
@@ -68,6 +70,8 @@ logger = logging.getLogger(__name__)
 SLAB_INIT_FRACTION = 0.5  # rough prior: slab sits half way between room and flow target
 SUN_WARMUP_HOURS = 24
 LOG_KEPT = 200
+OBSERVE_MIN_LEAD = timedelta(hours=2)  # plans younger than this say too little to judge
+OBSERVE_MAX_LEAD = timedelta(hours=4)
 SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
 
 
@@ -168,6 +172,7 @@ class PlanService:
         # set_mode and the control cycle never interleave
         self._lock = threading.RLock()
         self._event_log = event_log
+        self._observer = DriftObserver()
         self._actuals_loader = actuals_loader
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
@@ -260,6 +265,7 @@ class PlanService:
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
             "stage": self._stage.index + 1,
+            "observer_drift_c_per_h": self._observer.at(self._now()),
         }
         fitted = self._models
         if fitted is not None:
@@ -545,8 +551,16 @@ class PlanService:
             and previous.warmup is not None
         ):
             models = replace(models, warmup=previous.warmup)
+        notes: list[str] = []
+        if previous is not None:
+            night, night_notes = trim_night(previous.night_drift, models.night_drift)
+            warmup, warmup_notes = trim_warmup(previous.warmup, models.warmup)
+            models = replace(models, night_drift=night, warmup=warmup)
+            notes = night_notes + warmup_notes
         self._apply_models(models)
-        self._record_parameters("refit", "nightly refit of the models")
+        self._record_parameters(
+            "refit", "; ".join(["nightly refit of the models", *notes])
+        )
         self._check_night_model()
         self._last_fit_error = None
         self._next_refit_at = now + self._refit_interval
@@ -564,6 +578,36 @@ class PlanService:
 
     def latest(self) -> PlanSnapshot | None:
         return self._snapshots[-1] if self._snapshots else None
+
+    def _extra_drift(
+        self, starts: list[datetime], t_out: np.ndarray, level_c: float, now: datetime
+    ) -> np.ndarray:
+        """What the room does on top of the anchored drift: the night pattern and the observer."""
+        corrected = self._observer.correction(starts, now)
+        if self._night is None:
+            return corrected
+        pattern = drift_pattern(
+            self._night, self._settings.in_night, starts, t_out, level_c
+        )
+        return corrected + pattern
+
+    def _observe(self, now: datetime, level_c: float) -> None:
+        """Compare the room's level with what a plan from a few hours ago expected for now."""
+        recent = [
+            s
+            for s in self._snapshots
+            if OBSERVE_MIN_LEAD <= now - s.computed_at <= OBSERVE_MAX_LEAD
+        ]
+        if not recent:
+            return
+        snapshot = recent[-1]
+        predicted = predicted_room_c(
+            snapshot.plan.baseline_hours, snapshot.initial.room_c, now
+        )
+        if predicted is None:
+            return
+        lead_h = (now - snapshot.computed_at) / timedelta(hours=1)
+        self._observer.update(now, level_c, predicted, lead_h)
 
     def _room_level(self, now: datetime, room_c: float) -> float:
         """The room temperature the plan starts from (see room_level)."""
@@ -693,6 +737,7 @@ class PlanService:
             self._ha.get_climate_state(s.room_setpoint_entity)["target_temperature"]
         )
         level_c = self._room_level(now, room_c)
+        self._observe(now, level_c)
         initial = RoomState(
             room_c=level_c,
             slab_c=level_c + SLAB_INIT_FRACTION * (flow_now - level_c),
@@ -707,17 +752,13 @@ class PlanService:
             sun_wm2=sun,
             initial=initial,
             previous_rts_c=previous_rts,
-            extra_drift_c_per_h=(
-                None
-                if self._night is None
-                else drift_pattern(self._night, s.in_night, starts, t_out, room_c)
-            ),
+            extra_drift_c_per_h=self._extra_drift(starts, t_out, level_c, now),
         )
         baseline_flow = np.asarray(
             flow_target(self._pump, t_out, s.rts_base_c), dtype=float
         )
         room_params = anchored_room_params(
-            self._warmed_room(), room_c, t_out, baseline_flow, s.lk_setpoint_c
+            self._warmed_room(), level_c, t_out, baseline_flow, s.lk_setpoint_c
         )
         result = plan(inputs, self._effective_settings(), self._pump, room_params)
         snapshot = PlanSnapshot(

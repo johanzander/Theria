@@ -48,3 +48,10 @@ def test_the_plan_starts_from_the_measured_room_when_history_cannot_be_read(sett
     service, *_ = make(settings, actuals_loader=broken)
     run_cycle(service)
     assert service.latest().initial.room_c == 19.8
+
+
+def test_a_flat_setpoint_holds_the_room_level_not_the_sunny_reading(settings):
+    service, *_ = make(settings, actuals_loader=room_at(13.0))  # sensors read 19.8
+    run_cycle(service)
+    flat = [h.room_c_end for h in service.latest().plan.baseline_hours[:12]]
+    assert max(abs(r - 13.0) for r in flat) < 0.1
