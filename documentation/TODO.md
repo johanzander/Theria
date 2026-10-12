@@ -47,7 +47,7 @@
 - [ ] Re-anchoring on every replan: check in shadow scores that the plan does not make the room sag day after day (floor 18 C protects; target 19.5 C is a soft cost).
 - [ ] Plan 3: React frontend "Price and plan" page (copy bess-manager's Vite/React/Tailwind/Recharts setup, Docker Node stage, CI steps).
 - [x] Plan 4: active mode built (executor with write guards, read-back, fallback; safety monitor; stages; savings). Not yet run against the real pump: switch with `POST /api/plan/mode {"mode":"active","confirm":true}` only after shadow scores look sane. Kill switch: `POST /api/plan/mode {"mode":"shadow"}` writes the base setpoint back.
-- [ ] Watch `/api/plan/execution` and `/api/savings?days=14` in the first active week; check the compressor never stops and the aux heater stays quiet.
+- [ ] Watch `/api/plan/execution` and `/api/savings?days=14` in the first active week; check that the aux heater stays quiet.
 - [ ] (minor, plan 4) `PlanSettings` rejects `mode: active` in the config on purpose; the persisted state file is what keeps active across restarts.
 - [x] LK lever (decided with Johan 2026-10-11): thermostats go to `lk_setpoint_c` (21 C) only while the pump setpoint is actually above its base, otherwise `lk_base_c` (19.5 C); never lowered below the base; hand changes pause it 6 h; thermostats set below the base by hand are left alone; restored with the pump setpoint. Lowering LK below 19.5 to coast is NOT done (needs the buffer-tank/defrost check first).
 - [ ] Re-check the 4 h sun lag with Open-Meteo's end-of-hour labels (may be about 3.5 h) and with stove evenings excluded.
@@ -160,3 +160,10 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [ ] Day charts: one hour (the current one) has neither a measured nor a planned point on the line, so the lines have a gap at "now"; the Models/Plan tabs are not on whole days yet.
 - [x] The plan starts from the room's usual level (`room_level.py`: the lower of the measured room and the median of the last 24 h), so an afternoon of sun (room 22.7 C, no stove) is not planned as if the room stayed that warm for days. Check in the first sunny days that the morning room matches the outlook; the sun itself is still not modelled (`k_sun` = 0).
 - [x] The Plan tab has charts (flow temperature against the 45 C cap, energy per hour, running cost plan against flat) above the table.
+
+## Safety rules removed (2026-10-12)
+
+- [x] The compressor-stop guard is gone (in the live and the daily check). The compressor stops for 20-70 minutes every 1-2 hours at mild weather whatever the plan does, so every stop was a false alarm. The stop counter is no longer measured either; the preflight "compressor" check is removed too.
+- [x] `revert_days` and the pause at the base after trouble are gone. Trouble (electric heater while raised, room more than 0.5 C under the target in a day) narrows the stage one step and starts the judging over; there is no pause.
+- [ ] Without a pause, a heater that runs every time the setpoint is raised makes the plan raise and restore again about once an hour (one raise per 55 minutes is the only brake). Watch the action log for that.
+- [ ] Persist the reason of the stage judgement (`last_stage_note`) and show it on the Control tab (the entry above).

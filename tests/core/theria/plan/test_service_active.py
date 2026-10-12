@@ -27,7 +27,6 @@ class WritableHA(FakeHA):
         self.automation = "off"  # the old setpoint automation
         self.fail_writes = False
         self.pump_states = {
-            "sensor.compressor_speed": "45",
             "binary_sensor.switch_valve_1": "off",
             "sensor.add_heat_status": "0",
         }
@@ -65,8 +64,8 @@ class FakeSafety:
         self.trouble = trouble
         self.calls = []
 
-    def check(self, raised=False, deviated=True):
-        self.calls.append({"raised": raised, "deviated": deviated})
+    def check(self, raised=False):
+        self.calls.append({"raised": raised})
         return self.trouble
 
 
@@ -156,14 +155,14 @@ def test_leaving_active_mode_puts_the_base_setpoint_back(settings):
 
 def test_trouble_restores_the_base_shrinks_the_stage_and_notifies(settings):
     service, ha, notifier, _, _ = make(
-        settings, setpoint=17.0, trouble="compressor stopped"
+        settings, setpoint=17.0, trouble="electric heater"
     )
     service.set_mode("active", confirm=True)
     run_cycle(service)
     assert ha.writes[-1] == 18.0
     status = service.execution_status()
-    assert status["stage"]["revert_until"] is not None
-    assert notifier.created and "compressor stopped" in notifier.created[0][1]
+    assert status["stage"]["index"] == 0
+    assert notifier.created and "electric heater" in notifier.created[0][1]
 
 
 def test_the_executor_still_runs_when_planning_fails_and_the_plan_gets_old(settings):
@@ -189,7 +188,7 @@ def test_the_stage_is_judged_once_a_day_and_the_result_is_persisted(settings, tm
         PlanState(
             mode="active",
             models=None,
-            stage=StageState(0, date(2026, 10, 6), None),
+            stage=StageState(0, date(2026, 10, 6)),
             stage_checked_on=None,
         )
     )

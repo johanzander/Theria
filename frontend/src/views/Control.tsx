@@ -116,7 +116,6 @@ export function Control() {
         <div className="panel">
           <h2>Stage and safety</h2>
           <p>Stage {execution.data.stage.index + 1}, started {execution.data.stage.started_on}.</p>
-          {execution.data.stage.revert_until && <p className="bad">At the base setpoint until {execution.data.stage.revert_until}.</p>}
           {execution.data.last_stage_note && <p className="note">Daily judgement: {execution.data.last_stage_note}</p>}
           {execution.data.last_trouble && <p className="bad">Last trouble: {execution.data.last_trouble}</p>}
         </div>

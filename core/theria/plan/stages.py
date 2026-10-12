@@ -1,12 +1,12 @@
 """Stepwise widening of what the plan may do, driven by measured days (a trust region).
 
 The plan starts narrow and is allowed more only after days in which nothing went wrong and the
-saving was real; any sign of trouble (compressor stopped, electric heater running, room too
-low) steps back and pauses the plan for a few days at the base setpoint.
+saving was real; any sign of trouble (electric heater running, room too low) steps back one
+stage.
 """
 
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 
@@ -25,7 +25,6 @@ STAGES = (Stage(1.0, 0.5), Stage(2.0, 1.0))  # the second is the old manual rang
 @dataclass(frozen=True)
 class StageRules:
     min_days: int = 5  # good days needed before widening
-    revert_days: int = 3  # days at the base setpoint after trouble
     aux_limit_kwh_per_day: float = 1.0  # electric heater energy that counts as trouble
     room_margin_bad_c: float = 0.5  # room lower than target by this much is trouble
     room_margin_widen_c: float = 0.2  # ... by this much blocks widening
@@ -41,7 +40,6 @@ class StageRules:
 class StageState:
     index: int
     stage_started_on: date  # only days from here count towards the next judgement
-    revert_until: date | None  # at the base setpoint until this day
 
 
 @dataclass(frozen=True)
@@ -51,14 +49,8 @@ class StageDecision:
     reason: str
 
 
-def allowed_deviation_c(state: StageState, today: date | None = None) -> float:
-    """How far from the base the setpoint may be right now (0 during a revert)."""
-    if (
-        today is not None
-        and state.revert_until is not None
-        and today < state.revert_until
-    ):
-        return 0.0
+def allowed_deviation_c(state: StageState) -> float:
+    """How far from the base the setpoint may be right now."""
     return STAGES[state.index].max_deviation_c
 
 
@@ -74,10 +66,6 @@ def evaluate_stage(
     rules: StageRules,
 ) -> StageDecision:
     """Judge the measured days since the stage started; today itself is not judged."""
-    if state.revert_until is not None and today < state.revert_until:
-        return StageDecision(
-            state, "hold", f"reverted to the base until {state.revert_until}"
-        )
     seen = [
         d
         for d in outcomes
@@ -118,19 +106,17 @@ def evaluate_stage(
 def shrink_for_trouble(
     state: StageState, today: date, rules: StageRules, reason: str
 ) -> StageDecision:
-    """Step back one stage and sit at the base setpoint for a few days."""
-    revert_until = today + timedelta(days=rules.revert_days)
+    """Step back one stage; only days from today count towards the next judgement."""
+    index = max(0, state.index - 1)
     return StageDecision(
-        StageState(max(0, state.index - 1), revert_until, revert_until),
+        StageState(index, today),
         "shrink",
-        f"{reason}; base setpoint until {revert_until}",
+        f"{reason}; stage narrowed to +/-{STAGES[index].max_deviation_c} C",
     )
 
 
 def _trouble(day: DayOutcome, target_c: float, rules: StageRules) -> str:
     """Why the day counts as trouble, or an empty string."""
-    if day.compressor_stopped_hours > 0:
-        return f"compressor stopped {day.compressor_stopped_hours} h"
     if day.aux_kwh > rules.aux_limit_kwh_per_day:
         return f"electric heater {day.aux_kwh:.1f} kWh"
     if (

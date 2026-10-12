@@ -225,12 +225,11 @@ Plan 4 adds a measured, stepwise widening ("trust region"):
 1. **Stages.** Shadow (now) -> active within +/- 1 C of the base setpoint (rise at most 0.5 C per hour) -> +/- 2 C (rise at
    most 1 C per hour, the manual range) -> only then more. The stage is stored in the state file and changed by the executor, not by hand.
 2. **Daily measurements, per day of active control:** realised heating electricity (compressor and aux counters) against the
-   counterfactual baseline (the energy model at the base setpoint for the actual weather); aux energy and hours; compressor
-   stops; the room's minimum and mean against target; the scoreboard errors; the room's measured change against the response
+   counterfactual baseline (the energy model at the base setpoint for the actual weather); aux energy and hours; the room's minimum and mean against target; the scoreboard errors; the room's measured change against the response
    model.
 3. **Widen** one stage after N (for example 5) days when the realised saving is at least about 70 % of the predicted one, aux
    energy is not above the baseline level, there was no compressor stop, and the room stayed within 0.3 C of the baseline.
-4. **Shrink or revert** (back to the base setpoint for 3 days, one stage down) when aux energy rises, the compressor stops, the room
+4. **Shrink** (one stage down, judging starts over) when aux energy rises, the room
    falls more than 0.5 C below the target, or the realised saving is negative over a week.
 5. **Learn.** The energy model gets a term for the electric heater; the energy-per-setpoint slope and the room response are
    refitted with the active days weighted up; a model that predicted the day badly lowers the stage as above.

@@ -161,7 +161,7 @@ class PlanService:
         self._notifier = notifier
         self._outcome_loader = outcome_loader
         self._rules = stage_rules or StageRules()
-        self._stage = StageState(0, now().date(), None)
+        self._stage = StageState(0, now().date())
         self._stage_checked_on: date | None = None
         self._last_trouble: str | None = None
         self._last_stage_note: str | None = None
@@ -180,7 +180,11 @@ class PlanService:
                 self._apply_models(state.models)
                 self._next_refit_at = state.models.fitted_at + self._refit_interval
             if state.stage is not None:
-                self._stage = state.stage
+                # an old state file may hold the end of a pause as the start date
+                self._stage = replace(
+                    state.stage,
+                    stage_started_on=min(state.stage.stage_started_on, now().date()),
+                )
             self._morning_margin_c = state.morning_margin_c
             self._margin_changed_on = state.margin_changed_on
             self._stage_checked_on = state.stage_checked_on
@@ -236,12 +240,7 @@ class PlanService:
                         "the mode stays active"
                     )
             if mode == "active" and not was_active:
-                today = self._now().date()
-                revert = self._stage.revert_until
-                self._stage = replace(
-                    self._stage,
-                    stage_started_on=today if revert is None else max(today, revert),
-                )
+                self._stage = replace(self._stage, stage_started_on=self._now().date())
                 self._stage_checked_on = None
             if mode != self._mode:
                 self._log("mode", mode, f"from {self._mode}")
@@ -499,7 +498,6 @@ class PlanService:
             "stage": {
                 "index": self._stage.index,
                 "started_on": self._stage.stage_started_on,
-                "revert_until": self._stage.revert_until,
                 "max_deviation_c": stage.max_deviation_c,
                 "max_rise_per_hour_c": stage.max_rise_per_hour_c,
             },
@@ -808,9 +806,7 @@ class PlanService:
             base = self._settings.rts_base_c
             deviated = current is None or abs(current - base) > 1e-9
             raised = current is not None and current > base + 1e-9
-            trouble = (
-                None if self._safety is None else self._safety.check(raised, deviated)
-            )
+            trouble = None if self._safety is None else self._safety.check(raised)
             if trouble is not None and deviated:
                 self._restore_all()
                 decision = shrink_for_trouble(
@@ -893,8 +889,7 @@ class PlanService:
                 f"(cost {yesterday.actual_cost_sek:.0f} SEK against "
                 f"{yesterday.baseline_cost_sek:.0f} SEK at the base setpoint). "
                 f"Room {yesterday.room_min_c:.1f}-{yesterday.room_mean_c:.1f} C (min, mean), "
-                f"electric heater {yesterday.aux_kwh:.1f} kWh, "
-                f"compressor stopped {yesterday.compressor_stopped_hours} h.",
+                f"electric heater {yesterday.aux_kwh:.1f} kWh.",
             )
         if decision.action == "widen":
             self._notify(

@@ -33,16 +33,13 @@ def _stage_to_dict(s: StageState) -> dict[str, Any]:
     return {
         "index": s.index,
         "stage_started_on": s.stage_started_on.isoformat(),
-        "revert_until": None if s.revert_until is None else s.revert_until.isoformat(),
     }
 
 
 def _stage_from_dict(d: dict[str, Any]) -> StageState:
-    revert = d["revert_until"]
     return StageState(
         index=int(d["index"]),
         stage_started_on=date.fromisoformat(d["stage_started_on"]),
-        revert_until=None if revert is None else date.fromisoformat(revert),
     )
 
 

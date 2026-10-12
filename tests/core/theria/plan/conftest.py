@@ -25,7 +25,6 @@ def settings() -> PlanSettings:
         flow_measured_entity="sensor.radiator_forward",
         energy_counter_entity="sensor.compr_cons_heating",
         aux_energy_entity="sensor.aux_cons_heating",
-        compressor_speed_entity="sensor.compressor_speed",
         aux_status_entity="sensor.add_heat_status",
         latitude=55.578,
         longitude=12.927,

@@ -18,7 +18,6 @@ BASE = {
     "flow_measured_entity": "sensor.flow",
     "energy_counter_entity": "sensor.energy",
     "aux_energy_entity": "sensor.aux",
-    "compressor_speed_entity": "sensor.speed",
     "aux_status_entity": "sensor.aux_status",
     "latitude": 55.578,
     "longitude": 12.927,

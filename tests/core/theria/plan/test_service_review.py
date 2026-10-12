@@ -10,7 +10,7 @@ import pytest
 from core.theria.exceptions import ConfigurationError, SetpointRestoreError
 from core.theria.plan.executor import PlanExecutor
 from core.theria.plan.stages import StageState
-from core.theria.plan.state_store import PlanStateStore
+from core.theria.plan.state_store import PlanState, PlanStateStore
 
 from .test_service import price_attributes
 from .test_service_active import (
@@ -95,7 +95,7 @@ def test_stopping_the_service_in_active_mode_puts_the_base_back(settings):
 def test_a_hand_change_is_noticed_even_when_nothing_was_written_yet(settings):
     ha = WritableHA(price_attributes(), 18.0)
     executor = PlanExecutor(ha, settings, now=lambda: EVENING)
-    stage = StageState(0, date(2026, 10, 1), None)
+    stage = StageState(0, date(2026, 10, 1))
     assert executor.execute(None, stage).action == "kept"  # already at the base
     ha.setpoint = 19.0  # Johan turns it up
     assert executor.execute(None, stage).action == "paused"
@@ -117,20 +117,24 @@ def test_the_heater_check_uses_the_setpoint_that_is_really_set(settings):
 
 def test_trouble_while_at_the_base_is_not_caused_by_the_plan(settings):
     service, _, notifier, _, _ = make(settings, setpoint=18.0, trouble="stopped")
-    service._stage = StageState(0, date(2026, 10, 1), date(2026, 10, 15))  # reverted
     service.set_mode("active", confirm=True)
     service.run_once()
     service._control()
     assert not notifier.created
-    assert service._safety.calls[-1]["deviated"] is False
-    assert service.execution_status()["stage"]["revert_until"] == date(2026, 10, 15)
 
 
-def test_activating_during_a_revert_does_not_count_the_revert_days(settings):
-    service, *_ = make(settings)
-    service._stage = StageState(1, date(2026, 10, 1), date(2026, 10, 15))
-    service.set_mode("active", confirm=True)
-    assert service.execution_status()["stage"]["started_on"] == date(2026, 10, 15)
+def test_an_old_state_file_cannot_start_the_stage_in_the_future(settings, tmp_path):
+    store = PlanStateStore(str(tmp_path / "state.json"))
+    store.save(
+        PlanState(
+            mode=None,
+            models=None,
+            stage=StageState(0, date(2026, 10, 15)),
+            stage_checked_on=None,
+        )
+    )
+    service, *_ = make(settings, state_store=store)
+    assert service.execution_status()["stage"]["started_on"] == date(2026, 10, 12)
 
 
 def test_active_mode_is_refused_while_the_old_automation_is_on(settings):

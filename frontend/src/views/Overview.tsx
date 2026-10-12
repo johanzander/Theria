@@ -38,7 +38,7 @@ function Status({ plan, execution }: { plan: PlanResponse | null; execution: Exe
       <Card
         label="Stage"
         value={execution ? `± ${execution.stage.max_deviation_c} °C` : '-'}
-        note={execution?.stage.revert_until ? `at base until ${execution.stage.revert_until}` : execution?.last_stage_note ?? undefined}
+        note={execution?.last_stage_note ?? undefined}
       />
       <Card
         label="Last write"

@@ -1,7 +1,7 @@
 """Checks to read before letting the plan write to the heat pump."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from core.theria.plan.settings import PlanSettings
@@ -41,9 +41,8 @@ def preflight_checks(
         _automation(ha, s),
         _pump_setpoint(ha, s),
         _thermostats(ha, s),
-        _compressor(ha, s),
         _outdoor(ha, s),
-        _revert(stage, now.date()),
+        _stage(stage),
     ]
     if snapshot is not None and snapshot.plan.floor_violation_hours > 0:
         checks.append(
@@ -116,16 +115,6 @@ def _thermostats(ha: StateClient, s: PlanSettings) -> Check:
     return Check("LK thermostats", "ok", ", ".join(f"{v} C" for v in values))
 
 
-def _compressor(ha: StateClient, s: PlanSettings) -> Check:
-    try:
-        speed = float(ha.get_state(s.compressor_speed_entity)["state"])
-    except READ_ERRORS as e:
-        return Check("compressor", "warn", f"cannot read the compressor speed: {e}")
-    if speed < 1.0:
-        return Check("compressor", "warn", "the compressor is not running right now")
-    return Check("compressor", "ok", f"running at {speed:.0f} %")
-
-
 def _outdoor(ha: StateClient, s: PlanSettings) -> Check:
     try:
         value = float(ha.get_state(s.outdoor_entity)["state"])
@@ -136,9 +125,5 @@ def _outdoor(ha: StateClient, s: PlanSettings) -> Check:
     return Check("outdoor sensor", "ok", f"{value} C")
 
 
-def _revert(stage: StageState, today: date) -> Check:
-    if stage.revert_until is not None and today < stage.revert_until:
-        return Check(
-            "stage", "warn", f"at the base setpoint until {stage.revert_until}"
-        )
+def _stage(stage: StageState) -> Check:
     return Check("stage", "ok", f"stage {stage.index + 1}")

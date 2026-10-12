@@ -24,7 +24,6 @@ def measured(start, stop):
         compressor_kwh=nothing,
         aux_kwh=nothing,
         hot_water=nothing,
-        compressor_speed_percent=nothing,
         room_c=np.full(n, 20.0),
     )
 

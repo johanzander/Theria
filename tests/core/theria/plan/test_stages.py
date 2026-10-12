@@ -16,7 +16,7 @@ START = date(2026, 11, 1)
 RULES = StageRules()
 
 
-def day(offset, saving=2.0, aux=0.0, stopped=0, room_min=19.7, coverage=1.0):
+def day(offset, saving=2.0, aux=0.0, room_min=19.7, coverage=1.0):
     return DayOutcome(
         day=START + timedelta(days=offset),
         heating_hours=int(24 * coverage),
@@ -28,7 +28,6 @@ def day(offset, saving=2.0, aux=0.0, stopped=0, room_min=19.7, coverage=1.0):
         saving_sek=saving,
         average_price_paid_sek_per_kwh=1.0,
         average_price_baseline_sek_per_kwh=1.0,
-        compressor_stopped_hours=stopped,
         mean_rts_c=18.0,
         room_min_c=room_min,
         room_mean_c=19.9,
@@ -36,7 +35,7 @@ def day(offset, saving=2.0, aux=0.0, stopped=0, room_min=19.7, coverage=1.0):
 
 
 def fresh():
-    return StageState(index=0, stage_started_on=START, revert_until=None)
+    return StageState(index=0, stage_started_on=START)
 
 
 def run(state, days, today_offset):
@@ -70,7 +69,7 @@ def test_a_negative_total_saving_stops_the_widening_but_is_not_a_reason_to_shrin
 
 
 def test_there_is_no_stage_beyond_the_last():
-    state = StageState(index=len(STAGES) - 1, stage_started_on=START, revert_until=None)
+    state = StageState(index=len(STAGES) - 1, stage_started_on=START)
     decision = run(state, [day(i) for i in range(8)], today_offset=8)
     assert decision.action == "hold" and decision.state.index == len(STAGES) - 1
 
@@ -78,26 +77,22 @@ def test_there_is_no_stage_beyond_the_last():
 @pytest.mark.parametrize(
     "bad",
     [
-        {"stopped": 1},
         {"aux": 2.5},
         {"room_min": 18.9},
     ],
 )
-def test_a_bad_day_shrinks_the_stage_and_reverts_to_the_base_for_three_days(bad):
-    state = StageState(index=1, stage_started_on=START, revert_until=None)
+def test_a_bad_day_shrinks_the_stage_and_judging_starts_over(bad):
+    state = StageState(index=1, stage_started_on=START)
     days = [day(0), day(1, **bad)]
     decision = run(state, days, today_offset=2)
     assert decision.action == "shrink" and decision.state.index == 0
-    assert decision.state.revert_until == START + timedelta(days=5)
-    assert allowed_deviation_c(decision.state, START + timedelta(days=3)) == 0.0
-    assert allowed_deviation_c(decision.state, START + timedelta(days=5)) == 1.0
+    assert decision.state.stage_started_on == START + timedelta(days=2)
 
 
-def test_at_the_narrowest_stage_a_bad_day_only_reverts():
-    days = [day(0, stopped=2)]
-    decision = run(fresh(), days, today_offset=1)
+def test_at_the_narrowest_stage_a_bad_day_only_starts_the_count_over():
+    decision = run(fresh(), [day(0, aux=2.5)], today_offset=1)
     assert decision.action == "shrink" and decision.state.index == 0
-    assert decision.state.revert_until == START + timedelta(days=4)
+    assert decision.state.stage_started_on == START + timedelta(days=1)
 
 
 def test_a_slightly_low_room_blocks_widening_without_shrinking():
@@ -107,12 +102,10 @@ def test_a_slightly_low_room_blocks_widening_without_shrinking():
 
 
 def test_days_before_the_stage_started_are_ignored():
-    state = StageState(
-        index=0, stage_started_on=START + timedelta(days=3), revert_until=None
-    )
+    state = StageState(index=0, stage_started_on=START + timedelta(days=3))
     days = [
-        day(0, stopped=5),
-        day(1, stopped=5),
+        day(0, aux=5),
+        day(1, aux=5),
         day(3),
         day(4),
     ]
@@ -120,14 +113,6 @@ def test_days_before_the_stage_started_are_ignored():
     assert (
         decision.action == "hold"
     )  # two good days only; the earlier bad ones do not count
-
-
-def test_no_new_judgement_during_a_revert():
-    state = StageState(
-        index=0, stage_started_on=START, revert_until=START + timedelta(days=5)
-    )
-    decision = run(state, [day(i) for i in range(3)], today_offset=3)
-    assert decision.action == "hold" and decision.state == state
 
 
 def test_days_without_a_real_saving_do_not_widen_the_stage():

@@ -59,12 +59,6 @@ def test_an_unreadable_thermostat_fails_the_check(settings):
     assert statuses(service)["LK thermostats"] == "fail"
 
 
-def test_a_compressor_that_is_not_running_only_warns(settings):
-    service, ha = ready(settings)
-    ha.pump_states["sensor.compressor_speed"] = "0"
-    assert statuses(service)["compressor"] == "warn"
-
-
 def test_a_plan_that_breaks_the_floor_only_warns(settings):
     service, _ = ready(settings)
     snapshot = service.latest()
@@ -89,8 +83,7 @@ def test_the_preflight_endpoint_lists_the_checks(client):
 
 
 def test_active_mode_is_refused_over_the_api_while_a_check_fails(client):
-    http, service, ha = client
-    ha.pump_states["sensor.compressor_speed"] = "0"  # a warning: still allowed
+    http, service, _ = client
     ok = http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
     assert ok.status_code == 200
     http.post("/api/plan/mode", json={"mode": "off"})

@@ -25,7 +25,6 @@ class PlanSettings:
     flow_measured_entity: str
     energy_counter_entity: str  # cumulative heating electricity (kWh)
     aux_energy_entity: str  # cumulative electric heater energy in heating (kWh)
-    compressor_speed_entity: str  # compressor speed in percent
     aux_status_entity: str  # electric heater status (above 0 = running)
     latitude: float
     longitude: float

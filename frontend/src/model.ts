@@ -54,7 +54,6 @@ export interface DayOutcome {
   saving_sek: number
   mean_rts_c: number
   room_min_c: number | null
-  compressor_stopped_hours: number
 }
 
 export interface SavingsResponse {
@@ -69,7 +68,6 @@ export interface Execution {
   stage: {
     index: number
     started_on: string
-    revert_until: string | null
     max_deviation_c: number
     max_rise_per_hour_c: number
   }

@@ -106,9 +106,7 @@ def test_a_stage_change_is_recorded(settings, tmp_path):
 
     store = PlanStateStore(str(tmp_path / "state.json"))
     store.save(
-        PlanState(
-            mode="active", models=None, stage=StageState(0, date(2026, 10, 6), None)
-        )
+        PlanState(mode="active", models=None, stage=StageState(0, date(2026, 10, 6)))
     )
     service, log = service_with_log(
         settings, tmp_path, outcomes=good_days(date(2026, 10, 6)), state_store=store

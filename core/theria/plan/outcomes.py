@@ -39,7 +39,6 @@ MIN_SCALE, MAX_SCALE = 0.5, 2.0
 MOSTLY_HOT_WATER = (
     0.5  # hours with more hot water than this are not watched for heating trouble
 )
-STOPPED_PERCENT = 1.0  # compressor speed below this counts as stopped
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,6 @@ class OutcomeInputs:
     compressor_kwh: FloatArray
     aux_kwh: FloatArray
     hot_water: FloatArray  # share of the hour with hot water (0 = all heating)
-    compressor_speed_percent: FloatArray
     room_c: FloatArray  # mean of the ground-floor comfort sensors
 
 
@@ -69,7 +67,6 @@ class DayOutcome:
     saving_sek: float
     average_price_paid_sek_per_kwh: float
     average_price_baseline_sek_per_kwh: float
-    compressor_stopped_hours: int
     mean_rts_c: float
     room_min_c: float  # NaN when the day has no room reading
     room_mean_c: float
@@ -109,11 +106,7 @@ def day_outcomes(
         & np.isfinite(inputs.aux_kwh)
         & (inputs.hot_water == 0.0)
     )
-    watched = (
-        np.isfinite(inputs.aux_kwh)
-        & np.isfinite(inputs.compressor_speed_percent)
-        & (inputs.hot_water < MOSTLY_HOT_WATER)
-    )
+    watched = np.isfinite(inputs.aux_kwh) & (inputs.hot_water < MOSTLY_HOT_WATER)
     by_day: dict[date, list[int]] = defaultdict(list)
     watched_by_day: dict[date, list[int]] = defaultdict(list)
     hours_in_day: dict[date, int] = defaultdict(int)
@@ -135,7 +128,6 @@ def day_outcomes(
         actual_cost = float(np.sum(price * actual_kwh))
         baseline_cost = float(np.sum(price * baseline_kwh))
         seen = np.array(watched_by_day.get(day, []), dtype=int)
-        speed = inputs.compressor_speed_percent[seen]
         day_rooms = np.array(
             [
                 inputs.room_c[i]
@@ -168,7 +160,6 @@ def day_outcomes(
                 average_price_baseline_sek_per_kwh=_average(
                     baseline_cost, baseline_kwh
                 ),
-                compressor_stopped_hours=int(np.sum(speed < STOPPED_PERCENT)),
                 mean_rts_c=(
                     float(np.mean(inputs.rts_c[idx])) if len(idx) else float("nan")
                 ),
@@ -217,6 +208,5 @@ def load_outcome_inputs(
         hot_water=step_fraction(
             source.series(settings.heating_mode_entity, first, stop), first, n
         ),
-        compressor_speed_percent=mean(settings.compressor_speed_entity),
         room_c=np.nanmean([mean(e) for e in settings.room_temp_entities], axis=0),
     )

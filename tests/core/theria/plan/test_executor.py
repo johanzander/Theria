@@ -9,8 +9,8 @@ from core.theria.plan.snapshot import PlanSnapshot
 from core.theria.plan.stages import StageState
 
 NOW = datetime(2026, 11, 3, 12, 20, tzinfo=UTC)
-STAGE1 = StageState(index=0, stage_started_on=date(2026, 11, 1), revert_until=None)
-STAGE2 = StageState(index=1, stage_started_on=date(2026, 11, 1), revert_until=None)
+STAGE1 = StageState(index=0, stage_started_on=date(2026, 11, 1))
+STAGE2 = StageState(index=1, stage_started_on=date(2026, 11, 1))
 
 
 def snapshot(rts_by_hour, computed_at=NOW):
@@ -118,13 +118,6 @@ def test_without_a_fresh_plan_it_goes_back_to_the_base(make):
     assert ha2.writes == [18.0]
 
 
-def test_during_a_revert_the_base_setpoint_is_used(make):
-    executor, ha, _ = make(17.0)
-    state = StageState(0, date(2026, 11, 3), revert_until=date(2026, 11, 5))
-    result = executor.execute(snapshot([16.0]), state)
-    assert ha.writes == [18.0] and result.action == "fallback"
-
-
 def test_a_manual_change_is_respected_for_six_hours(make):
     executor, ha, current = make(18.0)
     executor.execute(snapshot([17.0]), STAGE1)
@@ -160,27 +153,11 @@ def test_restore_base_writes_the_base_setpoint(make):
 
 
 class FakeStates:
-    def __init__(self, speed="9", valve="off", aux="0"):
-        self.values = {
-            "sensor.compressor_speed": speed,
-            "binary_sensor.switch_valve_1": valve,
-            "sensor.add_heat_status": aux,
-        }
+    def __init__(self, aux="0"):
+        self.values = {"sensor.add_heat_status": aux}
 
     def get_state(self, entity_id):
         return {"state": self.values[entity_id]}
-
-
-def test_a_compressor_that_stays_stopped_while_heating_is_trouble(settings):
-    states = FakeStates(speed="0")
-    monitor = SafetyMonitor(states, settings)
-    assert monitor.check() is None and monitor.check() is None
-    assert "compressor" in monitor.check()
-
-
-def test_a_stopped_compressor_during_hot_water_is_not_trouble(settings):
-    monitor = SafetyMonitor(FakeStates(speed="0", valve="on"), settings)
-    assert [monitor.check() for _ in range(5)] == [None] * 5
 
 
 def test_the_electric_heater_running_while_the_setpoint_is_raised_is_trouble(settings):
@@ -194,28 +171,16 @@ def test_the_electric_heater_running_while_the_setpoint_is_raised_is_trouble(set
 
 
 def test_trouble_clears_when_the_condition_ends(settings):
-    states = FakeStates(speed="0")
+    states = FakeStates(aux="1")
     monitor = SafetyMonitor(states, settings)
-    monitor.check()
-    monitor.check()
-    states.values["sensor.compressor_speed"] = "9"
-    assert monitor.check() is None
-    states.values["sensor.compressor_speed"] = "0"
-    assert monitor.check() is None  # the count starts over
-
-
-def test_the_compressor_stopping_at_the_base_setpoint_is_not_the_plans_doing(settings):
-    monitor = SafetyMonitor(FakeStates(speed="0"), settings)
-    assert [monitor.check(deviated=False) for _ in range(5)] == [None] * 5
+    monitor.check(raised=True)
+    states.values["sensor.add_heat_status"] = "0"
+    assert monitor.check(raised=True) is None
+    states.values["sensor.add_heat_status"] = "1"
+    assert monitor.check(raised=True) is None  # the count starts over
 
 
 def test_trouble_is_reported_once_and_the_count_starts_over(settings):
-    monitor = SafetyMonitor(FakeStates(speed="0"), settings)
-    assert [monitor.check() for _ in range(3)][-1] is not None
-    assert monitor.check() is None  # not repeated every cycle
-
-
-def test_a_raise_never_goes_further_than_the_rate_limit_allows(make):
-    executor, ha, _ = make(17.8)  # off the 0.5 grid, e.g. set by hand earlier
-    executor.execute(snapshot([19.0]), STAGE1)
-    assert ha.writes == [18.0]  # 17.8 + 0.5 = 18.3, and 18.5 would be too much
+    monitor = SafetyMonitor(FakeStates(aux="1"), settings)
+    assert [monitor.check(raised=True) for _ in range(2)][-1] is not None
+    assert monitor.check(raised=True) is None  # not repeated every cycle

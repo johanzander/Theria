@@ -2,8 +2,8 @@
 
 The only thing written is the room setpoint (`climate.room_temp_setpoint`). Every write is
 clamped to what the current stage allows, limited when it raises the setpoint, read back, and
-skipped when someone has changed the setpoint by hand. Without a fresh plan, during a revert,
-or when asked to restore, the base setpoint is written.
+skipped when someone has changed the setpoint by hand. Without a fresh plan or when asked to
+restore, the base setpoint is written.
 """
 
 import logging
@@ -30,11 +30,7 @@ MANUAL_CHANGE_C = (
     0.25  # the setpoint is this far from what was written: someone changed it
 )
 CONFIRM_TOLERANCE_C = 0.25
-STOPPED_PERCENT = 1.0
-STOPPED_CHECKS = (
-    3  # consecutive checks (15 min apart) with the compressor stopped while heating
-)
-AUX_CHECKS = 2
+AUX_CHECKS = 2  # consecutive checks (15 min apart) with the electric heater running
 
 
 @dataclass(frozen=True)
@@ -127,19 +123,10 @@ class PlanExecutor:
             )
         self._pause_until = None
 
-        deviation = allowed_deviation_c(stage, now.date())
+        deviation = allowed_deviation_c(stage)
         if snapshot is None or now - snapshot.computed_at > MAX_PLAN_AGE:
             return self._write(
                 self._s.rts_base_c, current, "fallback", "no fresh plan", now, False
-            )
-        if deviation == 0.0:
-            return self._write(
-                self._s.rts_base_c,
-                current,
-                "fallback",
-                "stage reverted to the base",
-                now,
-                False,
             )
         hour = next(
             (
@@ -241,42 +228,26 @@ class StateReader(Protocol):
 
 
 class SafetyMonitor:
-    """Spots trouble quickly while the plan is in control: a stopped compressor or a running
-    electric heater. Counts consecutive checks, so a single odd reading does not matter.
+    """Spots trouble quickly while the plan is in control: an electric heater that runs while the
+    setpoint is raised. Counts consecutive checks, so a single odd reading does not matter.
     """
 
     def __init__(self, states: StateReader, settings: PlanSettings):
         self._states = states
         self._s = settings
-        self._stopped = 0
         self._aux = 0
 
-    def check(self, raised: bool = False, deviated: bool = True) -> str | None:
-        """Trouble worth stepping back for, or None.
-
-        `deviated` says whether the setpoint differs from the base: a compressor that stops
-        while the pump sits at the base setpoint is not the plan's doing. A reported trouble
-        starts the counting over.
-        """
-        heating = self._text(self._s.heating_mode_entity) == "off"
-        speed = self._number(self._s.compressor_speed_entity)
-        if deviated and heating and speed is not None and speed < STOPPED_PERCENT:
-            self._stopped += 1
-        else:
-            self._stopped = 0
+    def check(self, raised: bool = False) -> str | None:
+        """Trouble worth stepping back for, or None. A reported trouble starts the counting over."""
         aux = self._number(self._s.aux_status_entity)
         if raised and aux is not None and aux > 0.5:
             self._aux += 1
         else:
             self._aux = 0
-        message = None
-        if self._stopped >= STOPPED_CHECKS:
-            message = "the compressor has been stopped for 45 minutes while heating"
-        elif self._aux >= AUX_CHECKS:
-            message = "the electric heater is running while the setpoint is raised"
-        if message is not None:
-            self._stopped = self._aux = 0
-        return message
+        if self._aux < AUX_CHECKS:
+            return None
+        self._aux = 0
+        return "the electric heater is running while the setpoint is raised"
 
     def _text(self, entity_id: str) -> str | None:
         try:
