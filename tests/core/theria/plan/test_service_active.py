@@ -209,6 +209,39 @@ def test_the_stage_is_judged_once_a_day_and_the_result_is_persisted(settings, tm
     )
 
 
+def test_the_reason_for_the_stage_decision_survives_a_restart(settings, tmp_path):
+    path = str(tmp_path / "state.json")
+    store = PlanStateStore(path)
+    store.save(
+        PlanState(
+            mode="active",
+            models=None,
+            stage=StageState(0, date(2026, 10, 6)),
+            stage_checked_on=None,
+        )
+    )
+    first, *_ = make(settings, state_store=store, outcomes=good_days(date(2026, 10, 6)))
+    run_cycle(first)
+    note = first.execution_status()["last_stage_note"]
+    assert note
+    second, *_ = make(settings, state_store=PlanStateStore(path))
+    assert second.execution_status()["last_stage_note"] == note
+
+
+def test_the_last_trouble_survives_a_restart(settings, tmp_path):
+    path = str(tmp_path / "state.json")
+    first, *_ = make(
+        settings,
+        setpoint=17.0,
+        trouble="electric heater",
+        state_store=PlanStateStore(path),
+    )
+    first.set_mode("active", confirm=True)
+    run_cycle(first)
+    second, *_ = make(settings, state_store=PlanStateStore(path))
+    assert "electric heater" in second.execution_status()["last_trouble"]
+
+
 def test_active_mode_and_the_stage_survive_a_restart(settings, tmp_path):
     path = str(tmp_path / "state.json")
     first, *_ = make(settings, state_store=PlanStateStore(path))

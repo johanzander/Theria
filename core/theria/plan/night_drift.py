@@ -18,14 +18,25 @@ import numpy as np
 import numpy.typing as npt
 
 from core.theria.exceptions import ModelFitError
+from core.theria.plan.pump_model import DEFAULT_FLOW_PER_RTS
+from core.theria.plan.room_model import PRIOR_GAIN_C_PER_C, PRIOR_RATE_PER_DAY
 
 FloatArray = npt.NDArray[np.float64]
 
 HALF_LIFE_DAYS = 150.0  # a night this much older counts half as much
 MIN_NIGHTS = 25
 MIN_OUTDOOR_SPREAD_C = 6.0  # p90 - p10 of the nights' mean outdoor temperature
-MAX_SETPOINT_RANGE_C = 1.0  # steady setpoint from 6 h before the night to its end
+MAX_SETPOINT_RANGE_C = (
+    2.0  # most the setpoint may have moved (what the widest stage allows)
+)
 LEAD_IN_HOURS = 6
+# What one degree of setpoint held for an hour does to the room, with the valves open: the room
+# gain and rate of the prior response times the flow temperature per degree of setpoint. Small
+# (hundredths of a degree over a night), but it lets the nights the plan moved the setpoint in
+# teach the model too.
+SETPOINT_EFFECT_C_PER_C_H = (
+    PRIOR_GAIN_C_PER_C * PRIOR_RATE_PER_DAY / 24 * DEFAULT_FLOW_PER_RTS
+)
 RECENT_NIGHTS = 14
 MAX_COOLING_C_PER_H = 0.4  # sanity limit on what the model may hand to the planner
 
@@ -112,10 +123,11 @@ def fit_night_drift(
         if not np.isfinite(setpoints).all() or np.ptp(setpoints) > MAX_SETPOINT_RANGE_C:
             continue
         age_days = (reference - moment).total_seconds() / 86400
+        moved = float(np.sum(rts_c[window] - rts_c[i - 1]))
         days.append(local.date())
         temps.append(float(outdoor))
         levels.append(float(room_start))
-        changes.append(float(room_end - room_start))
+        changes.append(float(room_end - room_start) - SETPOINT_EFFECT_C_PER_C_H * moved)
         weights.append(0.5 ** (age_days / HALF_LIFE_DAYS))
     if len(days) < MIN_NIGHTS:
         raise ModelFitError(

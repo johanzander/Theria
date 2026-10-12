@@ -60,7 +60,7 @@ from core.theria.plan.stages import (
     shrink_for_trouble,
 )
 from core.theria.plan.state_store import PlanState, PlanStateStore
-from core.theria.plan.trim import trim_night, trim_warmup
+from core.theria.plan.trim import trim_night, trim_room, trim_warmup
 from core.theria.plan.warmup import WarmupFit
 from core.theria.plan.weather import OpenMeteoClient, WeatherHour
 from core.theria.sensor_guard import SensorGuard
@@ -193,6 +193,8 @@ class PlanService:
             self._morning_margin_c = state.morning_margin_c
             self._margin_changed_on = state.margin_changed_on
             self._stage_checked_on = state.stage_checked_on
+            self._last_stage_note = state.last_stage_note
+            self._last_trouble = state.last_trouble
             if state.executor is not None and executor is not None:
                 executor.load_state(state.executor)
             if state.lk is not None and lk_executor is not None:
@@ -459,6 +461,8 @@ class PlanService:
                     stage_checked_on=self._stage_checked_on,
                     morning_margin_c=self._morning_margin_c,
                     margin_changed_on=self._margin_changed_on,
+                    last_stage_note=self._last_stage_note,
+                    last_trouble=self._last_trouble,
                     executor=(
                         None
                         if self._executor is None
@@ -555,8 +559,9 @@ class PlanService:
         if previous is not None:
             night, night_notes = trim_night(previous.night_drift, models.night_drift)
             warmup, warmup_notes = trim_warmup(previous.warmup, models.warmup)
-            models = replace(models, night_drift=night, warmup=warmup)
-            notes = night_notes + warmup_notes
+            room, room_notes = trim_room(previous.room, models.room)
+            models = replace(models, night_drift=night, warmup=warmup, room=room)
+            notes = room_notes + night_notes + warmup_notes
         self._apply_models(models)
         self._record_parameters(
             "refit", "; ".join(["nightly refit of the models", *notes])

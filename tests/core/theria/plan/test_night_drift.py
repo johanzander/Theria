@@ -28,6 +28,7 @@ def world(
     late_from=200,
     polluted=(),
     level_slope=0.0,
+    swing=0.0,
 ):
     """Hourly room/outdoor/setpoint series in UTC with a known night cooling."""
     n = days * 24
@@ -48,8 +49,15 @@ def world(
         )  # the room starts the night warmer or cooler
         change = A + use * tt + level_slope * (level - 19.5)
         if d in polluted:
-            rts[s - 3 : s + length] += 2.0  # the setpoint was moved: not a clean night
+            rts[s - 3 : s + length] += 3.0  # moved far: not a clean night
             change = -2.0
+        if swing and d % 2:
+            # the plan lowered the setpoint in the second half of the night: the room is a little
+            # cooler than the night alone would make it
+            rts[s + length // 2 : s + length + 1] -= swing
+            change -= (
+                night_drift.SETPOINT_EFFECT_C_PER_C_H * swing * (length - length // 2)
+            )
         room[s : s + length + 1] = level + change * np.arange(length + 1) / length
     return hours, room, t, rts
 
@@ -169,3 +177,11 @@ def test_a_level_effect_with_the_wrong_sign_is_left_out_not_trusted():
     )  # a warmer room that cools LESS is not physical
     assert drift.level_c_per_c == 0.0
     assert drift.slope_c_per_c > 0
+
+
+def test_nights_with_a_setpoint_the_plan_moved_teach_the_model_after_the_setpoint_is_accounted_for():
+    plain = fit(world())
+    active = fit(world(swing=1.5))
+    assert active.intercept_c == pytest.approx(plain.intercept_c, abs=0.02)
+    assert active.slope_c_per_c == pytest.approx(plain.slope_c_per_c, abs=0.003)
+    assert active.nights > plain.nights * 0.95

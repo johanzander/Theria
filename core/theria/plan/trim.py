@@ -10,6 +10,8 @@ limited.
 
 from dataclasses import replace
 
+from core.theria.plan.calibration import RoomFit
+from core.theria.plan.daily_room import room_params_from_fit
 from core.theria.plan.night_drift import NightDrift
 from core.theria.plan.warmup import WarmupFit
 
@@ -17,6 +19,8 @@ MAX_INTERCEPT_STEP_C = 0.10  # night change at 0 C outdoors, per day
 MAX_SLOPE_STEP = 0.02  # night change per degree outdoors, per day
 MAX_LEVEL_STEP = 0.05  # night change per degree of room level, per day
 MAX_APPLIED_SCALE_STEP = 0.10  # warm-up scale the planner uses, per day
+MAX_GAIN_STEP = 0.05  # room response, degrees per degree of flow, per day
+MAX_RATE_STEP_PER_DAY = 0.03  # share of the gap the room closes per day, per day
 
 
 def limit_step(old: float, new: float, max_step: float) -> float:
@@ -53,3 +57,31 @@ def trim_warmup(
         return new, []
     note = f"warm-up scale {new.applied_scale:.2f} limited to {limited:.2f}"
     return replace(new, applied_scale=limited), [note]
+
+
+def trim_room(
+    old: RoomFit | None, new: RoomFit | None
+) -> tuple[RoomFit | None, list[str]]:
+    """The hourly parameters are rebuilt from the limited response, so they stay consistent."""
+    if old is None or new is None:
+        return new, []
+    gain = limit_step(
+        old.response.gain_c_per_c, new.response.gain_c_per_c, MAX_GAIN_STEP
+    )
+    rate = limit_step(
+        old.response.rate_per_day, new.response.rate_per_day, MAX_RATE_STEP_PER_DAY
+    )
+    notes = []
+    if gain != new.response.gain_c_per_c:
+        notes.append(f"room gain {new.response.gain_c_per_c:.3f} limited to {gain:.3f}")
+    if rate != new.response.rate_per_day:
+        notes.append(f"room rate {new.response.rate_per_day:.3f} limited to {rate:.3f}")
+    if not notes:
+        return new, []
+    response = replace(
+        new.response,
+        gain_c_per_c=gain,
+        rate_per_day=rate,
+        time_constant_days=1.0 / rate,
+    )
+    return replace(new, params=room_params_from_fit(response), response=response), notes

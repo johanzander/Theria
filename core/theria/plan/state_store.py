@@ -27,6 +27,8 @@ class PlanState:
     lk: dict[str, Any] | None = None
     morning_margin_c: float = 0.0  # learned: how much warmer the night is kept
     margin_changed_on: date | None = None
+    last_stage_note: str | None = None  # why the stage was held, widened or narrowed
+    last_trouble: str | None = None
 
 
 def _stage_to_dict(s: StageState) -> dict[str, Any]:
@@ -211,6 +213,8 @@ class PlanStateStore:
                     if raw.get("margin_changed_on") is None
                     else date.fromisoformat(raw["margin_changed_on"])
                 ),
+                last_stage_note=raw.get("last_stage_note"),
+                last_trouble=raw.get("last_trouble"),
             )
         except (
             OSError,
@@ -240,6 +244,8 @@ class PlanStateStore:
                 if state.stage_checked_on is None
                 else state.stage_checked_on.isoformat()
             ),
+            "last_stage_note": state.last_stage_note,
+            "last_trouble": state.last_trouble,
         }
         temporary = f"{self._path}.tmp"
         try:

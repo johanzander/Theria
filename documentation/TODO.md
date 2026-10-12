@@ -151,7 +151,7 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 
 ## Found in the first active day (2026-10-12)
 
-- [ ] Keep the stage judgement's reason: `last_stage_note` is not persisted and the action log was lost at the update, so the revert to the base until 2026-10-15 cannot be explained. Persist the note and show it on the Control tab. The day data (savings) shows no trouble (no compressor stop, no heater, room minimum >= 19.17 C against the 19.0 C limit), so check what `_judge_stage` actually saw.
+- [x] Keep the stage judgement's reason (done): `last_stage_note` was not persisted and the action log was lost at the update, so the revert to the base until 2026-10-15 cannot be explained. Persist the note and show it on the Control tab. The day data (savings) shows no trouble (no compressor stop, no heater, room minimum >= 19.17 C against the 19.0 C limit), so check what `_judge_stage` actually saw.
 - [ ] Plan at 16 C because the room is above the ceiling (21.35 C, extreme price) while the stage holds the pump at the base: the plan table should say "held at base by the stage" so it does not look like a 16 C setpoint.
 - [ ] Find out why the room is 21.35 C (stove, sun) and whether the ceiling case needs its own handling.
 - [x] Tab links broke in the HA frame (the `<base>` made `#control` point at another document); `tabHref` fixes it.
@@ -166,12 +166,12 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [x] The compressor-stop guard is gone (in the live and the daily check). The compressor stops for 20-70 minutes every 1-2 hours at mild weather whatever the plan does, so every stop was a false alarm. The stop counter is no longer measured either; the preflight "compressor" check is removed too.
 - [x] `revert_days` and the pause at the base after trouble are gone. Trouble (electric heater while raised, room more than 0.5 C under the target in a day) narrows the stage one step and starts the judging over; there is no pause.
 - [ ] Without a pause, a heater that runs every time the setpoint is raised makes the plan raise and restore again about once an hour (one raise per 55 minutes is the only brake). Watch the action log for that.
-- [ ] Persist the reason of the stage judgement (`last_stage_note`) and show it on the Control tab (the entry above).
+- [x] The reason of the stage judgement and the last trouble are persisted and shown on the Control tab.
 
 ## Control loop (2026-10-12)
 
 - [x] Level 1, fast: `observer.py` compares the room's level now with what the flat-setpoint prediction of a plan 2-4 h old expected and adds the smoothed shortfall (gain 0.3, half-life 4 h, cap 0.3 C/h) to the planner's drift, fading with the horizon. Not persisted. The room level (not the sunny reading) is also what the drift anchoring and the night model use now (that was a bug in the first room-level change).
 - [x] Level 2, daily (first part): `trim.py` limits how far a refit may move what the planner uses per day: night intercept 0.10 C, slope 0.02, level 0.05, warm-up scale 0.10; every cut is named in the parameter history note. The morning margin and the stage already move in small steps.
-- [ ] Level 2, second part: trim the room response (gain and rate) the same way (needs the hourly parameters and the daily fit moved together); learn from nights with a changed setpoint (the night fit only uses steady-setpoint nights, so active nights teach it nothing).
+- [x] Level 2, second part: the room response (gain 0.05, rate 0.03 per day) is trimmed the same way, with the hourly parameters rebuilt from the limited response; the night fit now also uses nights the plan moved the setpoint in (up to 2 C), correcting the change for the setpoint's small effect (`SETPOINT_EFFECT_C_PER_C_H`).
 - [ ] Level 3: recommendations for target, floor and costs (the Tuning tab), approved by Johan.
 - [ ] Check in a few days that the observer does not make the plan flutter (the parameter history records `observer_drift_c_per_h` at every refit).

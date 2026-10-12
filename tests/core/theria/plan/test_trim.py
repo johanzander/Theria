@@ -2,18 +2,30 @@ from dataclasses import replace
 
 import pytest
 
+from core.theria.plan.calibration import RoomFit
+from core.theria.plan.daily_room import DailyRoomFit, room_params_from_fit
 from core.theria.plan.night_drift import NightDrift
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.trim import (
     MAX_APPLIED_SCALE_STEP,
+    MAX_GAIN_STEP,
     MAX_INTERCEPT_STEP_C,
+    MAX_RATE_STEP_PER_DAY,
     limit_step,
     trim_night,
+    trim_room,
     trim_warmup,
 )
 from core.theria.plan.warmup import WarmupFit
 
 NIGHT = NightDrift(-0.5, 0.06, -0.2, 19.5, 6, 120, 0.1, ())
+
+
+def room_fit(gain, rate):
+    response = DailyRoomFit(gain, rate, 1 / rate, (), 100, {}, {})
+    return RoomFit(room_params_from_fit(response), response)
+
+
 WARMUP = WarmupFit(1.0, 0.1, 1.0, 0.4, 0.4, 0.5, 1.0, 0.1, 300, 40)
 
 
@@ -84,3 +96,24 @@ def test_the_first_fit_is_taken_as_it_is(settings):
     service = make_service(settings, calibrator=calibrator)
     service.refit()
     assert service.parameters()["night_intercept_c"] == -1.5
+
+
+def test_the_room_response_moves_in_steps_and_the_hourly_parameters_follow():
+    trimmed, notes = trim_room(room_fit(0.45, 0.20), room_fit(0.80, 0.20))
+    assert trimmed.response.gain_c_per_c == pytest.approx(0.45 + MAX_GAIN_STEP)
+    assert trimmed.params == room_params_from_fit(trimmed.response)
+    assert len(notes) == 1 and "room gain" in notes[0]
+
+
+def test_a_faster_room_is_limited_too_and_the_time_constant_stays_consistent():
+    trimmed, notes = trim_room(room_fit(0.45, 0.20), room_fit(0.45, 0.50))
+    assert trimmed.response.rate_per_day == pytest.approx(0.20 + MAX_RATE_STEP_PER_DAY)
+    assert trimmed.response.time_constant_days == pytest.approx(
+        1 / trimmed.response.rate_per_day
+    )
+    assert "room rate" in notes[0]
+
+
+def test_a_small_change_in_the_room_response_is_left_alone():
+    new = room_fit(0.46, 0.21)
+    assert trim_room(room_fit(0.45, 0.20), new) == (new, [])
