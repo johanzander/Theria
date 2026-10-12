@@ -1,9 +1,15 @@
 import {
-  Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { fetchExecution, fetchPlan, fetchSavings } from '../api'
-import { outlookText, planRows, savingsSummary, type Execution, type PlanResponse, type SavingsResponse } from '../model'
+import { useState } from 'react'
+import { fetchDay, fetchExecution, fetchPlan, fetchSavings } from '../api'
+import { dayRows, outlookText, savingsSummary, type DayView, type Execution, type PlanResponse, type SavingsResponse } from '../model'
 import { Card, useLoaded } from '../ui'
+
+const tomorrowIso = () => {
+  const d = new Date(Date.now() + 24 * 3600 * 1000)
+  return d.toLocaleDateString('sv-SE')
+}
 
 function Status({ plan, execution }: { plan: PlanResponse | null; execution: Execution | null }) {
   const saving = plan ? savingsSummary(plan) : null
@@ -44,13 +50,20 @@ function Status({ plan, execution }: { plan: PlanResponse | null; execution: Exe
   )
 }
 
-function PlanChart({ plan }: { plan: PlanResponse }) {
-  const rows = planRows(plan)
-  const temps = rows.flatMap((r) => [r.room, r.baselineRoom, r.floor])
+function DayCharts({ view }: { view: DayView }) {
+  const rows = dayRows(view)
+  const now = rows.find((r) => r.current)?.label
+  const temps = rows
+    .flatMap((r) => [r.measuredRoom, r.plannedRoom, r.baselineRoom, r.floor])
+    .filter((v): v is number => v !== null)
   const roomLow = Math.floor(Math.min(...temps) * 2) / 2 - 0.5
   const roomHigh = Math.ceil(Math.max(...temps) * 2) / 2 + 0.5
+  // with several y axes the line must name the one it is drawn against
+  const marker = (yAxisId?: string) =>
+    now ? <ReferenceLine x={now} yAxisId={yAxisId} stroke="#7b8794" strokeDasharray="2 2" label="now" /> : null
   return (
     <>
+      {rows.every((r) => r.price === null) && <p className="note">No prices for this day yet (tomorrow's are published in the afternoon).</p>}
       <div className="panel">
         <h2>Price and room setpoint</h2>
         <ResponsiveContainer width="100%" height={260}>
@@ -62,13 +75,15 @@ function PlanChart({ plan }: { plan: PlanResponse }) {
             <Tooltip />
             <Legend />
             <Bar yAxisId="price" dataKey="price" name="Price (SEK/kWh)" fill="#cbd2d9" />
-            <Line yAxisId="rts" type="stepAfter" dataKey="rts" name="Plan setpoint" stroke="#0b6bcb" strokeWidth={2} dot={false} />
+            <Line yAxisId="rts" type="stepAfter" dataKey="measuredRts" name="Measured setpoint" stroke="#102a43" strokeWidth={2} dot={false} />
+            <Line yAxisId="rts" type="stepAfter" dataKey="plannedRts" name="Plan setpoint" stroke="#0b6bcb" strokeWidth={2} dot={false} />
             <Line yAxisId="rts" type="stepAfter" dataKey="baselineRts" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
+            {marker('rts')}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
       <div className="panel">
-        <h2>Expected room temperature</h2>
+        <h2>Room temperature</h2>
         <ResponsiveContainer width="100%" height={220}>
           <ComposedChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -77,12 +92,23 @@ function PlanChart({ plan }: { plan: PlanResponse }) {
             <Tooltip />
             <Legend />
             <Line type="stepAfter" dataKey="floor" name="Floor" stroke="#b42318" strokeDasharray="4 3" dot={false} />
-            <Line type="monotone" dataKey="room" name="With plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="baselineRoom" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
+            <Line type="monotone" dataKey="measuredRoom" name="Measured" stroke="#102a43" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="plannedRoom" name="Expected with plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="baselineRoom" name="Expected, flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
+            {marker()}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
     </>
+  )
+}
+
+function DayPicker({ day, onChange }: { day: 'today' | 'tomorrow'; onChange: (d: 'today' | 'tomorrow') => void }) {
+  return (
+    <div className="buttons">
+      <button onClick={() => onChange('today')} disabled={day === 'today'}>Today</button>
+      <button onClick={() => onChange('tomorrow')} disabled={day === 'tomorrow'}>Tomorrow</button>
+    </div>
   )
 }
 
@@ -112,12 +138,19 @@ export function Overview() {
   const plan = useLoaded(fetchPlan)
   const execution = useLoaded(fetchExecution)
   const savings = useLoaded(() => fetchSavings(14))
-  const error = plan.error ?? execution.error ?? savings.error
+  const [day, setDay] = useState<'today' | 'tomorrow'>('today')
+  const dayView = useLoaded(() => fetchDay(day === 'today' ? undefined : tomorrowIso()))
+  const pick = (next: 'today' | 'tomorrow') => {
+    setDay(next)
+    dayView.reload()
+  }
+  const error = plan.error ?? execution.error ?? savings.error ?? dayView.error
   return (
     <>
       {error && <p className="bad">{error}</p>}
       <Status plan={plan.data} execution={execution.data} />
-      {plan.data ? <PlanChart plan={plan.data} /> : <p>No plan computed yet.</p>}
+      {plan.data ? <DayPicker day={day} onChange={pick} /> : null}
+      {dayView.data ? <DayCharts view={dayView.data} /> : <p>No plan computed yet.</p>}
       {savings.data && savings.data.days.length > 0 && <SavingsChart savings={savings.data} />}
     </>
   )

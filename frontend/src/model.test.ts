@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, savingsSummary, type PlanResponse } from './model'
+import { planRows, dayRows, savingsSummary, tabHref, type PlanResponse } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -118,5 +118,30 @@ describe('warmupText', () => {
   })
   it('says what the planner uses when the difference is real', () => {
     expect(warmupText({ ...fit, scale: 1.4, applied_scale: 1.4 })).toContain('1.40 x the model')
+  })
+})
+
+describe('tabHref', () => {
+  it('stays on the current document whatever the base is', () => {
+    expect(tabHref('control', { pathname: '/api/hassio_ingress/abc/', search: '' })).toBe('/api/hassio_ingress/abc/#control')
+  })
+})
+
+describe('dayRows', () => {
+  const hours = ['2026-10-12T14:00:00+00:00', '2026-10-12T15:00:00+00:00', '2026-10-12T16:00:00+00:00'].map((start, i) => ({
+    start, past: i < 2, price_sek_per_kwh: 1, floor_c: 18, extreme: false,
+    rts_c: 18 + i, room_c: 20 + i, baseline_rts_c: i < 2 ? null : 18, baseline_room_c: i < 2 ? null : 20,
+  }))
+  const rows = dayRows({ day: '2026-10-12', now: '2026-10-12T16:00:00+00:00', hours })
+
+  it('keeps every hour of the day, not only the ones still to come', () => {
+    expect(rows).toHaveLength(3)
+    expect(rows[0].label).toMatch(/^\d\d:00$/)
+  })
+
+  it('shows what was measured before now and the plan from now on', () => {
+    expect(rows[0]).toMatchObject({ measuredRts: 18, plannedRts: null, measuredRoom: 20, baselineRts: null })
+    expect(rows[2]).toMatchObject({ measuredRts: null, plannedRts: 20, plannedRoom: 22, baselineRts: 18 })
+    expect(rows.map((r) => r.current)).toEqual([false, false, true])
   })
 })

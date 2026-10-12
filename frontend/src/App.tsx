@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { tabHref } from './model'
 import { Control } from './views/Control'
 import { Models } from './views/Models'
 import { Overview } from './views/Overview'
@@ -39,7 +40,7 @@ export function App() {
       <h1>Theria - price and plan</h1>
       <nav className="tabs">
         {VIEWS.map((v) => (
-          <a key={v.id} href={`#${v.id}`} className={v.id === id ? 'current' : undefined}>
+          <a key={v.id} href={tabHref(v.id, window.location)} className={v.id === id ? 'current' : undefined}>
             {v.label}
           </a>
         ))}

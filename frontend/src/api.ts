@@ -1,4 +1,4 @@
-import type { Execution, PlanResponse, SavingsResponse } from './model'
+import type { DayView, Execution, PlanResponse, SavingsResponse } from './model'
 
 // Served at <ingress>/static/plan/, so the API is two levels up; the dev server proxies /api.
 const BASE = import.meta.env.DEV ? '/api/' : '../../api/'
@@ -11,6 +11,7 @@ async function get<T>(path: string): Promise<T | null> {
 }
 
 export const fetchPlan = () => get<PlanResponse>('plan')
+export const fetchDay = (day?: string) => get<DayView>(day ? `plan/day?day=${day}` : 'plan/day')
 export const fetchExecution = () => get<Execution>('plan/execution')
 export const fetchSavings = (days: number) => get<SavingsResponse>(`savings?days=${days}`)
 

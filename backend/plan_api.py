@@ -1,7 +1,9 @@
 """REST endpoints for the price-driven heating plan (shadow and active mode)."""
 
 import asyncio
+from datetime import date
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -55,6 +57,20 @@ async def get_plan(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
     body = jsonable_encoder(snapshot)
     body["age_seconds"] = (svc.now() - snapshot.computed_at).total_seconds()
     return body
+
+
+@router.get("/plan/day")
+async def get_plan_day(
+    svc: Annotated[PlanService, Depends(get_service)],
+    day: Annotated[date | None, Query()] = None,
+) -> Any:
+    """A whole local day (default today): measured so far, planned for the rest."""
+    if svc.latest() is None:
+        raise HTTPException(
+            status_code=404, detail=f"No plan computed yet (mode: {svc.mode})"
+        )
+    chosen = day or svc.now().astimezone(ZoneInfo(svc.timezone)).date()
+    return jsonable_encoder(await asyncio.to_thread(svc.day_view, chosen))
 
 
 @router.get("/plan/history")

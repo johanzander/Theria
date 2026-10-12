@@ -34,7 +34,12 @@ from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
-from core.theria.plan.outcomes import DayOutcome, day_outcomes, load_outcome_inputs
+from core.theria.plan.outcomes import (
+    DayOutcome,
+    OutcomeInputs,
+    day_outcomes,
+    load_outcome_inputs,
+)
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
@@ -245,6 +250,11 @@ async def lifespan(app: FastAPI):
                         plan_settings.comfort_starts_at,
                     )
 
+                def actuals_loader(start: datetime, stop: datetime) -> OutcomeInputs:
+                    return load_outcome_inputs(
+                        history_source, plan_settings, start, stop
+                    )
+
                 plan_service = PlanService(
                     ha_client,
                     plan_settings,
@@ -261,6 +271,7 @@ async def lifespan(app: FastAPI):
                     outcome_loader=outcome_loader,
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
+                    actuals_loader=actuals_loader,
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service

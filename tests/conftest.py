@@ -5,7 +5,7 @@ Follows Home Assistant testing best practices with reusable fixtures,
 parametrized tests, and clear test organization.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -24,7 +24,7 @@ def base_time():
     now_utc() - a hardcoded past date eventually falls outside the 24h
     window and silently zeroes out every test.
     """
-    return datetime.now(timezone.utc) - timedelta(hours=12)
+    return datetime.now(UTC) - timedelta(hours=12)
 
 
 @pytest.fixture

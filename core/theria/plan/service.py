@@ -24,12 +24,13 @@ from core.theria.exceptions import (
 )
 from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
+from core.theria.plan.day_view import build_day_view, day_hours
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
-from core.theria.plan.outcomes import DayOutcome
+from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
 from core.theria.plan.preflight import Check, preflight_checks
@@ -80,6 +81,7 @@ class Notifier(Protocol):
 
 
 OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
+ActualsLoader = Callable[[datetime, datetime], OutcomeInputs]
 TROUBLE_NOTIFICATION = "theria_plan_trouble"
 STAGE_NOTIFICATION = "theria_plan_stage"
 DAILY_NOTIFICATION = "theria_plan_daily"
@@ -121,6 +123,7 @@ class PlanService:
         stage_rules: StageRules | None = None,
         parameter_log: ParameterLog | None = None,
         event_log: EventLog | None = None,
+        actuals_loader: ActualsLoader | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -164,6 +167,7 @@ class PlanService:
         # set_mode and the control cycle never interleave
         self._lock = threading.RLock()
         self._event_log = event_log
+        self._actuals_loader = actuals_loader
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
         )
@@ -561,6 +565,35 @@ class PlanService:
 
     def latest(self) -> PlanSnapshot | None:
         return self._snapshots[-1] if self._snapshots else None
+
+    @property
+    def timezone(self) -> str:
+        return self._settings.timezone
+
+    def day_view(self, day: date) -> dict[str, Any]:
+        """A whole local day for the charts: measured so far, planned for the rest."""
+        now = self._now()
+        latest = self.latest()
+        periods = parse_nordpool_attributes(
+            self._ha.get_state(self._settings.price_entity)["attributes"]
+        )
+        measured = None
+        first = day_hours(day, self._settings.timezone)[0]
+        current = _floor_hour(now.astimezone(UTC))
+        if self._actuals_loader is not None and first < current:
+            try:
+                # a day of lead-in: the setpoint is only logged when it changes
+                measured = self._actuals_loader(first - timedelta(days=1), current)
+            except TheriaError:
+                logger.warning("could not read today's measurements", exc_info=True)
+        return build_day_view(
+            day,
+            now,
+            self._settings,
+            periods,
+            None if latest is None else latest.plan,
+            measured,
+        )
 
     def history(self, hours: int) -> list[PlanSnapshot]:
         cutoff = self._now() - timedelta(hours=hours)

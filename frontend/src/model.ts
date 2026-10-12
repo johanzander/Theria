@@ -269,3 +269,61 @@ export function parameterSeries(history: ParameterRecord[], key: string): Series
     .filter((r) => typeof r.params[key] === 'number')
     .map((r) => ({ label: r.at.slice(0, 10), value: r.params[key] }))
 }
+
+/**
+ * Link to a tab of the page that is shown now. A plain "#id" would resolve against the
+ * document's <base> (the static directory the page is served from) and load another document.
+ */
+export function tabHref(id: string, location: { pathname: string; search: string }): string {
+  return `${location.pathname}${location.search}#${id}`
+}
+
+export interface DayHour {
+  start: string
+  past: boolean
+  price_sek_per_kwh: number | null
+  floor_c: number
+  rts_c: number | null
+  room_c: number | null
+  baseline_rts_c: number | null
+  baseline_room_c: number | null
+  extreme: boolean
+}
+
+export interface DayView {
+  day: string
+  now: string
+  hours: DayHour[]
+}
+
+export interface DayRow {
+  label: string
+  price: number | null
+  floor: number
+  measuredRts: number | null
+  plannedRts: number | null
+  baselineRts: number | null
+  measuredRoom: number | null
+  plannedRoom: number | null
+  baselineRoom: number | null
+  current: boolean
+}
+
+const clockLabel = (iso: string) =>
+  new Date(iso).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+
+/** One row per hour of the whole day; measured values before now, the plan from now on. */
+export function dayRows(view: DayView): DayRow[] {
+  return view.hours.map((h) => ({
+    label: clockLabel(h.start),
+    price: h.price_sek_per_kwh,
+    floor: h.floor_c,
+    measuredRts: h.past ? h.rts_c : null,
+    plannedRts: h.past ? null : h.rts_c,
+    baselineRts: h.past ? null : h.baseline_rts_c,
+    measuredRoom: h.past ? h.room_c : null,
+    plannedRoom: h.past ? null : h.room_c,
+    baselineRoom: h.past ? null : h.baseline_room_c,
+    current: h.start === view.now,
+  }))
+}

@@ -107,3 +107,18 @@ def test_refit_without_calibration_is_409(settings):
     app.include_router(plan_api.router)
     app.dependency_overrides[plan_api.get_service] = lambda: service
     assert TestClient(app).post("/api/model/refit").status_code == 409
+
+
+def test_day_is_404_until_a_plan_exists_then_lists_the_whole_day(client):
+    http, service = client
+    assert http.get("/api/plan/day").status_code == 404
+    service.run_once()
+    body = http.get("/api/plan/day").json()
+    assert len(body["hours"]) == 24
+    assert any(not h["past"] for h in body["hours"])
+
+
+def test_day_rejects_a_malformed_date(client):
+    http, service = client
+    service.run_once()
+    assert http.get("/api/plan/day?day=tomorrow").status_code == 422

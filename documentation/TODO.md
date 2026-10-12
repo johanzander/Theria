@@ -148,3 +148,13 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - Why cooling may be overstated: the old manual cuts were mostly made when the room was already warm (sun, stove), so part of the cooling is not caused by the cut.
 - [ ] Re-read the Models tab after the first active nights: the plan's own setpoint changes (and the LK boost) are clean experiments and will show the real warm-up and cooling speed.
 - [ ] If cooling stays 2x the model: give the room model an asymmetric response (cooling faster than warming) so that cuts are costed correctly.
+
+## Found in the first active day (2026-10-12)
+
+- [ ] Keep the stage judgement's reason: `last_stage_note` is not persisted and the action log was lost at the update, so the revert to the base until 2026-10-15 cannot be explained. Persist the note and show it on the Control tab. The day data (savings) shows no trouble (no compressor stop, no heater, room minimum >= 19.17 C against the 19.0 C limit), so check what `_judge_stage` actually saw.
+- [ ] Plan at 16 C because the room is above the ceiling (21.35 C, extreme price) while the stage holds the pump at the base: the plan table should say "held at base by the stage" so it does not look like a 16 C setpoint.
+- [ ] Find out why the room is 21.35 C (stove, sun) and whether the ceiling case needs its own handling.
+- [x] Tab links broke in the HA frame (the `<base>` made `#control` point at another document); `tabHref` fixes it.
+- [ ] "Tuning" tab: per setting (target, floor, night target and floor, rts_max, stage readiness) the current value, what the data says, and a suggestion with the reason; never applied automatically.
+- [x] Charts always show whole local days (`GET /api/plan/day`, Today/Tomorrow): measured setpoint and room for the hours that have passed, plan for the rest, "now" marker. The Plan tab table still starts at the current hour.
+- [ ] Day charts: one hour (the current one) has neither a measured nor a planned point on the line, so the lines have a gap at "now"; the Models/Plan tabs are not on whole days yet.
