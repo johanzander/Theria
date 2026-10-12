@@ -7,11 +7,13 @@ base (pre-heating) the thermostats are raised to `lk_setpoint_c`; otherwise they
 """
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from core.theria.plan.confirm import read_until
 from core.theria.plan.settings import PlanSettings
 
 logger = logging.getLogger(__name__)
@@ -43,10 +45,12 @@ class LKExecutor:
         ha: ThermostatClient,
         settings: PlanSettings,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        sleep: Callable[[float], None] = time.sleep,
     ):
         self._ha = ha
         self._s = settings
         self._now = now
+        self._sleep = sleep
         self._last_written: float | None = None
         self._pause_until: datetime | None = None
         self.last_result: LKResult | None = None
@@ -125,8 +129,13 @@ class LKExecutor:
                 continue  # right already, or set below the base by hand: not ours to raise
             try:
                 self._ha.set_temperature(entity, target)
-                confirmed = float(
-                    self._ha.get_climate_state(entity)["target_temperature"]
+                confirmed = read_until(
+                    lambda entity=entity: float(
+                        self._ha.get_climate_state(entity)["target_temperature"]
+                    ),
+                    target,
+                    CONFIRM_TOLERANCE_C,
+                    self._sleep,
                 )
             except (RuntimeError, ValueError, KeyError, TypeError) as e:
                 failures.append(f"{entity}: {e}")

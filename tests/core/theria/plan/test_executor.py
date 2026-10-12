@@ -49,15 +49,27 @@ class FakeHA:
         self.writes = []
         self.fail_write = False
         self.ignore_write = False
+        self.lag = 0  # reads that still show the old value after a write
+        self._pending: tuple[float, int] | None = None
 
     def get_climate_state(self, entity_id):
+        if self._pending is not None:
+            value, reads_left = self._pending
+            if reads_left > 0:
+                self._pending = (value, reads_left - 1)
+                return {"target_temperature": self.setpoint}
+            self.setpoint, self._pending = value, None
         return {"target_temperature": self.setpoint}
 
     def set_temperature(self, entity_id, temperature):
         if self.fail_write:
             raise RuntimeError("HA is down")
         self.writes.append(temperature)
-        if not self.ignore_write:
+        if self.ignore_write:
+            return
+        if self.lag:
+            self._pending = (temperature, self.lag)
+        else:
             self.setpoint = temperature
 
 
@@ -66,7 +78,9 @@ def make(settings):
     def _make(setpoint=18.0, clock=None):
         ha = FakeHA(setpoint)
         current = [NOW]
-        executor = PlanExecutor(ha, settings, now=clock or (lambda: current[0]))
+        executor = PlanExecutor(
+            ha, settings, now=clock or (lambda: current[0]), sleep=lambda _: None
+        )
         return executor, ha, current
 
     return _make
@@ -184,3 +198,20 @@ def test_trouble_is_reported_once_and_the_count_starts_over(settings):
     monitor = SafetyMonitor(FakeStates(aux="1"), settings)
     assert [monitor.check(raised=True) for _ in range(2)][-1] is not None
     assert monitor.check(raised=True) is None  # not repeated every cycle
+
+
+def test_a_pump_that_takes_a_few_reads_to_confirm_is_not_a_failure(make):
+    executor, ha, _ = make(18.0)
+    ha.lag = 4  # the first four reads still show the old setpoint
+    result = executor.execute(snapshot([17.0]), STAGE1)
+    assert result.action == "wrote" and ha.setpoint == 17.0
+    assert (
+        executor.execute(snapshot([17.0]), STAGE1).action == "kept"
+    )  # not seen as a hand change
+
+
+def test_a_pump_that_never_confirms_is_a_failure_after_the_wait(make):
+    executor, ha, _ = make(18.0)
+    ha.lag = 1000
+    result = executor.execute(snapshot([17.0]), STAGE1)
+    assert result.action == "failed" and "read back 18.0" in result.reason

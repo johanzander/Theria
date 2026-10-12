@@ -8,11 +8,13 @@ restore, the base setpoint is written.
 
 import logging
 import math
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from core.theria.plan.confirm import read_until
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.snapshot import PlanSnapshot
 from core.theria.plan.stages import (
@@ -64,10 +66,12 @@ class PlanExecutor:
         ha: SetpointClient,
         settings: PlanSettings,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        sleep: Callable[[float], None] = time.sleep,
     ):
         self._ha = ha
         self._s = settings
         self._now = now
+        self._sleep = sleep
         self._last_written: float | None = None
         self._last_raise_at: datetime | None = None
         self._pause_until: datetime | None = None
@@ -193,10 +197,15 @@ class PlanExecutor:
             return self._record(ExecutionResult("kept", value, None, reason, now))
         try:
             self._ha.set_temperature(self._s.room_setpoint_entity, value)
-            confirmed = float(
-                self._ha.get_climate_state(self._s.room_setpoint_entity)[
-                    "target_temperature"
-                ]
+            confirmed = read_until(
+                lambda: float(
+                    self._ha.get_climate_state(self._s.room_setpoint_entity)[
+                        "target_temperature"
+                    ]
+                ),
+                value,
+                CONFIRM_TOLERANCE_C,
+                self._sleep,
             )
         except (RuntimeError, ValueError, KeyError, TypeError) as e:
             logger.error("writing the room setpoint failed: %s", e)

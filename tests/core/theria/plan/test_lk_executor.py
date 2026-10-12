@@ -15,15 +15,28 @@ class FakeLK:
         self.writes = []
         self.fail = set()
         self.ignore = set()  # accepts the call but keeps the old value
+        self.lag = 0  # reads that still show the old value after a write
+        self._pending: dict[str, tuple[float, int]] = {}
 
     def get_climate_state(self, entity_id):
+        if entity_id in self._pending:
+            value, reads_left = self._pending[entity_id]
+            if reads_left > 0:
+                self._pending[entity_id] = (value, reads_left - 1)
+            else:
+                self.values[entity_id] = value
+                del self._pending[entity_id]
         return {"target_temperature": self.values[entity_id]}
 
     def set_temperature(self, entity_id, temperature):
         if entity_id in self.fail:
             raise RuntimeError("unreachable")
         self.writes.append((entity_id, temperature))
-        if entity_id not in self.ignore:
+        if entity_id in self.ignore:
+            return
+        if self.lag:
+            self._pending[entity_id] = (temperature, self.lag)
+        else:
             self.values[entity_id] = temperature
 
 
@@ -37,7 +50,10 @@ def lk_settings(settings):
 def make(lk_settings, ha=None, clock=None):
     ha = ha or FakeLK()
     current = [NOW]
-    return LKExecutor(ha, lk_settings, now=clock or (lambda: current[0])), ha, current
+    executor = LKExecutor(
+        ha, lk_settings, now=clock or (lambda: current[0]), sleep=lambda _: None
+    )
+    return executor, ha, current
 
 
 def test_the_thermostats_go_up_while_the_pump_setpoint_is_above_the_base(lk_settings):
@@ -111,3 +127,14 @@ def test_a_thermostat_set_below_the_base_by_hand_is_left_alone(lk_settings):
     assert executor.execute(pump_setpoint_c=17.0).action == "kept"
     assert executor.restore_base().action == "kept"
     assert ha.writes == []
+
+
+def test_thermostats_that_take_a_few_reads_to_confirm_are_not_a_failure(lk_settings):
+    ha = FakeLK()
+    ha.lag = 3
+    executor, _, _ = make(lk_settings, ha)
+    result = executor.execute(pump_setpoint_c=19.0)
+    assert result.action == "wrote" and ha.values == {
+        "climate.lk_a": 21.0,
+        "climate.lk_b": 21.0,
+    }
