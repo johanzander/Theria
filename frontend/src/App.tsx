@@ -5,6 +5,7 @@ import { Models } from './views/Models'
 import { Overview } from './views/Overview'
 import { PlanTable } from './views/PlanTable'
 import { Sensors } from './views/Sensors'
+import { Tuning } from './views/Tuning'
 
 // The page is the start page but is resolved against <root>/static/plan/ (see the base tag the
 // backend injects); the old pages are at <root>/legacy, /zone-insights and /system-insights
@@ -18,6 +19,7 @@ const VIEWS = [
   { id: 'overview', label: 'Overview', view: <Overview /> },
   { id: 'plan', label: 'Plan', view: <PlanTable /> },
   { id: 'models', label: 'Models', view: <Models /> },
+  { id: 'tuning', label: 'Tuning', view: <Tuning /> },
   { id: 'sensors', label: 'Sensors', view: <Sensors /> },
   { id: 'control', label: 'Control', view: <Control /> },
 ]

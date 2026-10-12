@@ -110,8 +110,12 @@ def day_outcomes(
     by_day: dict[date, list[int]] = defaultdict(list)
     watched_by_day: dict[date, list[int]] = defaultdict(list)
     hours_in_day: dict[date, int] = defaultdict(int)
+    # hours the pump spent on hot water are not missing data: the coverage is of the others
+    heating_hours_in_day: dict[date, int] = defaultdict(int)
     for i, moment in enumerate(inputs.hours):
         hours_in_day[moment.date()] += 1
+        if not inputs.hot_water[i] > 0.0:
+            heating_hours_in_day[moment.date()] += 1
         if counts[i]:
             by_day[moment.date()].append(i)
         if watched[i]:
@@ -150,7 +154,11 @@ def day_outcomes(
             DayOutcome(
                 day=day,
                 heating_hours=len(idx),
-                coverage=len(idx) / hours_in_day[day],
+                coverage=(
+                    len(idx) / heating_hours_in_day[day]
+                    if heating_hours_in_day[day]
+                    else 0.0
+                ),
                 compressor_kwh=float(np.sum(compressor)),
                 aux_kwh=float(np.sum(inputs.aux_kwh[seen])),
                 actual_cost_sek=actual_cost,

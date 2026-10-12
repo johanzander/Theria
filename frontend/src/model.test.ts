@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, energyRows, savingsSummary, tabHref, type PlanResponse } from './model'
+import { planRows, dayRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -152,5 +152,14 @@ describe('energyRows', () => {
     const rows = energyRows(plan)
     expect(rows.map((r) => r.cumulativeCost)).toEqual([2, 6])
     expect(rows[1]).toMatchObject({ flow: 36, baselineFlow: 36 })
+  })
+})
+
+describe('sortedRecommendations', () => {
+  const rec = (key: string, status: 'ok' | 'consider' | 'no data') =>
+    ({ key, title: key, current: '', observed: '', suggestion: null, reason: '', status })
+  it('puts what is worth considering first and keeps the order otherwise', () => {
+    const sorted = sortedRecommendations([rec('a', 'ok'), rec('b', 'consider'), rec('c', 'no data'), rec('d', 'consider')])
+    expect(sorted.map((r) => r.key)).toEqual(['b', 'd', 'a', 'c'])
   })
 })

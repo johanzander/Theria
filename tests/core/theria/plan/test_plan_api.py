@@ -122,3 +122,12 @@ def test_day_rejects_a_malformed_date(client):
     http, service = client
     service.run_once()
     assert http.get("/api/plan/day?day=tomorrow").status_code == 422
+
+
+def test_tuning_lists_the_settings_with_advice_and_applies_nothing(client):
+    http, service = client
+    service.run_once()
+    body = http.get("/api/plan/tuning").json()
+    keys = [r["key"] for r in body]
+    assert keys[:2] == ["floor_c", "max_flow_c"] and "stage" in keys
+    assert all(r["status"] in {"ok", "consider", "no data"} for r in body)

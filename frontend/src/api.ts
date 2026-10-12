@@ -1,4 +1,4 @@
-import type { DayView, Execution, PlanResponse, SavingsResponse } from './model'
+import type { Recommendation, DayView, Execution, PlanResponse, SavingsResponse } from './model'
 
 // Served at <ingress>/static/plan/, so the API is two levels up; the dev server proxies /api.
 const BASE = import.meta.env.DEV ? '/api/' : '../../api/'
@@ -41,3 +41,5 @@ export async function refitModels(): Promise<string | null> {
   const body = (await response.json()) as { detail?: string }
   return body.detail ?? `HTTP ${response.status}`
 }
+
+export const fetchTuning = () => get<Recommendation[]>('plan/tuning')

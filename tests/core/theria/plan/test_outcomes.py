@@ -83,6 +83,13 @@ def test_hot_water_hours_are_left_out_because_the_plan_does_not_control_them():
     assert outcome.heating_hours == 0 and outcome.saving_sek == 0.0
 
 
+def test_hot_water_hours_are_not_missing_data_for_the_coverage():
+    inputs = make_inputs(18.0, 1.5, hours=24)
+    inputs.hot_water[:12] = 1.0  # half the day the pump made hot water
+    day = day_outcomes(inputs, PUMP, rts_base_c=18.0)[0]
+    assert day.heating_hours == 12 and day.coverage == pytest.approx(1.0)
+
+
 def test_days_with_little_data_report_their_coverage_instead_of_a_misleading_total():
     inputs = make_inputs(16.0, 2.0, hours=24)
     price = inputs.price_sek_per_kwh.copy()

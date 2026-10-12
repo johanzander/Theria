@@ -73,6 +73,15 @@ async def get_plan_day(
     return jsonable_encoder(await asyncio.to_thread(svc.day_view, chosen))
 
 
+@router.get("/plan/tuning")
+async def get_tuning(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
+    """Advice on the settings the plan never changes by itself; nothing is applied."""
+    try:
+        return jsonable_encoder(await asyncio.to_thread(svc.tuning))
+    except TheriaError as e:
+        raise HTTPException(status_code=422, detail=f"{type(e).__name__}: {e}") from e
+
+
 @router.get("/plan/history")
 async def get_plan_history(
     svc: Annotated[PlanService, Depends(get_service)],

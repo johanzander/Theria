@@ -360,3 +360,18 @@ export function energyRows(response: PlanResponse): EnergyRow[] {
     }
   })
 }
+
+export interface Recommendation {
+  key: string
+  title: string
+  current: string
+  observed: string
+  suggestion: string | null
+  reason: string
+  status: 'ok' | 'consider' | 'no data'
+}
+
+/** Settings with something to consider first, then the rest in the order given. */
+export function sortedRecommendations(items: Recommendation[]): Recommendation[] {
+  return [...items].sort((a, b) => Number(b.status === 'consider') - Number(a.status === 'consider'))
+}

@@ -61,6 +61,7 @@ from core.theria.plan.stages import (
 )
 from core.theria.plan.state_store import PlanState, PlanStateStore
 from core.theria.plan.trim import trim_night, trim_room, trim_warmup
+from core.theria.plan.tuning import Recommendation, build_recommendations
 from core.theria.plan.warmup import WarmupFit
 from core.theria.plan.weather import OpenMeteoClient, WeatherHour
 from core.theria.sensor_guard import SensorGuard
@@ -70,6 +71,10 @@ logger = logging.getLogger(__name__)
 SLAB_INIT_FRACTION = 0.5  # rough prior: slab sits half way between room and flow target
 SUN_WARMUP_HOURS = 24
 LOG_KEPT = 200
+TUNING_DAYS = 14
+TUNING_CACHE = timedelta(
+    hours=1
+)  # the measured days change slowly; the query is not cheap
 OBSERVE_MIN_LEAD = timedelta(hours=2)  # plans younger than this say too little to judge
 OBSERVE_MAX_LEAD = timedelta(hours=4)
 SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
@@ -173,6 +178,7 @@ class PlanService:
         self._lock = threading.RLock()
         self._event_log = event_log
         self._observer = DriftObserver()
+        self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
@@ -625,6 +631,31 @@ class PlanService:
             logger.warning("could not read the room history", exc_info=True)
             return room_c
         return room_level_c(room_c, recent)
+
+    def tuning(self) -> list[Recommendation]:
+        """Advice on the settings the plan never changes by itself (nothing is applied)."""
+        now = self._now()
+        if self._outcome_loader is None:
+            days: list[DayOutcome] = []
+        else:
+            cached = self._tuning_days
+            if cached is None or now - cached[0] > TUNING_CACHE:
+                today = datetime.combine(now.date(), datetime.min.time(), UTC)
+                loaded = self._outcome_loader(
+                    today - timedelta(days=TUNING_DAYS), today
+                )
+                self._tuning_days = (now, loaded)
+            days = self._tuning_days[1] if self._tuning_days else []
+        latest = self.latest()
+        return build_recommendations(
+            self._settings,
+            days,
+            [] if latest is None else latest.plan.hours,
+            self._stage,
+            self._night,
+            self._rules,
+            now.date(),
+        )
 
     @property
     def timezone(self) -> str:
