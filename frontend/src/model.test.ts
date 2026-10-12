@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, savingsSummary, tabHref, type PlanResponse } from './model'
+import { planRows, dayRows, energyRows, savingsSummary, tabHref, type PlanResponse } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -143,5 +143,14 @@ describe('dayRows', () => {
     expect(rows[0]).toMatchObject({ measuredRts: 18, plannedRts: null, measuredRoom: 20, baselineRts: null })
     expect(rows[2]).toMatchObject({ measuredRts: null, plannedRts: 20, plannedRoom: 22, baselineRts: 18 })
     expect(rows.map((r) => r.current)).toEqual([false, false, true])
+  })
+})
+
+describe('energyRows', () => {
+  it('adds up the cost hour by hour for the plan and for the flat setpoint', () => {
+    const plan = { plan: { hours: [hour(10, 17, 20, 1), hour(11, 16, 20, 2)], baseline_hours: [hour(10, 18, 20, 1), hour(11, 18, 20, 2)] } } as unknown as PlanResponse
+    const rows = energyRows(plan)
+    expect(rows.map((r) => r.cumulativeCost)).toEqual([2, 6])
+    expect(rows[1]).toMatchObject({ flow: 36, baselineFlow: 36 })
   })
 })

@@ -41,6 +41,7 @@ from core.theria.plan.prices import (
     parse_nordpool_attributes,
 )
 from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, PumpParams, flow_target
+from core.theria.plan.room_level import room_level_c
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomParams,
@@ -566,6 +567,18 @@ class PlanService:
     def latest(self) -> PlanSnapshot | None:
         return self._snapshots[-1] if self._snapshots else None
 
+    def _room_level(self, now: datetime, room_c: float) -> float:
+        """The room temperature the plan starts from (see room_level)."""
+        if self._actuals_loader is None:
+            return room_c
+        end = _floor_hour(now.astimezone(UTC))
+        try:
+            recent = self._actuals_loader(end - timedelta(hours=24), end).room_c
+        except TheriaError:
+            logger.warning("could not read the room history", exc_info=True)
+            return room_c
+        return room_level_c(room_c, recent)
+
     @property
     def timezone(self) -> str:
         return self._settings.timezone
@@ -681,9 +694,10 @@ class PlanService:
         previous_rts = float(
             self._ha.get_climate_state(s.room_setpoint_entity)["target_temperature"]
         )
+        level_c = self._room_level(now, room_c)
         initial = RoomState(
-            room_c=room_c,
-            slab_c=room_c + SLAB_INIT_FRACTION * (flow_now - room_c),
+            room_c=level_c,
+            slab_c=level_c + SLAB_INIT_FRACTION * (flow_now - level_c),
             sun_filtered_wm2=sun_filtered_now,
         )
 

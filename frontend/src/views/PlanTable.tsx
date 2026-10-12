@@ -1,6 +1,58 @@
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fetchPlan } from '../api'
-import { describeReason } from '../model'
+import { describeReason, energyRows, type PlanResponse } from '../model'
 import { useLoaded } from '../ui'
+
+function PlanCharts({ plan }: { plan: PlanResponse }) {
+  const rows = energyRows(plan)
+  return (
+    <>
+      <div className="panel">
+        <h2>Flow temperature</h2>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="label" interval={2} />
+            <YAxis unit="°" domain={[(min: number) => Math.floor(min) - 2, (max: number) => Math.ceil(max) + 2]} />
+            <Tooltip />
+            <Legend />
+            <ReferenceLine y={45} stroke="#b42318" strokeDasharray="4 3" label="max 45" />
+            <Line type="stepAfter" dataKey="flow" name="Plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
+            <Line type="stepAfter" dataKey="baselineFlow" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="panel">
+        <h2>Energy per hour</h2>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="label" interval={2} />
+            <YAxis unit=" kWh" />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="baselineEnergy" name="Flat setpoint" fill="#cbd2d9" />
+            <Bar dataKey="energy" name="Plan" fill="#0b6bcb" />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="panel">
+        <h2>Electricity cost, running total</h2>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="label" interval={2} />
+            <YAxis unit=" kr" />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="cumulativeBaselineCost" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
+            <Line type="monotone" dataKey="cumulativeCost" name="Plan" stroke="#067647" strokeWidth={2} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </>
+  )
+}
 
 export function PlanTable() {
   const { data: plan, error } = useLoaded(fetchPlan)
@@ -8,6 +60,8 @@ export function PlanTable() {
   if (!plan) return <p>No plan computed yet.</p>
   const { hours, baseline_hours } = plan.plan
   return (
+    <>
+    <PlanCharts plan={plan} />
     <div className="panel">
       <h2>Hour by hour</h2>
       <p className="note">
@@ -40,5 +94,6 @@ export function PlanTable() {
         </tbody>
       </table>
     </div>
+    </>
   )
 }

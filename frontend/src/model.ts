@@ -327,3 +327,38 @@ export function dayRows(view: DayView): DayRow[] {
     current: h.start === view.now,
   }))
 }
+
+export interface EnergyRow {
+  label: string
+  flow: number
+  baselineFlow: number
+  energy: number
+  baselineEnergy: number
+  cost: number
+  baselineCost: number
+  cumulativeCost: number
+  cumulativeBaselineCost: number
+}
+
+/** Per hour of the plan: flow temperature, energy and electricity cost, with the running totals. */
+export function energyRows(response: PlanResponse): EnergyRow[] {
+  const { hours, baseline_hours } = response.plan
+  let total = 0
+  let baselineTotal = 0
+  return hours.map((h, i) => {
+    const b = baseline_hours[i]
+    total += h.energy_cost_sek
+    baselineTotal += b.energy_cost_sek
+    return {
+      label: clockLabel(h.start),
+      flow: h.flow_target_c,
+      baselineFlow: b.flow_target_c,
+      energy: h.energy_kwh,
+      baselineEnergy: b.energy_kwh,
+      cost: h.energy_cost_sek,
+      baselineCost: b.energy_cost_sek,
+      cumulativeCost: total,
+      cumulativeBaselineCost: baselineTotal,
+    }
+  })
+}
