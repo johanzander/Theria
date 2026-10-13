@@ -26,7 +26,7 @@ from core.theria.plan.stages import (
 logger = logging.getLogger(__name__)
 
 MAX_PLAN_AGE = timedelta(minutes=45)
-MANUAL_PAUSE = timedelta(hours=6)
+MANUAL_PAUSE = timedelta(hours=1)
 RAISE_INTERVAL = timedelta(minutes=55)  # one raise step per hour
 MANUAL_CHANGE_C = (
     0.25  # the setpoint is this far from what was written: someone changed it

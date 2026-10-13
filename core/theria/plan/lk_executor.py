@@ -18,7 +18,7 @@ from core.theria.plan.settings import PlanSettings
 
 logger = logging.getLogger(__name__)
 
-MANUAL_PAUSE = timedelta(hours=6)
+MANUAL_PAUSE = timedelta(hours=1)
 MANUAL_CHANGE_C = 0.25
 CONFIRM_TOLERANCE_C = 0.25
 

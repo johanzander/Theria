@@ -132,16 +132,16 @@ def test_without_a_fresh_plan_it_goes_back_to_the_base(make):
     assert ha2.writes == [18.0]
 
 
-def test_a_manual_change_is_respected_for_six_hours(make):
+def test_a_manual_change_is_respected_for_an_hour(make):
     executor, ha, current = make(18.0)
     executor.execute(snapshot([17.0]), STAGE1)
     ha.setpoint = 20.0  # Johan turned it up by hand
     current[0] += timedelta(minutes=15)
     result = executor.execute(snapshot([17.0], current[0]), STAGE1)
     assert result.action == "paused" and ha.writes == [17.0]
-    current[0] += timedelta(hours=3)
+    current[0] += timedelta(minutes=30)
     assert executor.execute(snapshot([17.0], current[0]), STAGE1).action == "paused"
-    current[0] += timedelta(hours=4)
+    current[0] += timedelta(minutes=30)
     ha.setpoint = 20.0
     assert executor.execute(snapshot([17.0], current[0]), STAGE1).action == "wrote"
 
