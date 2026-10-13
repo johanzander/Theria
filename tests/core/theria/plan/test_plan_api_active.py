@@ -51,14 +51,14 @@ def test_leaving_active_through_the_api_restores_the_base(client):
     assert ha.setpoint == 18.0
 
 
-def test_execution_reports_stage_and_last_write(client):
+def test_execution_reports_the_last_write(client):
     http, service, _ = client
     http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
     service.run_once()
     service._control()
     body = http.get("/api/plan/execution").json()
     assert body["mode"] == "active"
-    assert body["stage"]["max_deviation_c"] == 1.0
+    assert "stage" not in body
     assert body["last_execution"]["action"] in ("wrote", "kept")
 
 

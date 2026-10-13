@@ -6,7 +6,6 @@ says and, when the data speaks clearly, a value to consider. Johan decides.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
 from typing import Any, Protocol
 
 import numpy as np
@@ -14,7 +13,6 @@ import numpy as np
 from core.theria.plan.night_drift import NightDrift
 from core.theria.plan.outcomes import DayOutcome
 from core.theria.plan.settings import PlanSettings
-from core.theria.plan.stages import STAGES, StageRules, StageState
 
 MIN_DAYS = 7  # days with enough data before the room's lows are trusted
 FLOOR_SLACK_C = 1.5  # a floor the room stays this far above is not doing anything
@@ -108,45 +106,6 @@ def _share_rec(
     )
 
 
-def _stage(
-    state: StageState, days: list[DayOutcome], rules: StageRules, today: date
-) -> Recommendation:
-    title = "Stage (how far the plan may move the setpoint)"
-    current = f"± {STAGES[state.index].max_deviation_c} °C"
-    if state.index + 1 >= len(STAGES):
-        return Recommendation(
-            "stage",
-            title,
-            current,
-            "widest stage",
-            None,
-            "There is no wider stage.",
-            "ok",
-        )
-    judged = [
-        d
-        for d in days
-        if state.stage_started_on <= d.day < today and d.coverage >= rules.min_coverage
-    ]
-    missing = max(0, rules.min_days - len(judged))
-    saving = float(sum(d.saving_sek for d in judged))
-    observed = (
-        f"{len(judged)} judged days, saving {saving:.0f} SEK; {missing} more days needed"
-        if missing
-        else f"{len(judged)} judged days, saving {saving:.0f} SEK"
-    )
-    return Recommendation(
-        "stage",
-        title,
-        current,
-        observed,
-        None,
-        f"It widens by itself after {rules.min_days} days without trouble and a saving of at "
-        f"least {rules.min_saving_sek_per_day} SEK per day.",
-        "ok",
-    )
-
-
 def _night_model(night: NightDrift | None) -> Recommendation:
     title = "Night cooling model"
     if night is None:
@@ -186,15 +145,9 @@ def build_recommendations(
     settings: PlanSettings,
     days: list[DayOutcome],
     plan_hours: Sequence[PlannedHour],
-    stage: StageState,
     night: NightDrift | None,
-    rules: StageRules,
-    today: date,
 ) -> list[Recommendation]:
-    stage_note = (
-        "The stage limits how far from the base the setpoint may go, so widening the stage "
-        "comes before changing this limit."
-    )
+    heater_note = "A wider range lets the plan pre-heat more; watch the electric heater when raising it."
     return [
         _floor(settings, days),
         _share_rec(
@@ -214,7 +167,7 @@ def build_recommendations(
             plan_hours,
             "rts_min",
             LIMIT_SHARE,
-            stage_note,
+            heater_note,
         ),
         _share_rec(
             "rts_max_c",
@@ -223,8 +176,7 @@ def build_recommendations(
             plan_hours,
             "rts_max",
             LIMIT_SHARE,
-            stage_note,
+            heater_note,
         ),
-        _stage(stage, days, rules, today),
         _night_model(night),
     ]

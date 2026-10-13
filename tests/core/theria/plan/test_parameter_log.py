@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -10,7 +10,7 @@ from core.theria.plan.night_drift import NightDrift
 from core.theria.plan.parameter_log import ParameterLog
 
 from .test_service import FakeCalibrator, fitted_models
-from .test_service_active import good_days, make
+from .test_service_active import make
 from .test_service_morning import IN_THE_NIGHT, cold_mornings
 
 NOW = datetime(2026, 10, 12, 3, 0, tzinfo=UTC)
@@ -78,7 +78,6 @@ def test_every_refit_records_all_the_learned_parameters(settings, tmp_path):
         "night_slope_c_per_c",
         "night_nights",
         "morning_margin_c",
-        "stage",
     ):
         assert key in params, key
     assert params["night_slope_c_per_c"] == 0.06
@@ -98,21 +97,6 @@ def test_a_change_of_the_night_margin_is_recorded_with_the_reason(settings, tmp_
         "morning_margin_c"
     ] == pytest.approx(0.25)
     assert "night margin" in records[0]["note"]
-
-
-def test_a_stage_change_is_recorded(settings, tmp_path):
-    from core.theria.plan.stages import StageState
-    from core.theria.plan.state_store import PlanState, PlanStateStore
-
-    store = PlanStateStore(str(tmp_path / "state.json"))
-    store.save(
-        PlanState(mode="active", models=None, stage=StageState(0, date(2026, 10, 6)))
-    )
-    service, log = service_with_log(
-        settings, tmp_path, outcomes=good_days(date(2026, 10, 6)), state_store=store
-    )
-    service._control()
-    assert any(x["kind"] == "stage" and x["params"]["stage"] == 2 for x in log.read())
 
 
 def test_nothing_breaks_without_a_log(settings):

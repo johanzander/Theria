@@ -183,3 +183,13 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [x] Found by the tab: the outcome `coverage` counted hot-water hours as missing data (0.13-0.42 on real days), so the stage could never widen (it needs coverage >= 0.5). It is now the share of the non-hot-water hours with complete data.
 - [ ] Check in a few days that the observer does not make the plan flutter (the parameter history records `observer_drift_c_per_h` at every refit).
 - [x] Read-back waits for the pump: Husdata confirms a setpoint 3-6 s after the MQTT write ("HP Set confirmed!"), so the immediate read-back saw the old value, reported "failed" and the unchanged `_last_written` then looked like a hand change (6 h pause). `confirm.read_until` reads up to 10 times, 2 s apart, for the pump and the LK thermostats.
+
+## Stages removed (2026-10-13)
+
+- [x] The stage (trust region, +/-1 C then +/-2 C) and its daily judgement are gone: Johan prefers to watch the
+  result. The executor keeps the setpoint inside `rts_min_c`..`rts_max_c`, raises at most `max_rts_step_per_hour_c` per
+  55 minutes and reads every write back. Trouble (electric heater running while the setpoint is raised) is logged and
+  notified, nothing is restored. The daily review still learns the morning margin and sends yesterday's summary.
+- [x] A hand change pauses the pump and LK writes for one hour; stopping and starting active mode ends the pause.
+- [ ] Watch the electric heater (`add_heat_status`, aux energy) now that nothing narrows the plan after trouble; if it
+  runs when the plan raises, lower `rts_max_c` or `boost_flow_limit_c` (see the Tuning tab).

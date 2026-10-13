@@ -13,7 +13,6 @@ from core.theria.plan.night_drift import NightDrift, NightObservation
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.room_model import RoomParams
 from core.theria.plan.settings import SUPPORTED_MODES
-from core.theria.plan.stages import StageState
 from core.theria.plan.warmup import WarmupFit
 
 
@@ -21,28 +20,12 @@ from core.theria.plan.warmup import WarmupFit
 class PlanState:
     mode: str | None
     models: FittedModels | None
-    stage: StageState | None = None
-    stage_checked_on: date | None = None
+    reviewed_on: date | None = None  # the day the last days were last reviewed
     executor: dict[str, Any] | None = None  # what the executors remember
     lk: dict[str, Any] | None = None
     morning_margin_c: float = 0.0  # learned: how much warmer the night is kept
     margin_changed_on: date | None = None
-    last_stage_note: str | None = None  # why the stage was held, widened or narrowed
     last_trouble: str | None = None
-
-
-def _stage_to_dict(s: StageState) -> dict[str, Any]:
-    return {
-        "index": s.index,
-        "stage_started_on": s.stage_started_on.isoformat(),
-    }
-
-
-def _stage_from_dict(d: dict[str, Any]) -> StageState:
-    return StageState(
-        index=int(d["index"]),
-        stage_started_on=date.fromisoformat(d["stage_started_on"]),
-    )
 
 
 def _response_to_dict(r: DailyRoomFit) -> dict[str, Any]:
@@ -197,14 +180,11 @@ class PlanStateStore:
             if mode is not None and mode not in SUPPORTED_MODES:
                 raise StateStoreError(f"unsupported mode {mode!r} in {self._path}")
             models = raw.get("models")
-            stage, checked = raw.get("stage"), raw.get("stage_checked_on")
+            reviewed = raw.get("reviewed_on")
             return PlanState(
                 mode=mode,
                 models=None if models is None else _models_from_dict(models),
-                stage=None if stage is None else _stage_from_dict(stage),
-                stage_checked_on=(
-                    None if checked is None else date.fromisoformat(checked)
-                ),
+                reviewed_on=None if reviewed is None else date.fromisoformat(reviewed),
                 executor=raw.get("executor"),
                 lk=raw.get("lk"),
                 morning_margin_c=float(raw.get("morning_margin_c", 0.0)),
@@ -213,7 +193,6 @@ class PlanStateStore:
                     if raw.get("margin_changed_on") is None
                     else date.fromisoformat(raw["margin_changed_on"])
                 ),
-                last_stage_note=raw.get("last_stage_note"),
                 last_trouble=raw.get("last_trouble"),
             )
         except (
@@ -230,7 +209,6 @@ class PlanStateStore:
         payload = {
             "mode": state.mode,
             "models": None if state.models is None else _models_to_dict(state.models),
-            "stage": None if state.stage is None else _stage_to_dict(state.stage),
             "executor": state.executor,
             "lk": state.lk,
             "morning_margin_c": state.morning_margin_c,
@@ -239,12 +217,9 @@ class PlanStateStore:
                 if state.margin_changed_on is None
                 else state.margin_changed_on.isoformat()
             ),
-            "stage_checked_on": (
-                None
-                if state.stage_checked_on is None
-                else state.stage_checked_on.isoformat()
+            "reviewed_on": (
+                None if state.reviewed_on is None else state.reviewed_on.isoformat()
             ),
-            "last_stage_note": state.last_stage_note,
             "last_trouble": state.last_trouble,
         }
         temporary = f"{self._path}.tmp"

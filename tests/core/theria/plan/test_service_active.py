@@ -8,11 +8,10 @@ from core.theria.exceptions import ConfigurationError
 from core.theria.plan.executor import PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.service import PlanService
-from core.theria.plan.stages import StageState
 from core.theria.plan.state_store import PlanState, PlanStateStore
 
+from .days import day
 from .test_service import FakeHA, FakeWeather, price_attributes
-from .test_stages import day
 
 EVENING = datetime(
     2026, 10, 12, 16, 20, tzinfo=UTC
@@ -136,14 +135,12 @@ def test_active_mode_needs_explicit_confirmation(settings):
     assert service.mode == "active"
 
 
-def test_an_active_cycle_writes_the_plan_hour_within_the_stage(settings):
+def test_an_active_cycle_writes_the_plan_hour_within_the_setpoint_range(settings):
     service, ha, _, _, _ = make(settings)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     assert len(ha.writes) == 1
-    assert (
-        17.0 <= ha.writes[0] < 18.0
-    )  # the first stage allows 1 C below the base; lower in the peak
+    assert settings.rts_min_c <= ha.writes[0] < 18.0  # lower in the peak
 
 
 def test_leaving_active_mode_puts_the_base_setpoint_back(settings):
@@ -153,15 +150,13 @@ def test_leaving_active_mode_puts_the_base_setpoint_back(settings):
     assert ha.writes == [18.0]
 
 
-def test_trouble_restores_the_base_shrinks_the_stage_and_notifies(settings):
-    service, ha, notifier, _, _ = make(
+def test_trouble_is_reported_and_notified_and_the_plan_keeps_running(settings):
+    service, _, notifier, _, _ = make(
         settings, setpoint=17.0, trouble="electric heater"
     )
     service.set_mode("active", confirm=True)
     run_cycle(service)
-    assert ha.writes[-1] == 18.0
-    status = service.execution_status()
-    assert status["stage"]["index"] == 0
+    assert "electric heater" in service.execution_status()["last_trouble"]
     assert notifier.created and "electric heater" in notifier.created[0][1]
 
 
@@ -182,50 +177,28 @@ def good_days(first, n=5):
     return [replace(day(i), day=first + timedelta(days=i)) for i in range(n)]
 
 
-def test_the_stage_is_judged_once_a_day_and_the_result_is_persisted(settings, tmp_path):
+def test_the_days_are_reviewed_once_a_day_and_the_result_is_persisted(
+    settings, tmp_path
+):
     store = PlanStateStore(str(tmp_path / "state.json"))
     store.save(
         PlanState(
             mode="active",
             models=None,
-            stage=StageState(0, date(2026, 10, 6)),
-            stage_checked_on=None,
+            reviewed_on=None,
         )
     )
     service, _, notifier, calls, _ = make(
         settings,
         state_store=store,
-        outcomes=good_days(date(2026, 10, 6)),
+        outcomes=good_days(date(2026, 10, 6), n=6),
     )
     run_cycle(service)
     run_cycle(service)
     assert len(calls) == 1  # once per day
-    assert service.execution_status()["stage"]["index"] == 1
     saved = PlanStateStore(str(tmp_path / "state.json")).load()
-    assert saved.stage.index == 1 and saved.stage_checked_on == date(2026, 10, 12)
-    assert any(
-        "widen" in message or "bredd" in message.lower()
-        for _, message in notifier.created
-    )
-
-
-def test_the_reason_for_the_stage_decision_survives_a_restart(settings, tmp_path):
-    path = str(tmp_path / "state.json")
-    store = PlanStateStore(path)
-    store.save(
-        PlanState(
-            mode="active",
-            models=None,
-            stage=StageState(0, date(2026, 10, 6)),
-            stage_checked_on=None,
-        )
-    )
-    first, *_ = make(settings, state_store=store, outcomes=good_days(date(2026, 10, 6)))
-    run_cycle(first)
-    note = first.execution_status()["last_stage_note"]
-    assert note
-    second, *_ = make(settings, state_store=PlanStateStore(path))
-    assert second.execution_status()["last_stage_note"] == note
+    assert saved.reviewed_on == date(2026, 10, 12)
+    assert any("saving" in message for _, message in notifier.created)
 
 
 def test_the_last_trouble_survives_a_restart(settings, tmp_path):
@@ -242,10 +215,27 @@ def test_the_last_trouble_survives_a_restart(settings, tmp_path):
     assert "electric heater" in second.execution_status()["last_trouble"]
 
 
-def test_active_mode_and_the_stage_survive_a_restart(settings, tmp_path):
+def test_active_mode_survives_a_restart(settings, tmp_path):
     path = str(tmp_path / "state.json")
     first, *_ = make(settings, state_store=PlanStateStore(path))
     first.set_mode("active", confirm=True)
     second, *_ = make(settings, state_store=PlanStateStore(path))
     assert second.mode == "active"
-    assert second.execution_status()["stage"]["index"] == 0
+
+
+def test_stopping_and_starting_active_mode_ends_a_pause_after_a_hand_change(settings):
+    service, ha, _, _, current = make(settings)
+    service.set_mode("active", confirm=True)
+    run_cycle(service)
+    written = ha.setpoint
+    ha.setpoint = written + 1.0  # Johan turns it up by hand
+    current[0] += timedelta(minutes=15)
+    run_cycle(service)
+    assert service.execution_status()["last_execution"].action == "paused"
+
+    service.set_mode("shadow")
+    service.set_mode("active", confirm=True)
+    current[0] += timedelta(minutes=15)
+    run_cycle(service)
+
+    assert service.execution_status()["last_execution"].action != "paused"

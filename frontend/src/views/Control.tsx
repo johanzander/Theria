@@ -41,11 +41,6 @@ export function Control() {
       <div className="cards">
         <Card label="Mode" value={mode} tone={mode === 'active' ? 'bad' : undefined} />
         <Card
-          label="Stage"
-          value={execution.data ? `± ${execution.data.stage.max_deviation_c} °C` : '-'}
-          note={execution.data ? `raise at most ${execution.data.stage.max_rise_per_hour_c} °C per hour` : undefined}
-        />
-        <Card
           label="Pump setpoint"
           value={execution.data?.last_execution?.action ?? '-'}
           note={execution.data?.last_execution?.reason}
@@ -83,7 +78,7 @@ export function Control() {
         <h2>Mode</h2>
         <p className="note">
           Off: nothing is computed. Shadow: plans are computed and shown, nothing is written. Active: the plan's setpoint is written to the
-          heat pump (within the stage limits) and the LK thermostats are raised while pre-heating. Going back to shadow or off puts the base
+          heat pump and the LK thermostats are raised while pre-heating. Going back to shadow or off puts the base
           setpoints back.
         </p>
         <div className="buttons">
@@ -114,9 +109,8 @@ export function Control() {
 
       {execution.data && (
         <div className="panel">
-          <h2>Stage and safety</h2>
-          <p>Stage {execution.data.stage.index + 1}, started {execution.data.stage.started_on}.</p>
-          {execution.data.last_stage_note && <p className="note">Daily judgement: {execution.data.last_stage_note}</p>}
+          <h2>Trouble</h2>
+          <p className="note">A hand change of the setpoint pauses the plan for an hour; stopping and starting active mode clears the pause.</p>
           {execution.data.last_trouble && <p className="bad">Last trouble: {execution.data.last_trouble}</p>}
         </div>
       )}
@@ -138,7 +132,7 @@ export function Control() {
             </tbody>
           </table>
         ) : (
-          <p className="note">Nothing yet. The log lists setpoint writes, trouble, stage and mode changes since the add-on started.</p>
+          <p className="note">Nothing yet. The log lists setpoint writes, trouble and mode changes since the add-on started.</p>
         )}
       </div>
     </>

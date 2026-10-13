@@ -222,7 +222,7 @@ history, so once the plan runs it also learns from the days it controlled. What 
 the plan is allowed, and nothing compares what the plan predicted with what happened to decide how far to go.
 Plan 4 adds a measured, stepwise widening ("trust region"):
 
-1. **Stages.** Shadow (now) -> active within +/- 1 C of the base setpoint (rise at most 0.5 C per hour) -> +/- 2 C (rise at
+1. **Stages (dropped 2026-10-13: the plan now acts inside the full setpoint range from day one and the result is watched; items 1, 3 and 4 below no longer apply).** Shadow (now) -> active within +/- 1 C of the base setpoint (rise at most 0.5 C per hour) -> +/- 2 C (rise at
    most 1 C per hour, the manual range) -> only then more. The stage is stored in the state file and changed by the executor, not by hand.
 2. **Daily measurements, per day of active control:** realised heating electricity (compressor and aux counters) against the
    counterfactual baseline (the energy model at the base setpoint for the actual weather); aux energy and hours; the room's minimum and mean against target; the scoreboard errors; the room's measured change against the response

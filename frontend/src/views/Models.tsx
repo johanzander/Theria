@@ -22,7 +22,7 @@ function Learning({ history }: { history: ParameterHistory }) {
     <div className="panel">
       <h2>What it has learned over time</h2>
       <p className="note">
-        One point per refit (nightly) and per change of the night margin or the stage. {history.history.length} records so far.
+        One point per refit (nightly) and per change of the night margin. {history.history.length} records so far.
       </p>
       <div className="mini-charts">
         {TRACKED.map(({ key, title }) => {

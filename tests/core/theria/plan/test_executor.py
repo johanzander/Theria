@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -6,11 +6,8 @@ from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.planner import HourPlan, Plan
 from core.theria.plan.room_model import RoomState
 from core.theria.plan.snapshot import PlanSnapshot
-from core.theria.plan.stages import StageState
 
 NOW = datetime(2026, 11, 3, 12, 20, tzinfo=UTC)
-STAGE1 = StageState(index=0, stage_started_on=date(2026, 11, 1))
-STAGE2 = StageState(index=1, stage_started_on=date(2026, 11, 1))
 
 
 def snapshot(rts_by_hour, computed_at=NOW):
@@ -88,75 +85,75 @@ def make(settings):
 
 def test_it_writes_the_setpoint_of_the_current_plan_hour(make):
     executor, ha, _ = make(18.0)
-    result = executor.execute(snapshot([17.5, 18.0]), STAGE1)
+    result = executor.execute(snapshot([17.5, 18.0]))
     assert ha.writes == [17.5] and result.action == "wrote" and result.written_c == 17.5
 
 
-def test_lowering_is_not_rate_limited_but_is_clamped_to_the_stage(make):
+def test_lowering_is_not_rate_limited_but_stays_in_the_setpoint_range(make):
     executor, ha, _ = make(18.0)
-    executor.execute(snapshot([15.0]), STAGE1)
-    assert ha.writes == [17.0]  # stage 1: at most 1 C from the base 18
+    executor.execute(snapshot([12.0]))
+    assert ha.writes == [executor._s.rts_min_c]
 
 
-def test_a_wider_stage_allows_the_old_manual_range(make):
+def test_the_plan_may_move_the_setpoint_as_far_as_the_range_allows(make):
     executor, ha, _ = make(18.0)
-    executor.execute(snapshot([16.0]), STAGE2)
+    executor.execute(snapshot([16.0]))
     assert ha.writes == [16.0]
 
 
-def test_raising_is_limited_per_hour_by_the_stage(make):
+def test_raising_is_limited_per_hour(make):
     executor, ha, current = make(18.0)
-    executor.execute(snapshot([20.0]), STAGE1)
-    assert ha.writes == [18.5]  # stage 1 may raise 0.5 C per hour
+    executor.execute(snapshot([20.0]))
+    assert ha.writes == [19.0]  # at most max_rts_step_per_hour_c (1 C) per hour
     current[0] += timedelta(minutes=15)
-    assert executor.execute(snapshot([20.0], current[0]), STAGE1).action == "kept"
+    assert executor.execute(snapshot([20.0], current[0])).action == "kept"
     current[0] += timedelta(minutes=50)
-    executor.execute(snapshot([20.0], current[0]), STAGE1)
-    assert ha.writes == [18.5, 19.0]
+    executor.execute(snapshot([20.0], current[0]))
+    assert ha.writes == [19.0, 20.0]
 
 
 def test_nothing_is_written_when_the_setpoint_already_is_right(make):
     executor, ha, _ = make(17.5)
-    assert executor.execute(snapshot([17.5]), STAGE1).action == "kept"
+    assert executor.execute(snapshot([17.5])).action == "kept"
     assert ha.writes == []
 
 
 def test_without_a_fresh_plan_it_goes_back_to_the_base(make):
     executor, ha, _ = make(17.0)
-    result = executor.execute(snapshot([16.0], NOW - timedelta(hours=2)), STAGE1)
+    result = executor.execute(snapshot([16.0], NOW - timedelta(hours=2)))
     assert (
         ha.writes == [18.0] and result.action == "fallback" and "plan" in result.reason
     )
     executor2, ha2, _ = make(17.0)
-    assert executor2.execute(None, STAGE1).action == "fallback"
+    assert executor2.execute(None).action == "fallback"
     assert ha2.writes == [18.0]
 
 
 def test_a_manual_change_is_respected_for_an_hour(make):
     executor, ha, current = make(18.0)
-    executor.execute(snapshot([17.0]), STAGE1)
+    executor.execute(snapshot([17.0]))
     ha.setpoint = 20.0  # Johan turned it up by hand
     current[0] += timedelta(minutes=15)
-    result = executor.execute(snapshot([17.0], current[0]), STAGE1)
+    result = executor.execute(snapshot([17.0], current[0]))
     assert result.action == "paused" and ha.writes == [17.0]
     current[0] += timedelta(minutes=30)
-    assert executor.execute(snapshot([17.0], current[0]), STAGE1).action == "paused"
+    assert executor.execute(snapshot([17.0], current[0])).action == "paused"
     current[0] += timedelta(minutes=30)
     ha.setpoint = 20.0
-    assert executor.execute(snapshot([17.0], current[0]), STAGE1).action == "wrote"
+    assert executor.execute(snapshot([17.0], current[0])).action == "wrote"
 
 
 def test_a_write_that_is_not_confirmed_by_the_read_back_is_reported(make):
     executor, ha, _ = make(18.0)
     ha.ignore_write = True
-    result = executor.execute(snapshot([17.0]), STAGE1)
+    result = executor.execute(snapshot([17.0]))
     assert result.action == "failed" and "read back" in result.reason
 
 
 def test_a_failing_home_assistant_does_not_raise(make):
     executor, ha, _ = make(18.0)
     ha.fail_write = True
-    result = executor.execute(snapshot([17.0]), STAGE1)
+    result = executor.execute(snapshot([17.0]))
     assert result.action == "failed" and "HA is down" in result.reason
 
 
@@ -203,15 +200,15 @@ def test_trouble_is_reported_once_and_the_count_starts_over(settings):
 def test_a_pump_that_takes_a_few_reads_to_confirm_is_not_a_failure(make):
     executor, ha, _ = make(18.0)
     ha.lag = 4  # the first four reads still show the old setpoint
-    result = executor.execute(snapshot([17.0]), STAGE1)
+    result = executor.execute(snapshot([17.0]))
     assert result.action == "wrote" and ha.setpoint == 17.0
     assert (
-        executor.execute(snapshot([17.0]), STAGE1).action == "kept"
+        executor.execute(snapshot([17.0])).action == "kept"
     )  # not seen as a hand change
 
 
 def test_a_pump_that_never_confirms_is_a_failure_after_the_wait(make):
     executor, ha, _ = make(18.0)
     ha.lag = 1000
-    result = executor.execute(snapshot([17.0]), STAGE1)
+    result = executor.execute(snapshot([17.0]))
     assert result.action == "failed" and "read back 18.0" in result.reason

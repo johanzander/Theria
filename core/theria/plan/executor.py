@@ -1,8 +1,8 @@
 """Writing the plan's setpoint to the heat pump, with guards, and watching for trouble.
 
 The only thing written is the room setpoint (`climate.room_temp_setpoint`). Every write is
-clamped to what the current stage allows, limited when it raises the setpoint, read back, and
-skipped when someone has changed the setpoint by hand. Without a fresh plan or when asked to
+kept inside the setpoint range, limited when it raises the setpoint, read back, and skipped
+(for an hour) when someone has changed the setpoint by hand. Without a fresh plan or when asked to
 restore, the base setpoint is written.
 """
 
@@ -17,11 +17,6 @@ from typing import Any, Protocol
 from core.theria.plan.confirm import read_until
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.snapshot import PlanSnapshot
-from core.theria.plan.stages import (
-    StageState,
-    allowed_deviation_c,
-    allowed_rise_per_hour_c,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +85,7 @@ class PlanExecutor:
         self._last_raise_at = _moment(state["last_raise_at"])
         self._pause_until = _moment(state["pause_until"])
 
-    def execute(
-        self, snapshot: PlanSnapshot | None, stage: StageState
-    ) -> ExecutionResult:
+    def execute(self, snapshot: PlanSnapshot | None) -> ExecutionResult:
         now = self._now()
         try:
             current = float(
@@ -127,7 +120,6 @@ class PlanExecutor:
             )
         self._pause_until = None
 
-        deviation = allowed_deviation_c(stage)
         if snapshot is None or now - snapshot.computed_at > MAX_PLAN_AGE:
             return self._write(
                 self._s.rts_base_c, current, "fallback", "no fresh plan", now, False
@@ -140,9 +132,7 @@ class PlanExecutor:
             ),
             snapshot.plan.hours[0],
         )
-        base = self._s.rts_base_c
-        desired = min(max(hour.rts_c, base - deviation), base + deviation)
-        desired = min(max(desired, self._s.rts_min_c), self._s.rts_max_c)
+        desired = min(max(hour.rts_c, self._s.rts_min_c), self._s.rts_max_c)
         desired = round(desired / self._s.rts_step_c) * self._s.rts_step_c
         if desired > current + 1e-9:
             if (
@@ -154,8 +144,7 @@ class PlanExecutor:
                         "kept", desired, None, "waiting to raise again", now
                     )
                 )
-            rise = allowed_rise_per_hour_c(stage)
-            limit = current + rise
+            limit = current + self._s.max_rts_step_per_hour_c
             if desired > limit:
                 # round down to the step: rounding to the nearest could exceed the limit
                 desired = (
@@ -247,7 +236,7 @@ class SafetyMonitor:
         self._aux = 0
 
     def check(self, raised: bool = False) -> str | None:
-        """Trouble worth stepping back for, or None. A reported trouble starts the counting over."""
+        """Trouble worth reporting, or None. A reported trouble starts the counting over."""
         aux = self._number(self._s.aux_status_entity)
         if raised and aux is not None and aux > 0.5:
             self._aux += 1

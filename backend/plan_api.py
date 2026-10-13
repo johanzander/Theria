@@ -138,7 +138,7 @@ async def refit_models(svc: Annotated[PlanService, Depends(get_service)]) -> Any
 
 @router.get("/plan/execution")
 async def get_execution(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
-    """Active-mode state: current stage, last write, last trouble."""
+    """Active-mode state: last write, last trouble."""
     return jsonable_encoder(svc.execution_status())
 
 
@@ -166,7 +166,7 @@ async def get_preflight(svc: Annotated[PlanService, Depends(get_service)]) -> An
 
 @router.get("/plan/log")
 async def get_action_log(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
-    """Setpoint writes, trouble, stage and mode changes, newest last."""
+    """Setpoint writes, trouble and mode changes, newest last."""
     return jsonable_encoder(svc.action_log())
 
 
@@ -175,7 +175,7 @@ async def get_parameter_history(
     svc: Annotated[PlanService, Depends(get_service)],
     limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ) -> Any:
-    """What the plan has learned over time: every refit and every margin or stage change."""
+    """What the plan has learned over time: every refit and every margin change."""
     return jsonable_encoder(
         {"current": svc.parameters(), "history": svc.parameter_history(limit)}
     )

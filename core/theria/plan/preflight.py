@@ -6,7 +6,6 @@ from typing import Any, Protocol
 
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.snapshot import PlanSnapshot
-from core.theria.plan.stages import StageState
 
 MAX_PLAN_AGE = timedelta(minutes=30)
 READ_ERRORS = (RuntimeError, ValueError, KeyError, TypeError)
@@ -31,7 +30,6 @@ def preflight_checks(
     snapshot: PlanSnapshot | None,
     pump_fitted: bool,
     room_fitted: bool,
-    stage: StageState,
     now: datetime,
 ) -> list[Check]:
     s = settings
@@ -42,7 +40,6 @@ def preflight_checks(
         _pump_setpoint(ha, s),
         _thermostats(ha, s),
         _outdoor(ha, s),
-        _stage(stage),
     ]
     if snapshot is not None and snapshot.plan.floor_violation_hours > 0:
         checks.append(
@@ -123,7 +120,3 @@ def _outdoor(ha: StateClient, s: PlanSettings) -> Check:
             "outdoor sensor", "fail", f"cannot read the outdoor temperature: {e}"
         )
     return Check("outdoor sensor", "ok", f"{value} C")
-
-
-def _stage(stage: StageState) -> Check:
-    return Check("stage", "ok", f"stage {stage.index + 1}")

@@ -36,11 +36,6 @@ function Status({ plan, execution }: { plan: PlanResponse | null; execution: Exe
         />
       )}
       <Card
-        label="Stage"
-        value={execution ? `± ${execution.stage.max_deviation_c} °C` : '-'}
-        note={execution?.last_stage_note ?? undefined}
-      />
-      <Card
         label="Last write"
         value={execution?.last_execution?.action ?? '-'}
         note={execution?.last_trouble ?? execution?.last_execution?.reason}

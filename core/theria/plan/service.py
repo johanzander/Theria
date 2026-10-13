@@ -1,7 +1,7 @@
 """Plan service: reads live data, computes the plan and keeps the latest snapshots.
 
 Shadow mode never writes to Home Assistant. Active mode (explicitly confirmed) lets the executor
-write the room setpoint within the current stage and steps back at the first sign of trouble.
+write the room setpoint and reports trouble (the electric heater running while it is raised).
 """
 
 import asyncio
@@ -52,13 +52,6 @@ from core.theria.plan.room_model import (
 from core.theria.plan.scoring import LeadScore, ScoreBoard
 from core.theria.plan.settings import SUPPORTED_MODES, PlanSettings
 from core.theria.plan.snapshot import ComfortOutlook, PlanSnapshot
-from core.theria.plan.stages import (
-    STAGES,
-    StageRules,
-    StageState,
-    evaluate_stage,
-    shrink_for_trouble,
-)
 from core.theria.plan.state_store import PlanState, PlanStateStore
 from core.theria.plan.trim import trim_night, trim_room, trim_warmup
 from core.theria.plan.tuning import Recommendation, build_recommendations
@@ -93,7 +86,6 @@ class Notifier(Protocol):
 OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
 ActualsLoader = Callable[[datetime, datetime], OutcomeInputs]
 TROUBLE_NOTIFICATION = "theria_plan_trouble"
-STAGE_NOTIFICATION = "theria_plan_stage"
 DAILY_NOTIFICATION = "theria_plan_daily"
 MARGIN_NOTIFICATION = "theria_plan_margin"
 NIGHT_MODEL_NOTIFICATION = "theria_plan_night_model"
@@ -130,7 +122,6 @@ class PlanService:
         safety: Safety | None = None,
         notifier: Notifier | None = None,
         outcome_loader: OutcomeLoader | None = None,
-        stage_rules: StageRules | None = None,
         parameter_log: ParameterLog | None = None,
         event_log: EventLog | None = None,
         actuals_loader: ActualsLoader | None = None,
@@ -169,11 +160,8 @@ class PlanService:
         self._safety = safety
         self._notifier = notifier
         self._outcome_loader = outcome_loader
-        self._rules = stage_rules or StageRules()
-        self._stage = StageState(0, now().date())
-        self._stage_checked_on: date | None = None
+        self._reviewed_on: date | None = None
         self._last_trouble: str | None = None
-        self._last_stage_note: str | None = None
         # set_mode and the control cycle never interleave
         self._lock = threading.RLock()
         self._event_log = event_log
@@ -190,16 +178,9 @@ class PlanService:
             if state.models is not None:
                 self._apply_models(state.models)
                 self._next_refit_at = state.models.fitted_at + self._refit_interval
-            if state.stage is not None:
-                # an old state file may hold the end of a pause as the start date
-                self._stage = replace(
-                    state.stage,
-                    stage_started_on=min(state.stage.stage_started_on, now().date()),
-                )
             self._morning_margin_c = state.morning_margin_c
             self._margin_changed_on = state.margin_changed_on
-            self._stage_checked_on = state.stage_checked_on
-            self._last_stage_note = state.last_stage_note
+            self._reviewed_on = state.reviewed_on
             self._last_trouble = state.last_trouble
             if state.executor is not None and executor is not None:
                 executor.load_state(state.executor)
@@ -253,8 +234,7 @@ class PlanService:
                         "the mode stays active"
                     )
             if mode == "active" and not was_active:
-                self._stage = replace(self._stage, stage_started_on=self._now().date())
-                self._stage_checked_on = None
+                self._reviewed_on = None
             if mode != self._mode:
                 self._log("mode", mode, f"from {self._mode}")
             self._mode = mode
@@ -272,7 +252,6 @@ class PlanService:
             "energy_per_rts": pump.energy_per_rts,
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
-            "stage": self._stage.index + 1,
             "observer_drift_c_per_h": self._observer.at(self._now()),
         }
         fitted = self._models
@@ -413,7 +392,7 @@ class PlanService:
             self._event_log.append(event)
 
     def action_log(self) -> list[dict[str, Any]]:
-        """What the plan did (oldest first): setpoint writes, trouble, stage and mode changes."""
+        """What the plan did (oldest first): setpoint writes, trouble and mode changes."""
         return list(self._events)
 
     def preflight(self) -> list[Check]:
@@ -425,7 +404,6 @@ class PlanService:
             self.latest(),
             pump_fitted=fitted is not None,
             room_fitted=fitted is not None and fitted.room is not None,
-            stage=self._stage,
             now=self._now(),
         )
 
@@ -463,11 +441,9 @@ class PlanService:
                 PlanState(
                     mode=self._mode,
                     models=self._models,
-                    stage=self._stage,
-                    stage_checked_on=self._stage_checked_on,
+                    reviewed_on=self._reviewed_on,
                     morning_margin_c=self._morning_margin_c,
                     margin_changed_on=self._margin_changed_on,
-                    last_stage_note=self._last_stage_note,
                     last_trouble=self._last_trouble,
                     executor=(
                         None
@@ -504,25 +480,17 @@ class PlanService:
         }
 
     def execution_status(self) -> dict[str, Any]:
-        stage = STAGES[self._stage.index]
         result: ExecutionResult | None = (
             None if self._executor is None else self._executor.last_result
         )
         lk_result: LKResult | None = None if self._lk is None else self._lk.last_result
         return {
             "mode": self._mode,
-            "stage": {
-                "index": self._stage.index,
-                "started_on": self._stage.stage_started_on,
-                "max_deviation_c": stage.max_deviation_c,
-                "max_rise_per_hour_c": stage.max_rise_per_hour_c,
-            },
-            "stage_checked_on": self._stage_checked_on,
+            "reviewed_on": self._reviewed_on,
             "last_execution": result,
             "last_lk": lk_result,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
-            "last_stage_note": self._last_stage_note,
         }
 
     def _apply_models(self, models: FittedModels) -> None:
@@ -651,10 +619,7 @@ class PlanService:
             self._settings,
             days,
             [] if latest is None else latest.plan.hours,
-            self._stage,
             self._night,
-            self._rules,
-            now.date(),
         )
 
     @property
@@ -866,7 +831,7 @@ class PlanService:
                 logger.exception("plan control failed")
 
     def _control(self) -> None:
-        """Active mode: judge the stage once a day, watch for trouble, apply the plan."""
+        """Active mode: review the last days once a day, watch for trouble, apply the plan."""
         if self._executor is None:
             raise ConfigurationError("active mode without an executor")
         with self._lock:
@@ -874,9 +839,9 @@ class PlanService:
                 return
             today = self._now().date()
             try:
-                self._judge_stage(today)
+                self._review_days(today)
             except Exception:  # a failing history must not leave the pump uncontrolled
-                logger.exception("stage judgement failed; control continues")
+                logger.exception("daily review failed; control continues")
             if self._automation_conflict():
                 return
             current = self._current_setpoint()
@@ -885,20 +850,10 @@ class PlanService:
             raised = current is not None and current > base + 1e-9
             trouble = None if self._safety is None else self._safety.check(raised)
             if trouble is not None and deviated:
-                self._restore_all()
-                decision = shrink_for_trouble(
-                    self._stage, today, self._rules, f"during the day: {trouble}"
-                )
-                self._stage = decision.state
-                self._last_trouble = decision.reason
-                self._log("trouble", "stepped back", decision.reason)
-                self._record_parameters("stage", decision.reason)
-                self._save_state()
-                self._notify(
-                    TROUBLE_NOTIFICATION, "Theria: plan stopped", decision.reason
-                )
-                return
-            pump = self._executor.execute(self.latest(), self._stage)
+                self._last_trouble = trouble
+                self._log("trouble", "reported", trouble)
+                self._notify(TROUBLE_NOTIFICATION, "Theria: heater running", trouble)
+            pump = self._executor.execute(self.latest())
             if pump.action != "kept":
                 self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
             if self._lk is not None:
@@ -931,24 +886,16 @@ class PlanService:
         except (RuntimeError, ValueError, KeyError, TypeError):
             return None
 
-    def _judge_stage(self, today: date) -> None:
-        if self._stage_checked_on == today or self._outcome_loader is None:
+    def _review_days(self, today: date) -> None:
+        if self._reviewed_on == today or self._outcome_loader is None:
             return
         start = datetime.combine(
             today - timedelta(days=OUTCOME_LOOKBACK_DAYS), datetime.min.time(), UTC
         )
         stop = datetime.combine(today, datetime.min.time(), UTC)
         outcomes = self._outcome_loader(start, stop)
-        decision = evaluate_stage(
-            self._stage, outcomes, today, self._settings.target_c, self._rules
-        )
-        self._stage = decision.state
-        self._stage_checked_on = today
+        self._reviewed_on = today
         self._learn_morning_margin(outcomes, today)
-        self._last_stage_note = f"{decision.action}: {decision.reason}"
-        if decision.action != "hold":
-            self._log("stage", decision.action, decision.reason)
-            self._record_parameters("stage", decision.reason)
         self._save_state()
         yesterday = next(
             (
@@ -967,17 +914,6 @@ class PlanService:
                 f"{yesterday.baseline_cost_sek:.0f} SEK at the base setpoint). "
                 f"Room {yesterday.room_min_c:.1f}-{yesterday.room_mean_c:.1f} C (min, mean), "
                 f"electric heater {yesterday.aux_kwh:.1f} kWh.",
-            )
-        if decision.action == "widen":
-            self._notify(
-                STAGE_NOTIFICATION,
-                "Theria: stage widened",
-                f"Stage widened to +/-{STAGES[self._stage.index].max_deviation_c} C. "
-                f"{decision.reason}",
-            )
-        elif decision.action == "shrink":
-            self._notify(
-                TROUBLE_NOTIFICATION, "Theria: plan stepped back", decision.reason
             )
 
     def _notify(self, notification_id: str, title: str, message: str) -> None:

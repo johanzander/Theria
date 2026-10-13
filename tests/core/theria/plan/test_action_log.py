@@ -14,7 +14,7 @@ def test_writes_to_the_pump_and_the_thermostats_are_logged_with_the_time(setting
     run_cycle(service)
     assert ("pump", "wrote") in kinds(service) and ("lk", "wrote") in kinds(service)
     entry = next(e for e in service.action_log() if e["kind"] == "pump")
-    assert entry["at"] == CHEAP_BEFORE_PEAK and "18.5" in entry["detail"]
+    assert entry["at"] == CHEAP_BEFORE_PEAK and "19.0" in entry["detail"]
 
 
 def test_cycles_that_change_nothing_are_not_logged(settings):
@@ -35,7 +35,7 @@ def test_mode_changes_and_trouble_are_logged(settings):
     service.set_mode("shadow")
     seen = kinds(service)
     assert ("mode", "active") in seen and ("mode", "shadow") in seen
-    assert ("trouble", "stepped back") in seen
+    assert ("trouble", "reported") in seen
 
 
 def test_the_log_is_newest_last_and_limited(settings):

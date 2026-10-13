@@ -7,9 +7,9 @@ import pytest
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.outcomes import day_outcomes
 
+from .days import day
 from .test_outcomes import PUMP
 from .test_outcomes import make_inputs as outcome_inputs
-from .test_stages import day
 
 RULES = MorningRules()
 TARGET = 19.5

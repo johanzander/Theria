@@ -65,16 +65,9 @@ export interface SavingsResponse {
 
 export interface Execution {
   mode: string
-  stage: {
-    index: number
-    started_on: string
-    max_deviation_c: number
-    max_rise_per_hour_c: number
-  }
   last_execution: { action: string; target_c: number | null; reason: string; at: string } | null
   last_lk: { action: string; target_c: number | null; reason: string; at: string } | null
   last_trouble: string | null
-  last_stage_note: string | null
 }
 
 export interface PlanRow {

@@ -1,26 +1,21 @@
 from dataclasses import replace
-from datetime import timedelta
 
 from core.theria.plan.night_drift import NightDrift
-from core.theria.plan.stages import StageRules, StageState
 from core.theria.plan.tuning import build_recommendations
 
-from .test_stages import START, day, fresh
+from .days import day
 
 NIGHT = NightDrift(-0.5, 0.06, -0.2, 19.5, 6, 120, 0.1, ())
 
 
-def recommend(settings, days=(), plan_hours=(), stage=None, night=NIGHT):
+def recommend(settings, days=(), plan_hours=(), night=NIGHT):
     return {
         r.key: r
         for r in build_recommendations(
             settings,
             list(days),
             list(plan_hours),
-            stage or fresh(),
             night,
-            StageRules(),
-            START + timedelta(days=20),
         )
     }
 
@@ -75,20 +70,7 @@ def test_a_flow_cap_that_rarely_binds_is_fine(settings):
 def test_setpoint_limits_that_bind_for_most_hours_are_reported(settings):
     hours = [Hour("rts_min")] * 25 + [Hour("price_trade_off")] * 5
     rec = recommend(settings, plan_hours=hours)["rts_min_c"]
-    assert rec.status == "consider" and "stage" in rec.reason.lower()
-
-
-def test_the_stage_says_what_is_missing_before_it_widens(settings):
-    days = [day(i) for i in range(2)]
-    rec = recommend(settings, days)["stage"]
-    assert rec.status == "ok" and "3 more" in rec.observed
-
-
-def test_a_widest_stage_has_nothing_to_widen(settings):
-    state = StageState(index=1, stage_started_on=START)
-    assert recommend(settings, [day(0)], stage=state)["stage"].observed.startswith(
-        "widest"
-    )
+    assert rec.status == "consider" and "electric heater" in rec.reason.lower()
 
 
 def test_an_uncertain_night_model_is_called_uncertain(settings):

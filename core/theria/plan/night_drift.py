@@ -26,9 +26,7 @@ FloatArray = npt.NDArray[np.float64]
 HALF_LIFE_DAYS = 150.0  # a night this much older counts half as much
 MIN_NIGHTS = 25
 MIN_OUTDOOR_SPREAD_C = 6.0  # p90 - p10 of the nights' mean outdoor temperature
-MAX_SETPOINT_RANGE_C = (
-    2.0  # most the setpoint may have moved (what the widest stage allows)
-)
+MAX_SETPOINT_RANGE_C = 2.0  # most the setpoint may have moved (the old manual range)
 LEAD_IN_HOURS = 6
 # What one degree of setpoint held for an hour does to the room, with the valves open: the room
 # gain and rate of the prior response times the flow temperature per degree of setpoint. Small

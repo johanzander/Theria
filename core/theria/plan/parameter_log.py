@@ -1,6 +1,6 @@
 """A persistent history of what the plan has learned: one line per change.
 
-Every refit of the models and every change of the night margin or the stage appends a record
+Every refit of the models and every change of the night margin appends a record
 with all the adjustable parameters at that moment, so that their movement over time can be
 read afterwards (the state file only keeps the latest values). The file is JSON lines.
 """
