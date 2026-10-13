@@ -212,7 +212,7 @@ def test_the_setpoint_varies_over_the_day_and_the_average_stays_near_the_base(
     result = run(make_inputs(daily_prices(), room_c=20.0, slab_c=33.0), settings)
     rts = np.array([h.rts_c for h in result.hours])
     assert rts.min() < settings.rts_base_c - 0.5  # lower in the expensive hours
-    assert rts.max() > settings.rts_base_c + 0.5  # higher in the cheap hours
+    assert rts.max() >= settings.rts_base_c + 0.5  # higher in the cheap hours
     for first in range(0, 12):
         window = rts[first : first + 24]
         assert (
@@ -281,7 +281,7 @@ def test_the_default_setpoint_range_is_the_old_manual_one():
 
     s = Settings.from_dict(BASE_SETTINGS)
     assert (s.rts_min_c, s.rts_base_c, s.rts_max_c) == (16.0, 18.0, 20.0)
-    assert s.max_rts_step_per_hour_c == 1.0
+    assert s.max_rts_step_per_hour_c == 2.0  # the whole range in one step
     assert s.boost_flow_limit_c == 42.0
 
 

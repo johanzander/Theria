@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -72,11 +73,14 @@ class FakeHA:
 
 @pytest.fixture
 def make(settings):
-    def _make(setpoint=18.0, clock=None):
+    def _make(setpoint=18.0, clock=None, **changes):
         ha = FakeHA(setpoint)
         current = [NOW]
         executor = PlanExecutor(
-            ha, settings, now=clock or (lambda: current[0]), sleep=lambda _: None
+            ha,
+            replace(settings, **changes),
+            now=clock or (lambda: current[0]),
+            sleep=lambda _: None,
         )
         return executor, ha, current
 
@@ -101,10 +105,16 @@ def test_the_plan_may_move_the_setpoint_as_far_as_the_range_allows(make):
     assert ha.writes == [16.0]
 
 
-def test_raising_is_limited_per_hour(make):
-    executor, ha, current = make(18.0)
+def test_the_whole_range_can_be_raised_in_one_step_by_default(make):
+    executor, ha, _ = make(18.0)
     executor.execute(snapshot([20.0]))
-    assert ha.writes == [19.0]  # at most max_rts_step_per_hour_c (1 C) per hour
+    assert ha.writes == [20.0]
+
+
+def test_raising_is_limited_per_hour_by_the_setting(make):
+    executor, ha, current = make(18.0, max_rts_step_per_hour_c=1.0)
+    executor.execute(snapshot([20.0]))
+    assert ha.writes == [19.0]
     current[0] += timedelta(minutes=15)
     assert executor.execute(snapshot([20.0], current[0])).action == "kept"
     current[0] += timedelta(minutes=50)

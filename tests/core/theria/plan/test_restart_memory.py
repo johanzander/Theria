@@ -34,7 +34,7 @@ def test_a_hand_change_made_while_the_service_was_down_is_noticed_after_restart(
     first = build(settings, ha, path)
     first.set_mode("active", confirm=True)
     run_cycle(first)
-    assert ha.setpoint == 19.0 and ha.lk["climate.lk_bibliotek_thermostat"] == 21.0
+    assert ha.setpoint == 18.5 and ha.lk["climate.lk_bibliotek_thermostat"] == 21.0
     ha.setpoint = 19.5  # Johan turns the pump up while the add-on is restarting
     ha.lk["climate.lk_bibliotek_thermostat"] = 20.0
     second = build(settings, ha, path)

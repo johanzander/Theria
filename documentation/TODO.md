@@ -193,3 +193,4 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [x] A hand change pauses the pump and LK writes for one hour; stopping and starting active mode ends the pause.
 - [ ] Watch the electric heater (`add_heat_status`, aux energy) now that nothing narrows the plan after trouble; if it
   runs when the plan raises, lower `rts_max_c` or `boost_flow_limit_c` (see the Tuning tab).
+- [x] `max_rts_step_per_hour_c` is 2 (was 1): the setpoint range 16-20 can be crossed in one step. It was an assumption, not a measurement; watch the electric heater when the plan ramps up.
