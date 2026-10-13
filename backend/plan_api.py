@@ -51,8 +51,11 @@ async def get_plan(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
     """Latest plan with predictions, baseline and per-hour reasons."""
     snapshot = svc.latest()
     if snapshot is None:
+        reason = svc.execution_status()["plan_error"]
         raise HTTPException(
-            status_code=404, detail=f"No plan computed yet (mode: {svc.mode})"
+            status_code=404,
+            detail=f"No plan computed yet (mode: {svc.mode})"
+            + (f": {reason}" if reason else ""),
         )
     body = jsonable_encoder(snapshot)
     body["age_seconds"] = (svc.now() - snapshot.computed_at).total_seconds()

@@ -161,6 +161,7 @@ class PlanService:
         self._notifier = notifier
         self._outcome_loader = outcome_loader
         self._reviewed_on: date | None = None
+        self._plan_error: str | None = None
         self._last_trouble: str | None = None
         # set_mode and the control cycle never interleave
         self._lock = threading.RLock()
@@ -487,6 +488,7 @@ class PlanService:
         return {
             "mode": self._mode,
             "reviewed_on": self._reviewed_on,
+            "plan_error": self._plan_error,
             "last_execution": result,
             "last_lk": lk_result,
             "morning_margin_c": self._morning_margin_c,
@@ -822,7 +824,9 @@ class PlanService:
                 logger.exception("plan model refit failed; keeping previous models")
         try:
             await asyncio.to_thread(self.run_once)
-        except Exception:
+            self._plan_error = None
+        except Exception as e:
+            self._plan_error = f"{type(e).__name__}: {e}"
             logger.exception("plan computation failed")
         if self._mode == "active":
             try:

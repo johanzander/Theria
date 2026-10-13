@@ -176,6 +176,7 @@ export function Overview() {
   return (
     <>
       {error && <p className="bad">{error}</p>}
+      {execution.data?.plan_error && <p className="bad">The last plan could not be computed: {execution.data.plan_error}</p>}
       <Status plan={plan.data} execution={execution.data} />
       {plan.data ? <DayPicker day={day} onChange={pick} /> : null}
       {dayView.data ? <DayCharts view={dayView.data} /> : <p>No plan computed yet.</p>}

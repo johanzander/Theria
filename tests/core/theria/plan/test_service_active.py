@@ -239,3 +239,24 @@ def test_stopping_and_starting_active_mode_ends_a_pause_after_a_hand_change(sett
     run_cycle(service)
 
     assert service.execution_status()["last_execution"].action != "paused"
+
+
+def test_a_plan_that_cannot_be_computed_says_why(settings):
+    service, ha, _, _, _ = make(settings)
+    original = ha.get_state
+
+    def price_sensor_down(entity_id):
+        state = original(entity_id)
+        if entity_id == settings.price_entity:
+            return {"state": "unavailable", "attributes": {}}
+        return state
+
+    ha.get_state = price_sensor_down
+    run_cycle(service)
+
+    assert service.latest() is None
+    assert "PriceDataError" in service.execution_status()["plan_error"]
+
+    ha.get_state = original
+    run_cycle(service)
+    assert service.execution_status()["plan_error"] is None
