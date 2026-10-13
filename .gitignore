@@ -52,3 +52,6 @@ backend/static/plan/
 frontend/dist/
 .plan_parameters.jsonl
 .plan_events.jsonl
+
+# Private documents (manuals, calculations, mail): keep local
+documentation/private/

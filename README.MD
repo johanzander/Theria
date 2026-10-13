@@ -77,7 +77,7 @@ See **[SYSTEM_SETUP.md](SYSTEM_SETUP.md)** for a complete example of Theria depl
 
 ### Core Concept: Heat Capacitor Strategy
 
-Theria implements a **heat capacitor** approach inspired by [PowerSaver](https://powersaver.no/nodes/ps-strategy-heat-capacitor.html), where each zone uses your building as a thermal battery:
+Theria implements a **heat capacitor** approach inspired by [PowerSaver](https://powersaver.no/nodes/ps-strategy-heat-capacitor.html) (see [related work](documentation/related-work.md)), where each zone uses your building as a thermal battery:
 
 1. **Pre-heat during cheap electricity hours** - Store energy in your building's thermal mass
 2. **Coast during expensive hours** - Use stored thermal energy, avoid expensive heating

@@ -5,7 +5,7 @@ Hot water (DHW) is out of scope for now; see [TODO.md](TODO.md).
 
 Each statement is tagged:
 
-- **[manual]** stated in a manual in `documentation/IVT/` (source in brackets)
+- **[manual]** stated in a manual in `documentation/private/IVT/` (source in brackets)
 - **[observed]** seen in this house's Home Assistant data on 2026-10-10/11
 - **[unverified]** inferred; test before relying on it
 
@@ -182,9 +182,9 @@ Sun = Open-Meteo `shortwave_radiation` for lat 55.578 / lon 12.927 (modelled, no
 
 ## Floor construction, LK design and the flow temperature limit
 
-Sources: `documentation/Reviderad beräkning 3 LK023393.pdf` (LK calculation, revised 2026-01-12),
+Sources: `documentation/private/Reviderad beräkning 3 LK023393.pdf` (LK calculation, revised 2026-01-12),
 `documentation/värmebehovsbedömning_ Vattnet 1, Malmö Mailid_0074000001094.eml` (LK sales engineer, 2022-06-01),
-`documentation/VÄRMEBEHOVSANALYS - VATTNET 1.pdf/.xlsx` (heat demand analysis, 2026-01-01).
+`documentation/private/VÄRMEBEHOVSANALYS - VATTNET 1.pdf/.xlsx` (heat demand analysis, 2026-01-01).
 
 - **[manual]** Ground floor: 16 mm solid oak parquet glued on 10-12 mm ROT board over LK groove boards in a timber
   joist floor (system G16, floor resistance Mtot 0.200 m2K/W); tiled rooms (halls, bath) on LK 8 mm strips
@@ -400,5 +400,5 @@ own 3-day median, sometimes more). All values **[observed]**; the sample for dee
 - `IVT/Install_AirX_6720810160_01.pdf`: installation manual (defrost, minimum volume, limits)
 - `IVT/Anvandarmanual_AirX400-400S_AirModule.pdf`, `IVT/Anvandarhandl_AirX_6720810156_01.pdf`
 - `IVT/Install_AirBox_6720810154_01.pdf`, `IVT/Capacitetsdiagram Air X 5-17.pdf`
-- `C10.pdf`: Husdata H60/H66 register map
+- `documentation/private/C10.pdf`: Husdata H60/H66 register map
 - Not yet read in depth: AirBox installation manual, capacity diagrams, the heat demand analysis files.
