@@ -59,6 +59,9 @@ function DayCharts({ view }: { view: DayView }) {
   const roomLow = Math.floor(Math.min(...temps) * 2) / 2 - 0.5
   const roomHigh = Math.ceil(Math.max(...temps) * 2) / 2 + 0.5
   // with several y axes the line must name the one it is drawn against
+  const rooms = Object.keys(view.loops_total)
+  const loopRows = rows.map((r) => ({ ...r, ...Object.fromEntries(rooms.map((room) => [room, r.loops[room] ?? null])) }))
+  const loopColours = ['#0b6bcb', '#b42318', '#2f855a', '#b7791f']
   const marker = (yAxisId?: string) =>
     now ? <ReferenceLine x={now} yAxisId={yAxisId} stroke="#7b8794" strokeDasharray="2 2" label="now" /> : null
   return (
@@ -99,6 +102,24 @@ function DayCharts({ view }: { view: DayView }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {rooms.length > 0 && (
+        <div className="panel">
+          <h2>Open floor loops</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={loopRows}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" interval={2} />
+              <YAxis domain={[0, Math.max(...Object.values(view.loops_total))]} allowDecimals={false} />
+              <Tooltip />
+              <Legend />
+              {rooms.map((room, i) => (
+                <Line key={room} type="stepAfter" dataKey={room} name={`${room} (of ${view.loops_total[room]})`} stroke={loopColours[i % loopColours.length]} strokeWidth={2} dot={false} />
+              ))}
+              {marker()}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </>
   )
 }

@@ -9,8 +9,11 @@
 - [x] LK actuator state is exposed by Johan's `ha-lksystems` fork (PR angoyd/ha-lksystems#145) as
       `binary_sensor.lk_<room>_actuator_<n>` (device_class opening, on = loop open): Vardagsrum 7, 9, 11;
       Bibliotek 4, 6, 8, 10, 12. LK thermostat writes work again (fixed by Johan 2026-10-13).
-- [ ] Use the actuator sensors: record "loops open" per room in the day view/actuals, show whether the LK boost
-      really opens the floor loops, and feed the room model with valve state.
+- [x] Day view: "Open floor loops" chart per room (`plan.room_actuator_entities`, `loops_open`/`loops_total` in
+      `/api/plan/day`). Needs the actuator entities in the HA InfluxDB integration (they are not stored yet, so the
+      chart is empty until they are included).
+- [ ] Use the loops further: show whether the LK boost really opens the floor loops, and feed the room model with
+      valve state once there is history.
 - [ ] Add a weather service (Open-Meteo, lat 55.578 / lon 12.927 from HA): hourly `shortwave_radiation`,
       `direct_radiation`, `cloud_cover`. Use as solar-gain term (Solcast PV forecast is a possible fallback).
 - [x] Quantify solar gain per room from history (done, see knowledge base: ~2-3.5 C rise above ~2 kWh/m2/day, 4 h lag).

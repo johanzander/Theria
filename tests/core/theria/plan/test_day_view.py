@@ -76,3 +76,19 @@ def test_the_chart_still_has_prices_when_the_measurements_cannot_be_read(setting
     }
     past = rows[PLAN_START - timedelta(hours=1)]
     assert past["rts_c"] is None and past["price_sek_per_kwh"] == 1.0
+
+
+def test_hours_that_passed_carry_the_open_floor_loops_per_room(settings):
+    from dataclasses import replace
+
+    settings = replace(settings, room_actuator_entities={"bib": ("a", "b", "c")})
+
+    def with_loops(start, stop):
+        base = measured(start, stop)
+        return replace(base, loops_open={"bib": np.full(len(base.hours), 2.0)})
+
+    view = started(settings, with_loops).day_view(LOCAL_DAY)
+    rows = {r["start"]: r for r in view["hours"]}
+    assert view["loops_total"] == {"bib": 3}
+    assert rows[PLAN_START - timedelta(hours=1)]["loops_open"] == {"bib": 2.0}
+    assert rows[PLAN_START]["loops_open"] == {}

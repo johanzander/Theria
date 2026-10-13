@@ -70,6 +70,10 @@ def build_day_view(
             )
         }
     )
+    measured_index = (
+        {} if measured is None else {h: i for i, h in enumerate(measured.hours)}
+    )
+    loops = {} if measured is None else measured.loops_open
     rows: list[dict[str, Any]] = []
     for hour in day_hours(day, settings.timezone):
         night = settings.in_night(hour)
@@ -83,10 +87,15 @@ def build_day_view(
             "baseline_rts_c": None,
             "baseline_room_c": None,
             "extreme": False,
+            "loops_open": {},
         }
         if row["past"] and hour in measured_at:
             rts, room = measured_at[hour]
             row["rts_c"], row["room_c"] = _known(rts), _known(room)
+            row["loops_open"] = {
+                name: _known(counts[measured_index[hour]])
+                for name, counts in loops.items()
+            }
         elif not row["past"] and hour in planned:
             hour_plan, baseline = planned[hour]
             row.update(
@@ -99,4 +108,12 @@ def build_day_view(
                 extreme=hour_plan.extreme,
             )
         rows.append(row)
-    return {"day": day, "now": current, "hours": rows}
+    return {
+        "day": day,
+        "now": current,
+        "loops_total": {
+            room: len(entities)
+            for room, entities in settings.room_actuator_entities.items()
+        },
+        "hours": rows,
+    }

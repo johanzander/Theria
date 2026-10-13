@@ -12,7 +12,7 @@ saving. Hours with hot water are left out because the plan does not control them
 
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 import numpy as np
@@ -53,6 +53,8 @@ class OutcomeInputs:
     aux_kwh: FloatArray
     hot_water: FloatArray  # share of the hour with hot water (0 = all heating)
     room_c: FloatArray  # mean of the ground-floor comfort sensors
+    # floor loops open per room (count, fractional within an hour); empty without actuator sensors
+    loops_open: dict[str, FloatArray] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -217,4 +219,14 @@ def load_outcome_inputs(
             source.series(settings.heating_mode_entity, first, stop), first, n
         ),
         room_c=np.nanmean([mean(e) for e in settings.room_temp_entities], axis=0),
+        loops_open={
+            room: np.sum(
+                [
+                    step_fraction(source.series(e, first, stop), first, n)
+                    for e in entities
+                ],
+                axis=0,
+            )
+            for room, entities in settings.room_actuator_entities.items()
+        },
     )

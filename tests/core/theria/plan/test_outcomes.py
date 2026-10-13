@@ -143,6 +143,31 @@ def test_inputs_are_assembled_from_counters_prices_setpoint_and_valve(settings):
     assert np.allclose(inputs.aux_kwh[1:], 0.0)
 
 
+def test_open_floor_loops_are_counted_per_room(settings):
+    from dataclasses import replace
+
+    hours = 4
+    settings = replace(
+        settings,
+        room_actuator_entities={"bib": ("binary_sensor.a", "binary_sensor.b")},
+    )
+    series = {
+        (settings.price_entity, None): np.full(hours, 1.5),
+        (settings.room_setpoint_entity, "temperature"): np.full(hours, 17.0),
+        (settings.outdoor_entity, None): np.full(hours, 3.0),
+        (settings.energy_counter_entity, None): np.arange(hours) + 1000.0,
+        (settings.aux_energy_entity, None): np.full(hours, 40.0),
+        (settings.heating_mode_entity, None): np.zeros(hours),
+        (settings.room_temp_entities[0], None): np.full(hours, 19.7),
+        ("binary_sensor.a", None): np.array([1, 1, 0, 0]),
+        ("binary_sensor.b", None): np.array([1, 0, 0, 1]),
+    }
+    inputs = load_outcome_inputs(
+        OutcomeSource(series), settings, START, START + timedelta(hours=hours)
+    )
+    assert inputs.loops_open["bib"][1:].tolist() == [1.5, 0.5, 0.5]  # a loop that switches at :30 counts half
+
+
 def test_the_rooms_lowest_and_mean_temperature_of_each_day_are_reported():
     room = np.full(48, 19.8)
     room[30] = 19.2  # a dip on the second day

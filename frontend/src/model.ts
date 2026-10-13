@@ -286,11 +286,13 @@ export interface DayHour {
   baseline_rts_c: number | null
   baseline_room_c: number | null
   extreme: boolean
+  loops_open: Record<string, number | null>
 }
 
 export interface DayView {
   day: string
   now: string
+  loops_total: Record<string, number>
   hours: DayHour[]
 }
 
@@ -304,6 +306,8 @@ export interface DayRow {
   measuredRoom: number | null
   plannedRoom: number | null
   baselineRoom: number | null
+  /** floor loops open per room, one entry per room with actuator sensors */
+  loops: Record<string, number | null>
   current: boolean
 }
 
@@ -322,6 +326,7 @@ export function dayRows(view: DayView): DayRow[] {
     measuredRoom: h.past ? h.room_c : null,
     plannedRoom: h.past ? null : h.room_c,
     baselineRoom: h.past ? null : h.baseline_room_c,
+    loops: h.loops_open,
     current: h.start === view.now,
   }))
 }

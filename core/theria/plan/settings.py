@@ -1,6 +1,6 @@
 """Configuration for the price-driven heating plan."""
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -30,6 +30,8 @@ class PlanSettings:
     longitude: float
     # The old automation that wrote the room setpoint; the plan must not run alongside it.
     conflicting_automation_entity: str = "automation.set_room_temp_setpoint"
+    # LK floor-loop actuators (binary sensors, on = open) per room name
+    room_actuator_entities: dict[str, tuple[str, ...]] = field(default_factory=dict)
     mode: str = "off"
     floor_c: float = 18.0
     extreme_floor_c: float = 17.0
@@ -155,6 +157,11 @@ class PlanSettings:
         ):
             if key in converted:
                 converted[key] = tuple(converted[key])
+        if "room_actuator_entities" in converted:
+            converted["room_actuator_entities"] = {
+                room: tuple(entities)
+                for room, entities in converted["room_actuator_entities"].items()
+            }
         try:
             return cls(**converted)
         except TypeError as e:

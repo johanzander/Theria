@@ -131,8 +131,9 @@ describe('dayRows', () => {
   const hours = ['2026-10-12T14:00:00+00:00', '2026-10-12T15:00:00+00:00', '2026-10-12T16:00:00+00:00'].map((start, i) => ({
     start, past: i < 2, price_sek_per_kwh: 1, floor_c: 18, extreme: false,
     rts_c: 18 + i, room_c: 20 + i, baseline_rts_c: i < 2 ? null : 18, baseline_room_c: i < 2 ? null : 20,
+    loops_open: (i < 2 ? { bib: 2 } : {}) as Record<string, number | null>,
   }))
-  const rows = dayRows({ day: '2026-10-12', now: '2026-10-12T16:00:00+00:00', hours })
+  const rows = dayRows({ day: '2026-10-12', now: '2026-10-12T16:00:00+00:00', loops_total: { bib: 5 }, hours })
 
   it('keeps every hour of the day, not only the ones still to come', () => {
     expect(rows).toHaveLength(3)
@@ -143,6 +144,11 @@ describe('dayRows', () => {
     expect(rows[0]).toMatchObject({ measuredRts: 18, plannedRts: null, measuredRoom: 20, baselineRts: null })
     expect(rows[2]).toMatchObject({ measuredRts: null, plannedRts: 20, plannedRoom: 22, baselineRts: 18 })
     expect(rows.map((r) => r.current)).toEqual([false, false, true])
+  })
+
+  it('carries the open floor loops of the hours that have passed', () => {
+    expect(rows[0].loops).toEqual({ bib: 2 })
+    expect(rows[2].loops).toEqual({})
   })
 })
 
