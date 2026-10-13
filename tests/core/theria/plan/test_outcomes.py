@@ -149,7 +149,7 @@ def test_open_floor_loops_are_counted_per_room(settings):
     hours = 4
     settings = replace(
         settings,
-        room_actuator_entities={"bib": ("binary_sensor.a", "binary_sensor.b")},
+        room_actuators={"bib": ("binary_sensor.a", "binary_sensor.b")},
     )
     series = {
         (settings.price_entity, None): np.full(hours, 1.5),

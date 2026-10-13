@@ -9,7 +9,7 @@
 - [x] LK actuator state is exposed by Johan's `ha-lksystems` fork (PR angoyd/ha-lksystems#145) as
       `binary_sensor.lk_<room>_actuator_<n>` (device_class opening, on = loop open): Vardagsrum 7, 9, 11;
       Bibliotek 4, 6, 8, 10, 12. LK thermostat writes work again (fixed by Johan 2026-10-13).
-- [x] Day view: "Open floor loops" chart per room (`plan.room_actuator_entities`, `loops_open`/`loops_total` in
+- [x] Day view: "Open floor loops" chart per room (`plan.room_actuators`, `loops_open`/`loops_total` in
       `/api/plan/day`). Needs the actuator entities in the HA InfluxDB integration (they are not stored yet, so the
       chart is empty until they are included).
 - [ ] Use the loops further: show whether the LK boost really opens the floor loops, and feed the room model with

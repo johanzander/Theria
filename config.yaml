@@ -77,17 +77,19 @@ options:
     room_thermostat_entities:
       - "climate.lk_bibliotek_thermostat"
       - "climate.lk_vardagsrum_thermostat"
-    room_actuator_entities:  # LK floor loops, on = open (ha-lksystems)
-      vardagsrum:
-        - "binary_sensor.lk_vardagsrum_actuator_7"
-        - "binary_sensor.lk_vardagsrum_actuator_9"
-        - "binary_sensor.lk_vardagsrum_actuator_11"
-      bibliotek:
-        - "binary_sensor.lk_bibliotek_actuator_4"
-        - "binary_sensor.lk_bibliotek_actuator_6"
-        - "binary_sensor.lk_bibliotek_actuator_8"
-        - "binary_sensor.lk_bibliotek_actuator_10"
-        - "binary_sensor.lk_bibliotek_actuator_12"
+    room_actuators:  # LK floor loops, on = open (ha-lksystems)
+      - room: "vardagsrum"
+        entities:
+          - "binary_sensor.lk_vardagsrum_actuator_7"
+          - "binary_sensor.lk_vardagsrum_actuator_9"
+          - "binary_sensor.lk_vardagsrum_actuator_11"
+      - room: "bibliotek"
+        entities:
+          - "binary_sensor.lk_bibliotek_actuator_4"
+          - "binary_sensor.lk_bibliotek_actuator_6"
+          - "binary_sensor.lk_bibliotek_actuator_8"
+          - "binary_sensor.lk_bibliotek_actuator_10"
+          - "binary_sensor.lk_bibliotek_actuator_12"
     room_history_entities:  # older sensors that extend the room history back before the LK sensors
       - "sensor.sonoff_a480045bf5_temperature"
     heating_mode_entity: "binary_sensor.switch_valve_1"
@@ -215,6 +217,10 @@ schema:
       - str
     room_history_entities:
       - str
+    room_actuators:
+      - room: str
+        entities:
+          - str
     heating_mode_entity: str
     flow_measured_entity: str
     energy_counter_entity: str

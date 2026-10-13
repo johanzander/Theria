@@ -117,3 +117,10 @@ def test_max_flow_default_is_the_flow_temperature_lk_designed_for():
 
 def test_deviating_from_the_base_setpoint_has_a_default_cost_for_the_rooms_that_react_faster():
     assert PlanSettings.from_dict(BASE).setpoint_deviation_cost_sek_per_c_hour == 0.1
+
+
+def test_floor_loops_are_read_as_a_list_of_rooms():
+    s = PlanSettings.from_dict(
+        {**BASE, "room_actuators": [{"room": "bib", "entities": ["binary_sensor.a"]}]}
+    )
+    assert s.room_actuators == {"bib": ("binary_sensor.a",)}

@@ -81,7 +81,7 @@ def test_the_chart_still_has_prices_when_the_measurements_cannot_be_read(setting
 def test_hours_that_passed_carry_the_open_floor_loops_per_room(settings):
     from dataclasses import replace
 
-    settings = replace(settings, room_actuator_entities={"bib": ("a", "b", "c")})
+    settings = replace(settings, room_actuators={"bib": ("a", "b", "c")})
 
     def with_loops(start, stop):
         base = measured(start, stop)

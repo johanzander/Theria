@@ -113,7 +113,7 @@ def build_day_view(
         "now": current,
         "loops_total": {
             room: len(entities)
-            for room, entities in settings.room_actuator_entities.items()
+            for room, entities in settings.room_actuators.items()
         },
         "hours": rows,
     }

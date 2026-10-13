@@ -227,6 +227,6 @@ def load_outcome_inputs(
                 ],
                 axis=0,
             )
-            for room, entities in settings.room_actuator_entities.items()
+            for room, entities in settings.room_actuators.items()
         },
     )

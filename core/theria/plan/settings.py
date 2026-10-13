@@ -30,8 +30,8 @@ class PlanSettings:
     longitude: float
     # The old automation that wrote the room setpoint; the plan must not run alongside it.
     conflicting_automation_entity: str = "automation.set_room_temp_setpoint"
-    # LK floor-loop actuators (binary sensors, on = open) per room name
-    room_actuator_entities: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # LK floor-loop actuators (binary sensors, on = open) per room name (config: a list of {room, entities})
+    room_actuators: dict[str, tuple[str, ...]] = field(default_factory=dict)
     mode: str = "off"
     floor_c: float = 18.0
     extreme_floor_c: float = 17.0
@@ -157,10 +157,10 @@ class PlanSettings:
         ):
             if key in converted:
                 converted[key] = tuple(converted[key])
-        if "room_actuator_entities" in converted:
-            converted["room_actuator_entities"] = {
-                room: tuple(entities)
-                for room, entities in converted["room_actuator_entities"].items()
+        if "room_actuators" in converted:
+            converted["room_actuators"] = {
+                item["room"]: tuple(item["entities"])
+                for item in converted["room_actuators"]
             }
         try:
             return cls(**converted)
