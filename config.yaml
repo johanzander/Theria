@@ -26,7 +26,7 @@ auth_api: true
 
 options:
   sensors:
-    nordpool_price: "sensor.nordpool_kwh_se4_sek_2_10_025"
+    nordpool_price: "sensor.nord_pool_se4_current_price"
     outdoor_temp: "sensor.outdoor"  # H60 outdoor temperature sensor
 
   influxdb:
@@ -67,7 +67,9 @@ options:
 
   plan:
     mode: "shadow"  # off | shadow. Shadow computes and logs plans, never writes to HA.
-    price_entity: "sensor.nordpool_kwh_se4_sek_2_10_025"
+    price_entity: "sensor.nord_pool_se4_current_price"  # price history; SEK/kWh
+    price_config_entry: "01K3Y99FD3MDZYVFX2XSWR4888"  # HA Nord Pool integration (nordpool.get_prices_for_date)
+    price_area: "SE4"
     outdoor_entity: "sensor.outdoor"
     room_setpoint_entity: "climate.room_temp_setpoint"
     flow_setpoint_entity: "sensor.heating_setpoint"
@@ -208,6 +210,8 @@ schema:
   plan:
     mode: list(off|shadow)
     price_entity: str
+    price_config_entry: str?
+    price_area: str?
     outdoor_entity: str
     room_setpoint_entity: str
     flow_setpoint_entity: str

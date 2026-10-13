@@ -219,7 +219,7 @@ zones:
 ## Electricity Pricing
 
 **Provider:** Nordpool (Sweden SE4)
-**Sensor:** `sensor.nordpool_kwh_se4_sek_2_10_025`
+**Sensor:** `sensor.nord_pool_se4_current_price`
 **Currency:** SEK
 **Market:** Day-ahead spot prices (published daily ~13:00 for next day)
 

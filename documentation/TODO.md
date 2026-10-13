@@ -194,3 +194,4 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [ ] Watch the electric heater (`add_heat_status`, aux energy) now that nothing narrows the plan after trouble; if it
   runs when the plan raises, lower `rts_max_c` or `boost_flow_limit_c` (see the Tuning tab).
 - [x] `max_rts_step_per_hour_c` is 2 (was 1): the setpoint range 16-20 can be crossed in one step. It was an assumption, not a measurement; watch the electric heater when the plan ramps up.
+- [x] Prices come from HA's built-in Nord Pool integration (`nordpool.get_prices_for_date`, config entry in `plan.price_config_entry`, area `price_area`); the HACS template sensor `nordpool_kwh_se4_sek_2_10_025` is gone. `plan.price_entity` is now `sensor.nord_pool_se4_current_price` and is only used for the price history of measured days. Empty `price_config_entry` still reads `today`/`tomorrow` attributes from `price_entity`.

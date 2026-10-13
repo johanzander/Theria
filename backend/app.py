@@ -41,6 +41,7 @@ from core.theria.plan.outcomes import (
     load_outcome_inputs,
 )
 from core.theria.plan.parameter_log import ParameterLog
+from core.theria.plan.price_feed import NordpoolFeed
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.state_store import PlanStateStore
@@ -272,6 +273,16 @@ async def lifespan(app: FastAPI):
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
                     actuals_loader=actuals_loader,
+                    price_periods=(
+                        NordpoolFeed(
+                            ha_client,
+                            plan_settings.price_config_entry,
+                            plan_settings.price_area,
+                            plan_settings.timezone,
+                        ).periods
+                        if plan_settings.price_config_entry
+                        else None
+                    ),
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service

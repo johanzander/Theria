@@ -14,7 +14,7 @@ SUPPORTED_MODES = ("off", "shadow", "active")
 class PlanSettings:
     """Plan configuration. Defaults are the values agreed in the design spec."""
 
-    price_entity: str
+    price_entity: str  # price history for the measured days (SEK/kWh)
     outdoor_entity: str
     room_setpoint_entity: str
     flow_setpoint_entity: str
@@ -32,6 +32,10 @@ class PlanSettings:
     conflicting_automation_entity: str = "automation.set_room_temp_setpoint"
     # LK floor-loop actuators (binary sensors, on = open) per room name (config: a list of {room, entities})
     room_actuators: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Home Assistant's built-in Nord Pool integration, read with nordpool.get_prices_for_date.
+    # Empty config entry = prices come from the attributes of `price_entity` (HACS Nordpool).
+    price_config_entry: str = ""
+    price_area: str = "SE4"
     mode: str = "off"
     floor_c: float = 18.0
     extreme_floor_c: float = 17.0

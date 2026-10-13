@@ -37,6 +37,7 @@ from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
 from core.theria.plan.preflight import Check, preflight_checks
 from core.theria.plan.prices import (
     PriceHistory,
+    PricePeriod,
     extreme_threshold,
     hourly_prices,
     parse_nordpool_attributes,
@@ -125,6 +126,7 @@ class PlanService:
         parameter_log: ParameterLog | None = None,
         event_log: EventLog | None = None,
         actuals_loader: ActualsLoader | None = None,
+        price_periods: Callable[[], list[PricePeriod]] | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -160,6 +162,7 @@ class PlanService:
         self._safety = safety
         self._notifier = notifier
         self._outcome_loader = outcome_loader
+        self._price_periods = price_periods or self._periods_from_sensor
         self._reviewed_on: date | None = None
         self._plan_error: str | None = None
         self._last_trouble: str | None = None
@@ -628,13 +631,17 @@ class PlanService:
     def timezone(self) -> str:
         return self._settings.timezone
 
+    def _periods_from_sensor(self) -> list[PricePeriod]:
+        """Prices from the attributes of a HACS-style Nordpool sensor (today / tomorrow)."""
+        return parse_nordpool_attributes(
+            self._ha.get_state(self._settings.price_entity)["attributes"]
+        )
+
     def day_view(self, day: date) -> dict[str, Any]:
         """A whole local day for the charts: measured so far, planned for the rest."""
         now = self._now()
         latest = self.latest()
-        periods = parse_nordpool_attributes(
-            self._ha.get_state(self._settings.price_entity)["attributes"]
-        )
+        periods = self._price_periods()
         measured = None
         first = day_hours(day, self._settings.timezone)[0]
         current = _floor_hour(now.astimezone(UTC))
@@ -701,8 +708,7 @@ class PlanService:
         now = self._now()
         s = self._settings
 
-        attrs = self._ha.get_state(s.price_entity)["attributes"]
-        periods = parse_nordpool_attributes(attrs)
+        periods = self._price_periods()
         self._history.add(periods)
         self._history.prune(now)
         threshold = extreme_threshold(

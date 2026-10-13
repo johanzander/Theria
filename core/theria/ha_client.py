@@ -234,6 +234,22 @@ class HAClient:
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"HA service {domain}.{service} failed: {e}") from e
 
+    def get_service_response(
+        self, domain: str, service: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Call a Home Assistant service that answers with data and return that answer.
+
+        Raises:
+            RuntimeError: If the service call fails
+        """
+        url = f"{self.base_url}/api/services/{domain}/{service}?return_response"
+        try:
+            response = self.session.post(url, json=data, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()["service_response"]
+        except (requests.exceptions.RequestException, KeyError, ValueError) as e:
+            raise RuntimeError(f"HA service {domain}.{service} failed: {e}") from e
+
 
 class HANotifier:
     """Home Assistant persistent notifications (the bell in the HA sidebar)."""
