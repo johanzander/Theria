@@ -1,6 +1,6 @@
 """Dynamic-programming planner: choose the room setpoint for each coming hour."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -437,5 +437,11 @@ def plan(
     baseline = problem.flat_plan(settings.rts_base_c)
     objective = sum(h.energy_cost_sek + h.comfort_cost_sek for h in hours)
     base_objective = sum(h.energy_cost_sek + h.comfort_cost_sek for h in baseline)
+    if (
+        settings.min_saving_sek > 0
+        and base_objective - objective < settings.min_saving_sek
+    ):
+        hours = [replace(h, reason={"binding": "below_min_saving"}) for h in baseline]
+        objective = base_objective
     violations = sum(1 for h in hours if h.room_c_end < h.floor_c - 0.05)
     return Plan(hours, baseline, float(objective), float(base_objective), violations)

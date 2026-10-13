@@ -121,8 +121,7 @@ def build_day_view(
         "day": day,
         "now": current,
         "loops_total": {
-            room: len(entities)
-            for room, entities in settings.room_actuators.items()
+            room: len(entities) for room, entities in settings.room_actuators.items()
         },
         "hours": rows,
     }

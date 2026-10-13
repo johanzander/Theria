@@ -112,6 +112,7 @@ export function savingsSummary(response: PlanResponse): { savingSek: number; per
 
 const REASONS: Record<string, string> = {
   baseline: 'Flat base setpoint (no optimisation)',
+  below_min_saving: 'Flat base setpoint: the saving is below the minimum worth moving for',
   floor: 'Held up by the comfort floor',
   ceiling: 'Held down by the comfort ceiling',
   flow_cap: 'Limited by the maximum flow temperature',

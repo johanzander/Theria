@@ -304,3 +304,30 @@ def test_a_cooling_that_would_break_the_night_floor_makes_the_plan_push_as_hard_
         cold.floor_violation_hours >= 1
     ), "the night floor cannot be held in this case"
     assert sum(h.rts_c for h in cold.hours[:4]) > sum(h.rts_c for h in plain.hours[:4])
+
+
+def test_a_plan_that_saves_less_than_the_threshold_stays_at_the_flat_setpoint(
+    settings, make_inputs
+):
+    price = np.where(EVENING, 4.0, 0.8)
+    inputs = make_inputs(price)
+    saving = run(inputs, replace(settings, min_saving_sek=0.0))
+    gain = saving.baseline_objective_sek - saving.objective_sek
+    assert gain > 0
+
+    result = run(inputs, replace(settings, min_saving_sek=gain + 1.0))
+
+    assert {h.rts_c for h in result.hours} == {settings.rts_base_c}
+    assert {h.reason["binding"] for h in result.hours} == {"below_min_saving"}
+    assert result.objective_sek == result.baseline_objective_sek
+
+
+def test_a_plan_that_saves_more_than_the_threshold_is_kept(settings, make_inputs):
+    price = np.where(EVENING, 4.0, 0.8)
+    inputs = make_inputs(price)
+    gain = run(inputs, replace(settings, min_saving_sek=0.0))
+    gain = gain.baseline_objective_sek - gain.objective_sek
+
+    result = run(inputs, replace(settings, min_saving_sek=gain - 0.01))
+
+    assert len({h.rts_c for h in result.hours}) > 1

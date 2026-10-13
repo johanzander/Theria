@@ -57,6 +57,9 @@ class PlanSettings:
     rts_base_c: float = 18.0
     rts_step_c: float = 0.5
     max_rts_step_per_hour_c: float = 1.0
+    # A plan must beat the flat setpoint by at least this much (SEK over the horizon, comfort
+    # cost included); otherwise the flat setpoint is kept and nothing is moved for a few öre. 0 switches it off.
+    min_saving_sek: float = 0.2
     extreme_price_percentile: float = 95.0
     extreme_price_min_sek_per_kwh: float = 3.0
     extreme_history_days: int = 14
@@ -135,6 +138,8 @@ class PlanSettings:
             )
         if self.comfort_cost_sek_per_c_hour < 0:
             raise ConfigurationError("comfort_cost_sek_per_c_hour must not be negative")
+        if self.min_saving_sek < 0:
+            raise ConfigurationError("min_saving_sek must not be negative")
         if not 0 < self.extreme_price_percentile < 100:
             raise ConfigurationError("extreme_price_percentile must be in (0, 100)")
         if not self.room_temp_entities or not self.room_thermostat_entities:

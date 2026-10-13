@@ -229,6 +229,7 @@ schema:
     latitude: float
     longitude: float
     max_flow_c: float?
+    min_saving_sek: float?
     night_start_hour: int?
     night_end_hour: int?
     night_target_c: float?

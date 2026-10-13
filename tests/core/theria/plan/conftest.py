@@ -26,6 +26,7 @@ def settings() -> PlanSettings:
         energy_counter_entity="sensor.compr_cons_heating",
         aux_energy_entity="sensor.aux_cons_heating",
         aux_status_entity="sensor.add_heat_status",
+        min_saving_sek=0.0,  # the mechanics are tested; the threshold has its own tests
         latitude=55.578,
         longitude=12.927,
         night_end_hour=0,  # the night window is off unless a test turns it on
