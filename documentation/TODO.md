@@ -6,8 +6,11 @@
 - [ ] Measure how fast first-floor temperatures respond to a flow-temperature change (concrete lag).
 - [ ] Compare observed first-floor temperatures with the setpoint/outdoor history across seasons to size the
       lever Theria should use (curve shift vs LK setpoint).
-- [ ] Expose LK actuator state (`actuators: [{n, s}]` per thermostat) as sensors in the `ha-lksystems` fork,
-      so "2 of 5 loops open" can be seen in history. Verify what `s` values mean (0 assumed closed).
+- [x] LK actuator state is exposed by Johan's `ha-lksystems` fork (PR angoyd/ha-lksystems#145) as
+      `binary_sensor.lk_<room>_actuator_<n>` (device_class opening, on = loop open): Vardagsrum 7, 9, 11;
+      Bibliotek 4, 6, 8, 10, 12. LK thermostat writes work again (fixed by Johan 2026-10-13).
+- [ ] Use the actuator sensors: record "loops open" per room in the day view/actuals, show whether the LK boost
+      really opens the floor loops, and feed the room model with valve state.
 - [ ] Add a weather service (Open-Meteo, lat 55.578 / lon 12.927 from HA): hourly `shortwave_radiation`,
       `direct_radiation`, `cloud_cover`. Use as solar-gain term (Solcast PV forecast is a possible fallback).
 - [x] Quantify solar gain per room from history (done, see knowledge base: ~2-3.5 C rise above ~2 kWh/m2/day, 4 h lag).
