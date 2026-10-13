@@ -55,6 +55,9 @@ class OutcomeInputs:
     room_c: FloatArray  # mean of the ground-floor comfort sensors
     # floor loops open per room (count, fractional within an hour); empty without actuator sensors
     loops_open: dict[str, FloatArray] = field(default_factory=dict)
+    # per LK thermostat (named after its entity): what it measures and what it is set to
+    thermostat_room_c: dict[str, FloatArray] = field(default_factory=dict)
+    thermostat_set_c: dict[str, FloatArray] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -186,6 +189,11 @@ def _average(cost: float, kwh: FloatArray) -> float:
     return cost / total if total > 0 else float("nan")
 
 
+def thermostat_name(entity_id: str) -> str:
+    """`climate.lk_bibliotek_thermostat` -> `lk_bibliotek`."""
+    return entity_id.split(".", 1)[1].removesuffix("_thermostat")
+
+
 def load_outcome_inputs(
     source: HistorySource, settings: PlanSettings, start: datetime, stop: datetime
 ) -> OutcomeInputs:
@@ -219,6 +227,22 @@ def load_outcome_inputs(
             source.series(settings.heating_mode_entity, first, stop), first, n
         ),
         room_c=np.nanmean([mean(e) for e in settings.room_temp_entities], axis=0),
+        thermostat_room_c={
+            thermostat_name(e): to_hourly(
+                source.series(e, first, stop, "current_temperature"), first, n
+            )
+            for e in settings.room_thermostat_entities
+        },
+        thermostat_set_c={
+            thermostat_name(e): to_hourly(
+                source.series(e, first, stop, "temperature"),
+                first,
+                n,
+                how="last",
+                ffill_hours=SETPOINT_FFILL_HOURS,
+            )
+            for e in settings.room_thermostat_entities
+        },
         loops_open={
             room: np.sum(
                 [

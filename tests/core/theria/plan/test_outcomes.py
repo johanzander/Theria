@@ -130,6 +130,8 @@ def test_inputs_are_assembled_from_counters_prices_setpoint_and_valve(settings):
         (settings.aux_energy_entity, None): np.cumsum(np.zeros(hours)) + 40.0,
         (settings.heating_mode_entity, None): np.zeros(hours),
         (settings.room_temp_entities[0], None): np.full(hours, 19.7),
+        (settings.room_thermostat_entities[0], "current_temperature"): np.full(hours, 19.7),
+        (settings.room_thermostat_entities[0], "temperature"): np.full(hours, 19.5),
     }
     inputs = load_outcome_inputs(
         OutcomeSource(series), settings, START, START + timedelta(hours=hours)
@@ -159,12 +161,17 @@ def test_open_floor_loops_are_counted_per_room(settings):
         (settings.aux_energy_entity, None): np.full(hours, 40.0),
         (settings.heating_mode_entity, None): np.zeros(hours),
         (settings.room_temp_entities[0], None): np.full(hours, 19.7),
+        (settings.room_thermostat_entities[0], "current_temperature"): np.full(hours, 19.9),
+        (settings.room_thermostat_entities[0], "temperature"): np.full(hours, 19.5),
         ("binary_sensor.a", None): np.array([1, 1, 0, 0]),
         ("binary_sensor.b", None): np.array([1, 0, 0, 1]),
     }
     inputs = load_outcome_inputs(
         OutcomeSource(series), settings, START, START + timedelta(hours=hours)
     )
+    name = settings.room_thermostat_entities[0].split(".")[1].removesuffix("_thermostat")
+    assert np.allclose(inputs.thermostat_room_c[name], 19.9)
+    assert np.allclose(inputs.thermostat_set_c[name], 19.5)
     assert inputs.loops_open["bib"][1:].tolist() == [1.5, 0.5, 0.5]  # a loop that switches at :30 counts half
 
 

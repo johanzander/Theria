@@ -88,10 +88,19 @@ def build_day_view(
             "baseline_room_c": None,
             "extreme": False,
             "loops_open": {},
+            "thermostats": {},
         }
         if row["past"] and hour in measured_at:
             rts, room = measured_at[hour]
             row["rts_c"], row["room_c"] = _known(rts), _known(room)
+            i = measured_index[hour]
+            row["thermostats"] = {
+                name: {
+                    "room_c": _known(measured.thermostat_room_c[name][i]),
+                    "set_c": _known(measured.thermostat_set_c[name][i]),
+                }
+                for name in measured.thermostat_room_c
+            }
             row["loops_open"] = {
                 name: _known(counts[measured_index[hour]])
                 for name, counts in loops.items()

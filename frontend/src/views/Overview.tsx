@@ -54,8 +54,14 @@ function DayCharts({ view }: { view: DayView }) {
   const rows = dayRows(view)
   const now = rows.find((r) => r.current)?.label
   const temps = rows
-    .flatMap((r) => [r.measuredRoom, r.plannedRoom, r.baselineRoom, r.floor])
+    .flatMap((r) => [r.measuredRoom, r.plannedRoom, r.baselineRoom, r.floor, ...Object.values(r.thermostats).flatMap((x) => [x.room_c, x.set_c])])
     .filter((v): v is number => v !== null)
+  const thermostats = Object.keys(rows.find((r) => Object.keys(r.thermostats).length > 0)?.thermostats ?? {})
+  const roomRows = rows.map((r) => ({
+    ...r,
+    ...Object.fromEntries(thermostats.flatMap((n) => [[`${n}_room`, r.thermostats[n]?.room_c ?? null], [`${n}_set`, r.thermostats[n]?.set_c ?? null]])),
+  }))
+  const roomColours = ['#0b6bcb', '#b42318', '#2f855a', '#b7791f']
   const roomLow = Math.floor(Math.min(...temps) * 2) / 2 - 0.5
   const roomHigh = Math.ceil(Math.max(...temps) * 2) / 2 + 0.5
   // with several y axes the line must name the one it is drawn against
@@ -88,14 +94,20 @@ function DayCharts({ view }: { view: DayView }) {
       <div className="panel">
         <h2>Room temperature</h2>
         <ResponsiveContainer width="100%" height={220}>
-          <ComposedChart data={rows}>
+          <ComposedChart data={roomRows}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="label" interval={2} />
             <YAxis domain={[roomLow, roomHigh]} unit="°" />
             <Tooltip />
             <Legend />
             <Line type="stepAfter" dataKey="floor" name="Floor" stroke="#b42318" strokeDasharray="4 3" dot={false} />
-            <Line type="monotone" dataKey="measuredRoom" name="Measured" stroke="#102a43" strokeWidth={2} dot={false} />
+            {thermostats.map((n, i) => (
+              <Line key={`${n}_room`} type="monotone" dataKey={`${n}_room`} name={`${n} now`} stroke={roomColours[i % roomColours.length]} strokeWidth={1.5} dot={false} />
+            ))}
+            {thermostats.map((n, i) => (
+              <Line key={`${n}_set`} type="stepAfter" dataKey={`${n}_set`} name={`${n} setpoint`} stroke={roomColours[i % roomColours.length]} strokeDasharray="2 3" dot={false} />
+            ))}
+            <Line type="monotone" dataKey="measuredRoom" name="Measured (mean)" stroke="#102a43" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="plannedRoom" name="Expected with plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="baselineRoom" name="Expected, flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
             {marker()}

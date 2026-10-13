@@ -92,3 +92,25 @@ def test_hours_that_passed_carry_the_open_floor_loops_per_room(settings):
     assert view["loops_total"] == {"bib": 3}
     assert rows[PLAN_START - timedelta(hours=1)]["loops_open"] == {"bib": 2.0}
     assert rows[PLAN_START]["loops_open"] == {}
+
+
+def test_hours_that_passed_carry_each_thermostats_temperature_and_setpoint(settings):
+    from dataclasses import replace
+
+    def with_thermostats(start, stop):
+        base = measured(start, stop)
+        n = len(base.hours)
+        return replace(
+            base,
+            thermostat_room_c={"lk_a": np.full(n, 19.8)},
+            thermostat_set_c={"lk_a": np.full(n, 19.5)},
+        )
+
+    rows = {
+        r["start"]: r
+        for r in started(settings, with_thermostats).day_view(LOCAL_DAY)["hours"]
+    }
+    assert rows[PLAN_START - timedelta(hours=1)]["thermostats"] == {
+        "lk_a": {"room_c": 19.8, "set_c": 19.5}
+    }
+    assert rows[PLAN_START]["thermostats"] == {}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse } from './model'
+import { planRows, dayRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -132,6 +132,7 @@ describe('dayRows', () => {
     start, past: i < 2, price_sek_per_kwh: 1, floor_c: 18, extreme: false,
     rts_c: 18 + i, room_c: 20 + i, baseline_rts_c: i < 2 ? null : 18, baseline_room_c: i < 2 ? null : 20,
     loops_open: (i < 2 ? { bib: 2 } : {}) as Record<string, number | null>,
+    thermostats: (i < 2 ? { lk_a: { room_c: 19.8, set_c: 19.5 } } : {}) as DayHour['thermostats'],
   }))
   const rows = dayRows({ day: '2026-10-12', now: '2026-10-12T16:00:00+00:00', loops_total: { bib: 5 }, hours })
 
@@ -144,6 +145,10 @@ describe('dayRows', () => {
     expect(rows[0]).toMatchObject({ measuredRts: 18, plannedRts: null, measuredRoom: 20, baselineRts: null })
     expect(rows[2]).toMatchObject({ measuredRts: null, plannedRts: 20, plannedRoom: 22, baselineRts: 18 })
     expect(rows.map((r) => r.current)).toEqual([false, false, true])
+  })
+
+  it('carries each thermostat with its temperature and setpoint', () => {
+    expect(rows[0].thermostats.lk_a).toEqual({ room_c: 19.8, set_c: 19.5 })
   })
 
   it('carries the open floor loops of the hours that have passed', () => {
