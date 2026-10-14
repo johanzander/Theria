@@ -767,7 +767,7 @@ class PlanService:
             flow_target(self._pump, t_out, s.rts_base_c), dtype=float
         )
         room_params = anchored_room_params(
-            self._warmed_room(), level_c, t_out, baseline_flow, s.lk_setpoint_c
+            self._warmed_room(), level_c, t_out, baseline_flow, s.lk_limit_c
         )
         result = plan(inputs, self._effective_settings(), self._pump, room_params)
         snapshot = PlanSnapshot(
@@ -867,11 +867,9 @@ class PlanService:
             if pump.action != "kept":
                 self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
             if self._lk is not None:
-                applied = self._current_setpoint()
-                if applied is not None:
-                    lk = self._lk.execute(applied)
-                    if lk.action != "kept":
-                        self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")
+                lk = self._lk.execute()
+                if lk.action != "kept":
+                    self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")
             self._save_state()
 
     def _automation_conflict(self) -> bool:

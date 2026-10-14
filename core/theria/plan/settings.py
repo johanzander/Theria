@@ -40,7 +40,7 @@ class PlanSettings:
     floor_c: float = 18.0
     extreme_floor_c: float = 17.0
     target_c: float = 19.5
-    ceiling_c: float = 21.0
+    ceiling_c: float = 22.0  # the room limit U: the plan may store heat up to it
     # Comfort is wanted from 06:00 to 24:00 (local time); nobody is in the ground-floor rooms at
     # night, so the room may be cooler then. start == end switches the night window off.
     timezone: str = "Europe/Stockholm"
@@ -48,10 +48,14 @@ class PlanSettings:
     night_end_hour: int = 6
     night_target_c: float = 18.5
     night_floor_c: float = 17.5
-    lk_setpoint_c: float = 21.0  # LK thermostat setpoint while pre-heating (the boost)
-    lk_base_c: float = (
-        19.5  # LK thermostat setpoint otherwise (never lowered below this)
-    )
+    # The LK thermostats are a static limit per room, held at the room limit: a room's valves close
+    # when it reaches it (zone-control design). Not a lever the plan moves.
+    lk_limit_c: float = 22.0
+    # Where the thermostats stand when Theria does not control them (kill switch, shadow, off): the
+    # setting the heat curve was tuned for.
+    lk_base_c: float = 19.5
+    # What the mixing valves (shunts) allow the floor loops to receive, whatever the pump sends.
+    floor_mix_max_c: float = 40.0
     comfort_cost_sek_per_c_hour: float = 1.0
     # Stands in for the rooms that react faster than the ground floor (salon, guest house):
     # every degree-hour the setpoint is away from the base setpoint costs this much.
@@ -116,10 +120,12 @@ class PlanSettings:
                 "night temperatures must satisfy extreme_floor <= night_floor <= floor and "
                 "night_floor <= night_target <= target"
             )
-        if not self.floor_c <= self.lk_base_c <= self.lk_setpoint_c:
+        if not self.floor_c <= self.lk_base_c <= self.lk_limit_c <= self.ceiling_c:
             raise ConfigurationError(
-                "LK setpoints must satisfy floor <= lk_base_c <= lk_setpoint_c"
+                "the LK settings must satisfy floor <= lk_base_c <= lk_limit_c <= ceiling"
             )
+        if self.floor_mix_max_c <= 0:
+            raise ConfigurationError("floor_mix_max_c must be positive")
         if not self.rts_min_c <= self.rts_base_c <= self.rts_max_c:
             raise ConfigurationError(
                 "plan room setpoint range must satisfy rts_min <= rts_base <= rts_max"

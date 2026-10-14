@@ -101,7 +101,11 @@ options:
     aux_status_entity: "sensor.add_heat_status"
     latitude: 55.578
     longitude: 12.927
-    max_flow_c: 45.0  # LK's design flow temperature (LK023393); protects the parquet floor
+    max_flow_c: 45.0  # LK's design flow temperature (LK023393); a sanity bound on the pump flow
+    floor_mix_max_c: 40.0  # what the floor mixing valves (shunts) let through to the floor loops
+    ceiling_c: 22.0  # the room limit; the LK thermostats are held here in active mode
+    lk_limit_c: 22.0
+    lk_base_c: 19.5  # the LK setting when Theria does not control the thermostats
     # Comfort is wanted 06:00-24:00 local time; nobody is in the ground floor at night, so the
     # room may be cooler then. Set night_start_hour = night_end_hour to switch the window off.
     night_start_hour: 0
@@ -233,6 +237,10 @@ schema:
     latitude: float
     longitude: float
     max_flow_c: float?
+    floor_mix_max_c: float?
+    ceiling_c: float?
+    lk_limit_c: float?
+    lk_base_c: float?
     min_saving_sek: float?
     night_start_hour: int?
     night_end_hour: int?

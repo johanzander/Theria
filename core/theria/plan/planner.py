@@ -191,7 +191,7 @@ class _Problem:
             flow,
             self.inputs.t_out_c[t],
             self.inputs.sun_wm2[t],
-            self.settings.lk_setpoint_c,
+            self.settings.lk_limit_c,
         )
         return (
             np.asarray(room_next, dtype=float) + self.extra_drift[t],
@@ -280,7 +280,7 @@ class _Problem:
             - total_kwh_per_hour(self.pump, t_out, down)
         )
         d_flow = float(flow_target(self.pump, t_out, up) - flow_target(self.pump, t_out, down))
-        valve = float(valve_open(reference_c, s.lk_setpoint_c))
+        valve = float(valve_open(reference_c, s.lk_limit_c))
         coupling = valve * self.room.k_slab
         rate = coupling + self.room.k_out
         room_per_rts = d_flow * coupling / rate
@@ -421,7 +421,7 @@ class _Problem:
                 flow,
                 self.inputs.t_out_c[t],
                 self.inputs.sun_wm2[t],
-                self.settings.lk_setpoint_c,
+                self.settings.lk_limit_c,
             )
             room_c, slab_c = float(room_next) + float(self.extra_drift[t]), float(
                 slab_next

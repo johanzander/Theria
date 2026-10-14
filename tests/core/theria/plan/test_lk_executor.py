@@ -56,85 +56,97 @@ def make(lk_settings, ha=None, clock=None):
     return executor, ha, current
 
 
-def test_the_thermostats_go_up_while_the_pump_setpoint_is_above_the_base(lk_settings):
-    executor, ha, _ = make(lk_settings)
-    result = executor.execute(pump_setpoint_c=19.0)
-    assert result.action == "wrote" and result.target_c == 21.0
-    assert ha.values == {"climate.lk_a": 21.0, "climate.lk_b": 21.0}
+LIMIT = 22.0
 
 
-def test_they_go_back_to_the_base_when_the_pump_is_at_or_below_its_base(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(21.0))
-    assert executor.execute(pump_setpoint_c=18.0).action == "wrote"
-    assert set(ha.values.values()) == {19.5}
+def test_every_thermostat_is_held_at_the_limit(lk_settings):
+    executor, ha, _ = make(lk_settings, FakeLK(19.5))
+    result = executor.execute()
+    assert result.action == "wrote" and result.target_c == LIMIT
+    assert ha.values == {"climate.lk_a": LIMIT, "climate.lk_b": LIMIT}
 
 
-def test_nothing_is_written_when_they_are_already_right(lk_settings):
-    executor, ha, _ = make(lk_settings)
-    assert executor.execute(pump_setpoint_c=17.0).action == "kept"
+def test_nothing_is_written_when_they_are_already_at_the_limit(lk_settings):
+    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
+    assert executor.execute().action == "kept"
     assert ha.writes == []
 
 
-def test_a_hand_change_pauses_the_lever_for_a_while(lk_settings):
-    executor, ha, now = make(lk_settings)
-    executor.execute(pump_setpoint_c=19.0)
+def test_a_held_thermostat_gets_its_hold_and_goes_back_to_the_limit_when_released(
+    lk_settings,
+):
+    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
+    executor.execute({"climate.lk_a": 20.5})
+    assert ha.values == {"climate.lk_a": 20.5, "climate.lk_b": LIMIT}
+    executor.execute({})
+    assert ha.values == {"climate.lk_a": LIMIT, "climate.lk_b": LIMIT}
+
+
+def test_a_hand_change_pauses_the_lever_for_an_hour(lk_settings):
+    executor, ha, now = make(lk_settings, FakeLK(LIMIT))
+    executor.execute()
     ha.values["climate.lk_a"] = 20.0  # Johan changes one thermostat
     now[0] += timedelta(minutes=15)
-    assert executor.execute(pump_setpoint_c=17.0).action == "paused"
-    now[0] += timedelta(hours=7)
-    assert executor.execute(pump_setpoint_c=17.0).action == "wrote"
+    assert executor.execute().action == "paused"
+    now[0] += timedelta(minutes=30)
+    assert executor.execute().action == "paused"
+    now[0] += timedelta(minutes=31)
+    assert executor.execute().action == "wrote"
+    assert ha.values["climate.lk_a"] == LIMIT
+
+
+def test_a_hold_that_was_written_is_not_mistaken_for_a_hand_change(lk_settings):
+    executor, ha, now = make(lk_settings, FakeLK(LIMIT))
+    executor.execute({"climate.lk_a": 20.5})
+    now[0] += timedelta(minutes=15)
+    assert executor.execute({"climate.lk_a": 20.5}).action == "kept"
 
 
 def test_one_unreachable_thermostat_does_not_stop_the_other(lk_settings):
-    executor, ha, _ = make(lk_settings)
+    executor, ha, _ = make(lk_settings, FakeLK(19.5))
     ha.fail.add("climate.lk_a")
-    result = executor.execute(pump_setpoint_c=19.0)
-    assert result.action == "failed" and ha.values["climate.lk_b"] == 21.0
+    result = executor.execute()
+    assert result.action == "failed" and ha.values["climate.lk_b"] == LIMIT
 
 
 def test_a_write_that_is_not_accepted_is_reported_not_assumed(lk_settings):
-    executor, ha, _ = make(lk_settings)
+    executor, ha, _ = make(lk_settings, FakeLK(19.5))
     ha.ignore.add("climate.lk_b")
-    assert executor.execute(pump_setpoint_c=19.0).action == "failed"
+    assert executor.execute().action == "failed"
 
 
 def test_restore_writes_the_base_everywhere_and_reports_failure(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(21.0))
+    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
     assert executor.restore_base().action == "wrote"
     assert set(ha.values.values()) == {19.5}
-    ha.values["climate.lk_a"] = 21.0
+    ha.values["climate.lk_a"] = LIMIT
     ha.fail.add("climate.lk_a")
     assert executor.restore_base().action == "failed"
 
 
 def test_restore_overrides_a_manual_pause(lk_settings):
-    executor, ha, _ = make(lk_settings)
-    executor.execute(pump_setpoint_c=19.0)
+    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
+    executor.execute()
     ha.values["climate.lk_a"] = 20.0
-    executor.execute(pump_setpoint_c=17.0)  # paused
+    executor.execute()  # paused
     assert executor.restore_base().action == "wrote"
 
 
-def test_the_base_must_not_exceed_the_boost(settings):
-    from dataclasses import replace
-
-    with pytest.raises(ConfigurationError):
-        replace(settings, lk_base_c=22.0)
-
-
-def test_a_thermostat_set_below_the_base_by_hand_is_left_alone(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(19.0))
-    assert executor.execute(pump_setpoint_c=17.0).action == "kept"
-    assert executor.restore_base().action == "kept"
-    assert ha.writes == []
-
-
 def test_thermostats_that_take_a_few_reads_to_confirm_are_not_a_failure(lk_settings):
-    ha = FakeLK()
+    ha = FakeLK(19.5)
     ha.lag = 3
     executor, _, _ = make(lk_settings, ha)
-    result = executor.execute(pump_setpoint_c=19.0)
+    result = executor.execute()
     assert result.action == "wrote" and ha.values == {
-        "climate.lk_a": 21.0,
-        "climate.lk_b": 21.0,
+        "climate.lk_a": LIMIT,
+        "climate.lk_b": LIMIT,
     }
+
+
+def test_the_state_survives_a_restart(lk_settings):
+    executor, ha, now = make(lk_settings, FakeLK(LIMIT))
+    executor.execute({"climate.lk_a": 20.5})
+    saved = executor.export_state()
+    again = LKExecutor(ha, lk_settings, now=lambda: now[0], sleep=lambda _: None)
+    again.load_state(saved)
+    assert again.execute({"climate.lk_a": 20.5}).action == "kept"

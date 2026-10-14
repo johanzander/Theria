@@ -1,9 +1,9 @@
-"""Writing the LK room thermostat setpoints, the second lever next to the pump setpoint.
+"""Writing the LK room thermostat setpoints: a static limit per room.
 
-The LK valves close when the room reaches the thermostat setpoint, so with the thermostats at
-the base the floor cannot store heat above it. While the pump setpoint is actually above its
-base (pre-heating) the thermostats are raised to `lk_setpoint_c`; otherwise they are at
-`lk_base_c`. They are never set below the base, so the loops are never closed more than today.
+The LK valves close when the room reaches the thermostat setpoint, so the setpoint is the room
+limit (`lk_limit_c`): the floor can store heat up to it and no further. It is held there at all
+times. The regulator may hold a single thermostat lower to close that room's valves for a while
+(`holds`); the thermostat goes back to the limit when the hold is released.
 """
 
 import logging
@@ -51,7 +51,7 @@ class LKExecutor:
         self._s = settings
         self._now = now
         self._sleep = sleep
-        self._last_written: float | None = None
+        self._last_written: dict[str, float] | None = None
         self._pause_until: datetime | None = None
         self.last_result: LKResult | None = None
 
@@ -64,11 +64,12 @@ class LKExecutor:
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
-        self._last_written = state["last_written"]
+        written = state["last_written"]
+        self._last_written = written if isinstance(written, dict) else None
         pause = state["pause_until"]
         self._pause_until = None if pause is None else datetime.fromisoformat(pause)
 
-    def execute(self, pump_setpoint_c: float) -> LKResult:
+    def execute(self, holds: dict[str, float] | None = None) -> LKResult:
         now = self._now()
         current = self._read_all()
         if isinstance(current, LKResult):
@@ -83,7 +84,8 @@ class LKExecutor:
                 )
             )
         if self._last_written is not None and any(
-            abs(v - self._last_written) >= MANUAL_CHANGE_C for v in current.values()
+            abs(value - self._last_written.get(entity, value)) >= MANUAL_CHANGE_C
+            for entity, value in current.items()
         ):
             self._pause_until = now + MANUAL_PAUSE
             self._last_written = None
@@ -91,11 +93,10 @@ class LKExecutor:
                 LKResult("paused", None, "thermostat changed by hand", now)
             )
         self._pause_until = None
-        preheating = pump_setpoint_c > self._s.rts_base_c + 1e-9
-        target = self._s.lk_setpoint_c if preheating else self._s.lk_base_c
-        return self._apply(
-            target, current, "pre-heating" if preheating else "base", now
-        )
+        targets = {
+            entity: (holds or {}).get(entity, self._s.lk_limit_c) for entity in current
+        }
+        return self._apply(targets, current, "hold" if holds else "limit", now)
 
     def restore_base(self) -> LKResult:
         """Thermostats back to the base (kill switch, leaving active mode, trouble)."""
@@ -104,7 +105,8 @@ class LKExecutor:
         if isinstance(current, LKResult):
             return self._record(current)
         self._pause_until = None
-        return self._apply(self._s.lk_base_c, current, "restore base", now)
+        targets = dict.fromkeys(current, self._s.lk_base_c)
+        return self._apply(targets, current, "restore base", now)
 
     def _read_all(self) -> dict[str, float] | LKResult:
         values: dict[str, float] = {}
@@ -120,13 +122,18 @@ class LKExecutor:
         return values
 
     def _apply(
-        self, target: float, current: dict[str, float], reason: str, now: datetime
+        self,
+        targets: dict[str, float],
+        current: dict[str, float],
+        reason: str,
+        now: datetime,
     ) -> LKResult:
         failures = []
-        lowering = target <= self._s.lk_base_c + 1e-9
+        wrote = False
         for entity, value in current.items():
-            if abs(value - target) < 1e-9 or (lowering and value < target):
-                continue  # right already, or set below the base by hand: not ours to raise
+            target = targets[entity]
+            if abs(value - target) < 1e-9:
+                continue
             try:
                 self._ha.set_temperature(entity, target)
                 confirmed = read_until(
@@ -142,19 +149,16 @@ class LKExecutor:
                 continue
             if abs(confirmed - target) > CONFIRM_TOLERANCE_C:
                 failures.append(f"{entity}: read back {confirmed}, wrote {target}")
+                continue
+            wrote = True
+        shown = self._s.lk_limit_c if len(set(targets.values())) != 1 else next(iter(targets.values()))
         if failures:
             logger.error("LK thermostat write failed: %s", "; ".join(failures))
-            return self._record(LKResult("failed", target, "; ".join(failures), now))
-        wrote = any(
-            abs(v - target) >= 1e-9 and not (lowering and v < target)
-            for v in current.values()
-        )
+            return self._record(LKResult("failed", shown, "; ".join(failures), now))
+        self._last_written = dict(targets)
         if wrote:
-            self._last_written = target
-            logger.info("LK thermostats -> %s (%s)", target, reason)
-        else:
-            self._last_written = target
-        return self._record(LKResult("wrote" if wrote else "kept", target, reason, now))
+            logger.info("LK thermostats -> %s (%s)", targets, reason)
+        return self._record(LKResult("wrote" if wrote else "kept", shown, reason, now))
 
     def _record(self, result: LKResult) -> LKResult:
         self.last_result = result

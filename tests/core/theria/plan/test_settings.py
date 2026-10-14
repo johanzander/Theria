@@ -30,7 +30,7 @@ def test_defaults_match_the_agreed_design():
         18.0,
         17.0,
         19.5,
-        21.0,
+        22.0,
     )
     assert s.comfort_cost_sek_per_c_hour == 1.0
     assert s.mode == "off"
@@ -124,3 +124,25 @@ def test_floor_loops_are_read_as_a_list_of_rooms():
         {**BASE, "room_actuators": [{"room": "bib", "entities": ["binary_sensor.a"]}]}
     )
     assert s.room_actuators == {"bib": ("binary_sensor.a",)}
+
+
+def test_the_lk_limit_defaults_to_the_room_ceiling_and_the_shunt_cap_to_40(settings):
+    assert settings.lk_limit_c == settings.ceiling_c == 22.0
+    assert settings.floor_mix_max_c == 40.0
+
+
+def test_the_lk_limit_must_lie_between_the_floor_and_the_ceiling(settings):
+    from dataclasses import replace
+
+    import pytest
+
+    from core.theria.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError):
+        replace(settings, lk_limit_c=settings.floor_c - 0.5)
+    with pytest.raises(ConfigurationError):
+        replace(settings, lk_limit_c=settings.ceiling_c + 0.5)
+    with pytest.raises(ConfigurationError):
+        replace(settings, lk_base_c=settings.lk_limit_c + 0.5)
+    with pytest.raises(ConfigurationError):
+        replace(settings, floor_mix_max_c=0.0)

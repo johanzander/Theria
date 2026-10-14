@@ -44,7 +44,7 @@ def run(inputs, settings):
         inputs.initial.room_c,
         inputs.t_out_c,
         baseline_flow,
-        settings.lk_setpoint_c,
+        settings.lk_limit_c,
     )
     return plan(inputs, settings, PRIOR_PUMP_PARAMS, room)
 
@@ -153,7 +153,7 @@ def test_replanning_from_the_measured_room_does_not_ratchet_the_room_down(settin
 
     pump = replace(PRIOR_PUMP_PARAMS, energy_per_rts=0.223)  # the fitted value
     horizon, replan_every, days = 30, 12, 6
-    t_out, lk = 5.0, settings.lk_setpoint_c
+    t_out, lk = 5.0, settings.lk_limit_c
     base_flow = flow_target(pump, np.full(horizon, t_out), settings.rts_base_c)
     # the real house: holds 20.3 C on the baseline setpoint
     true = anchored_room_params(
