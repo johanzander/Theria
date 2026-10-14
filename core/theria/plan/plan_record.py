@@ -24,6 +24,10 @@ class PlanRecord:
     baseline_room_c: float
     baseline_energy_kwh: float
     price_sek_per_kwh: float
+    # added later: older lines in the file lack them
+    flow_c: float | None = None
+    baseline_flow_c: float | None = None
+    binding: str | None = None
 
 
 def _to_dict(record: PlanRecord) -> dict[str, Any]:

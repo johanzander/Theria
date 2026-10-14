@@ -106,6 +106,9 @@ def build_day_view(
             "energy_baseline_kwh": None,
             "saving_planned_sek": None,
             "saving_measured_sek": None,
+            "flow_planned_c": None,
+            "flow_baseline_c": None,
+            "reason": None,
             "loops_open": {},
             "thermostats": {},
         }
@@ -137,6 +140,9 @@ def build_day_view(
                 room_baseline=record.baseline_room_c,
                 energy_planned_kwh=record.energy_kwh,
                 energy_baseline_kwh=record.baseline_energy_kwh,
+                flow_planned_c=record.flow_c,
+                flow_baseline_c=record.baseline_flow_c,
+                reason=record.binding,
             )
         elif not past and hour in planned:
             hour_plan, baseline = planned[hour]
@@ -151,6 +157,9 @@ def build_day_view(
                 room_baseline=baseline.room_c_end + baseline.sun_swing_c,
                 energy_planned_kwh=hour_plan.energy_kwh,
                 energy_baseline_kwh=baseline.energy_kwh,
+                flow_planned_c=hour_plan.flow_target_c,
+                flow_baseline_c=baseline.flow_target_c,
+                reason=hour_plan.reason.get("binding"),
             )
         row["saving_planned_sek"] = _saving(
             price, row["energy_baseline_kwh"], row["energy_planned_kwh"]

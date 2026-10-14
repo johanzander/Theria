@@ -962,6 +962,9 @@ class PlanService:
                     baseline_room_c=flat.room_c_end + flat.sun_swing_c,
                     baseline_energy_kwh=flat.energy_kwh,
                     price_sek_per_kwh=hour.price_sek_per_kwh,
+                    flow_c=hour.flow_target_c,
+                    baseline_flow_c=flat.flow_target_c,
+                    binding=hour.reason.get("binding"),
                 )
             )
         except OSError:

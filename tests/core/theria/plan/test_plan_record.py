@@ -126,3 +126,28 @@ def test_a_future_hour_has_plan_and_baseline_but_nothing_measured(settings):
     assert row["rts_planned"] is not None and row["rts_baseline"] is not None
     assert row["rts_measured"] is None and row["energy_measured_kwh"] is None
     assert row["saving_measured_sek"] is None
+
+
+def test_flow_and_reason_travel_with_the_hour(settings, tmp_path):
+    store = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
+    service, *_ = make(settings, plan_record=store)
+    run_cycle(service)
+    first = service.latest().plan.hours[0]
+    found = store.read(PLAN_START, PLAN_START + timedelta(hours=1))[PLAN_START]
+    assert found.flow_c == first.flow_target_c and found.binding == first.reason.get("binding")
+    row = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}[PLAN_START]
+    assert row["flow_planned_c"] == first.flow_target_c and row["reason"] == found.binding
+
+
+def test_an_older_record_without_the_new_fields_is_still_read(tmp_path):
+    import json
+
+    path = tmp_path / "plan_record.jsonl"
+    old = {
+        "hour": HOUR.isoformat(), "computed_at": HOUR.isoformat(), "rts_c": 17.0, "room_c": 19.4,
+        "energy_kwh": 1.5, "baseline_rts_c": 18.0, "baseline_room_c": 19.5,
+        "baseline_energy_kwh": 2.0, "price_sek_per_kwh": 1.2,
+    }
+    path.write_text(json.dumps(old) + "\n")
+    found = PlanRecordStore(str(path)).read(HOUR, HOUR + timedelta(hours=1))[HOUR]
+    assert found.flow_c is None and found.binding is None
