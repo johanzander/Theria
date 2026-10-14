@@ -89,8 +89,9 @@ def make(
     outcomes=None,
     event_log=None,
     actuals_loader=None,
+    evening=3.0,
 ):
-    ha = WritableHA(price_attributes(), setpoint)
+    ha = WritableHA(price_attributes(evening=evening), setpoint)
     current = [EVENING]
     now = clock or (lambda: current[0])
     notifier = FakeNotifier()

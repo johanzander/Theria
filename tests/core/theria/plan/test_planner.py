@@ -236,6 +236,19 @@ def test_the_room_ends_the_horizon_where_it_started_when_it_started_above_target
     assert result.hours[-1].room_c_end > 20.3 - 0.1
 
 
+def test_a_room_the_flat_setpoint_keeps_below_target_still_shifts_heat_to_the_cheap_hours(
+    settings, make_inputs
+):
+    # The flat setpoint holds this room at about 19.0, under the 19.5 target. The end of the
+    # horizon must be judged against where the flat setpoint ends, not against a target it never
+    # reaches: otherwise every degree at the end outweighs the price and the plan just heats.
+    result = run(make_inputs(daily_prices(), room_c=19.0, slab_c=28.0), settings)
+    assert result.objective_sek < result.baseline_objective_sek - 0.1
+    rts = np.array([h.rts_c for h in result.hours])
+    price = daily_prices()
+    assert rts[price == price.min()].mean() > rts[price == price.max()].mean() + 0.5
+
+
 def test_the_other_rooms_cost_keeps_a_small_price_difference_from_moving_the_setpoint(
     settings, make_inputs
 ):

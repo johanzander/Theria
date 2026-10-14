@@ -7,7 +7,7 @@ from core.theria.plan.state_store import PlanStateStore
 
 from .test_service import FakeWeather, price_attributes
 from .test_service_active import FakeNotifier, FakeSafety, WritableHA, run_cycle
-from .test_service_lk import CHEAP_BEFORE_PEAK
+from .test_service_lk import CHEAP_BEFORE_PEAK, PEAK_PRICE
 
 
 def build(settings, ha, path):
@@ -30,7 +30,7 @@ def test_a_hand_change_made_while_the_service_was_down_is_noticed_after_restart(
     settings, tmp_path
 ):
     path = str(tmp_path / "state.json")
-    ha = WritableHA(price_attributes(), 18.0)
+    ha = WritableHA(price_attributes(evening=PEAK_PRICE), 18.0)
     first = build(settings, ha, path)
     first.set_mode("active", confirm=True)
     run_cycle(first)

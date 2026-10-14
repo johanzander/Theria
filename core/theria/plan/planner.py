@@ -251,10 +251,16 @@ class _Problem:
         rr, ss = np.meshgrid(self.room_grid, self.slab_grid, indexing="ij")
         shape = (len(self.room_grid), len(self.slab_grid), n_actions)
         value = np.empty((self.horizon + 1, *shape), dtype=np.float32)
+        # ... but never against a level the flat setpoint itself does not reach: a room that sits
+        # under the target anyway would otherwise value every degree at the end above the whole
+        # day's energy bill, and the plan would just heat whatever the price.
+        reference_c = min(
+            self.reference_room_c, self.flat_plan(s.rts_base_c)[-1].room_c_end
+        )
         terminal = (
             self.terminal_hours
             * s.comfort_cost_sek_per_c_hour
-            * np.maximum(0.0, self.reference_room_c - rr)
+            * np.maximum(0.0, reference_c - rr)
         )
         value[self.horizon] = terminal[:, :, None]
         policy = np.empty((self.horizon, *shape), dtype=np.int8)

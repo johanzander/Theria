@@ -105,14 +105,12 @@ def test_the_plan_still_cuts_during_a_morning_peak_and_has_warmed_up_before_it(
     assert max(rts[5:7]) < min(rts[1:5])  # warm before the peak, lower during it
 
 
-def test_the_night_window_does_not_stop_the_plan_from_preheating_before_the_peak(
-    settings, night, make_inputs
+def test_the_night_window_does_not_make_the_plan_flat_before_the_peak(
+    night, make_inputs
 ):
-    inputs = make_inputs(morning_peak_prices(), room_c=19.2)
-    without = [h.rts_c for h in run(inputs, settings).hours[:12]]
-    with_night = [h.rts_c for h in run(inputs, night).hours[:12]]
-    assert with_night[1:5] == without[1:5]  # the pre-heating hours are unchanged
-    assert min(with_night[1:5]) >= 19.5  # it really does heat
+    result = run(make_inputs(morning_peak_prices(), room_c=19.2), night)
+    assert result.objective_sek < result.baseline_objective_sek - 0.1
+    assert min(h.rts_c for h in result.hours[5:7]) < night.rts_base_c  # it cuts in the peak
 
 
 def test_the_default_night_is_a_careful_one_until_cold_nights_have_been_measured():

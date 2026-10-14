@@ -8,11 +8,12 @@ from core.theria.exceptions import SetpointRestoreError
 from .test_service_active import make, run_cycle
 
 CHEAP_BEFORE_PEAK = datetime(2026, 10, 12, 23, 20, tzinfo=UTC)
+PEAK_PRICE = 8.0  # a clear spread: the plan pre-heats before it and cuts through it
 LK = "climate.lk_bibliotek_thermostat"
 
 
 def test_the_thermostats_are_raised_while_the_plan_preheats(settings):
-    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK)
+    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     assert ha.setpoint > 18.0, "precondition: the plan pre-heats at this hour"
@@ -27,13 +28,13 @@ def test_they_stay_at_the_base_when_the_plan_coasts(settings):
 
 
 def test_shadow_mode_never_touches_the_thermostats(settings):
-    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK)
+    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     run_cycle(service)
     assert ha.lk_writes == []
 
 
 def test_leaving_active_mode_lowers_the_thermostats_again(settings):
-    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK)
+    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     service.set_mode("shadow")
@@ -41,7 +42,7 @@ def test_leaving_active_mode_lowers_the_thermostats_again(settings):
 
 
 def test_a_failed_thermostat_restore_keeps_active_mode(settings):
-    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK)
+    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     ha.fail_lk_writes = True
@@ -51,7 +52,7 @@ def test_a_failed_thermostat_restore_keeps_active_mode(settings):
 
 
 def test_stopping_the_service_restores_the_thermostats(settings):
-    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK)
+    service, ha, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     asyncio.run(service.stop())
@@ -59,7 +60,7 @@ def test_stopping_the_service_restores_the_thermostats(settings):
 
 
 def test_the_execution_status_reports_the_thermostat_action(settings):
-    service, _, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK)
+    service, _, _, _, _ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     assert service.execution_status()["last_lk"].action == "wrote"
