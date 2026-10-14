@@ -275,6 +275,8 @@ export interface DayHour {
   start: string
   past: boolean
   price_sek_per_kwh: number | null
+  /** the four 15-minute prices of the hour, null for a quarter without a price */
+  price_quarters: (number | null)[]
   floor_c: number
   rts_c: number | null
   room_c: number | null
@@ -327,6 +329,29 @@ export function dayRows(view: DayView): DayRow[] {
     thermostats: h.thermostats,
     current: h.start === view.now,
   }))
+}
+
+export interface QuarterRow {
+  label: string
+  price: number | null
+  measuredRts: number | null
+  plannedRts: number | null
+  baselineRts: number | null
+  current: boolean
+}
+
+/** The price chart at the resolution the market has (15 minutes); the setpoint holds for its hour. */
+export function quarterRows(view: DayView): QuarterRow[] {
+  return dayRows(view).flatMap((row, i) =>
+    view.hours[i].price_quarters.map((price, q) => ({
+      label: clockLabel(new Date(new Date(view.hours[i].start).getTime() + q * 15 * 60_000).toISOString()),
+      price,
+      measuredRts: row.measuredRts,
+      plannedRts: row.plannedRts,
+      baselineRts: row.baselineRts,
+      current: row.current && q === 0,
+    })),
+  )
 }
 
 export interface EnergyRow {

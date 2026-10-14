@@ -3,7 +3,7 @@ import {
 } from 'recharts'
 import { useState } from 'react'
 import { fetchDay, fetchExecution, fetchPlan, fetchSavings } from '../api'
-import { dayRows, outlookText, savingsSummary, type DayView, type Execution, type PlanResponse, type SavingsResponse } from '../model'
+import { dayRows, quarterRows, outlookText, savingsSummary, type DayView, type Execution, type PlanResponse, type SavingsResponse } from '../model'
 import { Card, useLoaded } from '../ui'
 
 const tomorrowIso = () => {
@@ -47,6 +47,7 @@ function Status({ plan, execution }: { plan: PlanResponse | null; execution: Exe
 
 function DayCharts({ view }: { view: DayView }) {
   const rows = dayRows(view)
+  const quarters = quarterRows(view)
   const now = rows.find((r) => r.current)?.label
   const temps = rows
     .flatMap((r) => [r.measuredRoom, r.plannedRoom, r.baselineRoom, r.floor, ...Object.values(r.thermostats).flatMap((x) => [x.room_c, x.set_c])])
@@ -71,14 +72,14 @@ function DayCharts({ view }: { view: DayView }) {
       <div className="panel">
         <h2>Price and room setpoint</h2>
         <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={rows}>
+          <ComposedChart data={quarters}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" interval={2} />
+            <XAxis dataKey="label" interval={7} />
             <YAxis yAxisId="price" orientation="right" unit=" kr" />
             <YAxis yAxisId="rts" domain={[16, 20]} unit="°" />
             <Tooltip />
             <Legend />
-            <Bar yAxisId="price" dataKey="price" name="Price (SEK/kWh)" fill="#cbd2d9" />
+            <Bar yAxisId="price" dataKey="price" name="Price per quarter (SEK/kWh)" fill="#cbd2d9" />
             <Line yAxisId="rts" type="stepAfter" dataKey="measuredRts" name="Measured setpoint" stroke="#102a43" strokeWidth={2} dot={false} />
             <Line yAxisId="rts" type="stepAfter" dataKey="plannedRts" name="Plan setpoint" stroke="#0b6bcb" strokeWidth={2} dot={false} />
             <Line yAxisId="rts" type="stepAfter" dataKey="baselineRts" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />

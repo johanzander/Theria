@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
+import { planRows, dayRows, quarterRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -129,7 +129,7 @@ describe('tabHref', () => {
 
 describe('dayRows', () => {
   const hours = ['2026-10-12T14:00:00+00:00', '2026-10-12T15:00:00+00:00', '2026-10-12T16:00:00+00:00'].map((start, i) => ({
-    start, past: i < 2, price_sek_per_kwh: 1, floor_c: 18, extreme: false,
+    start, past: i < 2, price_sek_per_kwh: 1, price_quarters: [0.5, 1, 1.5, null], floor_c: 18, extreme: false,
     rts_c: 18 + i, room_c: 20 + i, baseline_rts_c: i < 2 ? null : 18, baseline_room_c: i < 2 ? null : 20,
     loops_open: (i < 2 ? { bib: 2 } : {}) as Record<string, number | null>,
     thermostats: (i < 2 ? { lk_a: { room_c: 19.8, set_c: 19.5 } } : {}) as DayHour['thermostats'],
@@ -172,5 +172,26 @@ describe('sortedRecommendations', () => {
   it('puts what is worth considering first and keeps the order otherwise', () => {
     const sorted = sortedRecommendations([rec('a', 'ok'), rec('b', 'consider'), rec('c', 'no data'), rec('d', 'consider')])
     expect(sorted.map((r) => r.key)).toEqual(['b', 'd', 'a', 'c'])
+  })
+})
+
+describe('quarterRows', () => {
+  const hours = ['2026-10-12T14:00:00+00:00', '2026-10-12T15:00:00+00:00'].map((start, i) => ({
+    start, past: i < 1, price_sek_per_kwh: 1, price_quarters: [1, 2, 3, 4], floor_c: 18, extreme: false,
+    rts_c: 18 + i, room_c: 20, baseline_rts_c: i < 1 ? null : 18, baseline_room_c: null,
+    loops_open: {} as Record<string, number | null>, thermostats: {} as DayHour['thermostats'],
+  }))
+  const rows = quarterRows({ day: '2026-10-12', now: '2026-10-12T15:00:00+00:00', loops_total: {}, hours })
+
+  it('has four rows per hour with the quarter price and a quarter-past label', () => {
+    expect(rows).toHaveLength(8)
+    expect(rows.map((r) => r.price)).toEqual([1, 2, 3, 4, 1, 2, 3, 4])
+    expect(rows[1].label.endsWith(':15')).toBe(true)
+  })
+
+  it('holds the hour setpoint through its quarters and marks now on the first one', () => {
+    expect(rows.slice(0, 4).every((r) => r.measuredRts === 18 && r.plannedRts === null)).toBe(true)
+    expect(rows.slice(4).every((r) => r.plannedRts === 19)).toBe(true)
+    expect(rows.map((r) => r.current)).toEqual([false, false, false, false, true, false, false, false])
   })
 })

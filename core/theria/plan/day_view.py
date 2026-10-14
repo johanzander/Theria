@@ -2,7 +2,7 @@
 
 Every hour of the day is listed, so the chart always spans the day from 00:00 to 24:00. Hours that
 have passed carry the measured setpoint and room temperature, the hours from now on carry the
-plan; prices come from the price sensor for both.
+plan; prices come from the price feed for both, hourly and per quarter.
 """
 
 from datetime import UTC, date, datetime, time, timedelta
@@ -28,6 +28,15 @@ def day_hours(day: date, timezone: str) -> list[datetime]:
         hours.append(first)
         first += timedelta(hours=1)
     return hours
+
+
+def _quarter_prices(
+    prices: dict[datetime, float], hour: datetime
+) -> list[float | None]:
+    """The four 15-minute prices of the hour; None for a quarter without a price."""
+    return [
+        prices.get(hour + timedelta(minutes=15 * i)) for i in range(QUARTERS_PER_HOUR)
+    ]
 
 
 def _hour_price(prices: dict[datetime, float], hour: datetime) -> float | None:
@@ -81,6 +90,7 @@ def build_day_view(
             "start": hour,
             "past": hour < current,
             "price_sek_per_kwh": _hour_price(prices, hour),
+            "price_quarters": _quarter_prices(prices, hour),
             "floor_c": settings.night_floor_c if night else settings.floor_c,
             "rts_c": None,
             "room_c": None,

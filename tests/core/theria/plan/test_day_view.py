@@ -114,3 +114,18 @@ def test_hours_that_passed_carry_each_thermostats_temperature_and_setpoint(setti
         "lk_a": {"room_c": 19.8, "set_c": 19.5}
     }
     assert rows[PLAN_START]["thermostats"] == {}
+
+
+def test_every_hour_carries_its_four_quarter_prices_and_the_hour_price_is_their_mean(
+    settings,
+):
+    rows = started(settings).day_view(LOCAL_DAY)["hours"]
+    priced = [r for r in rows if r["price_sek_per_kwh"] is not None]
+    assert priced
+    for row in rows:
+        assert len(row["price_quarters"]) == 4
+    for row in priced:
+        assert row["price_sek_per_kwh"] == np.mean(row["price_quarters"])
+    for row in rows:
+        if row["price_sek_per_kwh"] is None:
+            assert None in row["price_quarters"]
