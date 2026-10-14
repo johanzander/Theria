@@ -139,6 +139,12 @@ async def refit_models(svc: Annotated[PlanService, Depends(get_service)]) -> Any
     return jsonable_encoder(models)
 
 
+@router.get("/plan/model")
+async def get_model_catalog(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
+    """Every parameter and weight of the model with its value, unit, source and meaning."""
+    return jsonable_encoder(svc.model_catalog())
+
+
 @router.get("/plan/execution")
 async def get_execution(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
     """Active-mode state: last write, last trouble."""

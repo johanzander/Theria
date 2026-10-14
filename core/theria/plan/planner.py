@@ -75,6 +75,9 @@ class Plan:
     objective_sek: float
     baseline_objective_sek: float
     floor_violation_hours: int
+    # The end of the horizon: the level the plan is judged against and what a degree under it costs
+    end_reference_c: float = 0.0
+    end_cost_sek_per_c: float = 0.0
 
 
 def _interp2(grid: FloatGrid, r_idx: FloatArray, s_idx: FloatArray) -> FloatArray:
@@ -496,6 +499,7 @@ def plan(
     value, policy = problem.solve()
     hours = problem.follow_policy(value, policy)
     baseline = problem.flat_plan(settings.rts_base_c)
+    reference_c, cost_per_c = problem.end_terms()
     # what the end state of each trajectory is worth later: the plan and the baseline alike
     objective = float(problem.end_charge(hours[-1].room_c_end)) + sum(
         h.energy_cost_sek + h.comfort_cost_sek for h in hours
@@ -512,4 +516,12 @@ def plan(
     violations = sum(
         1 for h in hours if h.room_c_end + h.sun_swing_c < h.floor_c - 0.05
     )
-    return Plan(hours, baseline, float(objective), float(base_objective), violations)
+    return Plan(
+        hours,
+        baseline,
+        float(objective),
+        float(base_objective),
+        violations,
+        end_reference_c=float(reference_c),
+        end_cost_sek_per_c=float(cost_per_c),
+    )

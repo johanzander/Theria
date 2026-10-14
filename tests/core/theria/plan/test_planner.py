@@ -469,3 +469,9 @@ def test_a_plan_that_saves_more_than_the_threshold_is_kept(settings, make_inputs
     result = run(inputs, replace(settings, min_saving_sek=gain - 0.01))
 
     assert len({h.rts_c for h in result.hours}) > 1
+
+
+def test_the_plan_reports_the_price_of_a_degree_it_gives_up_at_the_end(settings, make_inputs):
+    result = run(make_inputs(daily_prices(), room_c=19.5, slab_c=28.0), settings)
+    assert result.end_cost_sek_per_c > 0
+    assert result.end_reference_c == pytest.approx(result.baseline_hours[-1].room_c_end, abs=0.6)

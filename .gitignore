@@ -55,3 +55,4 @@ frontend/dist/
 
 # Private documents (manuals, calculations, mail): keep local
 documentation/private/
+.plan_record.jsonl

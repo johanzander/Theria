@@ -131,3 +131,12 @@ def test_tuning_lists_the_settings_with_advice_and_applies_nothing(client):
     keys = [r["key"] for r in body]
     assert keys[:2] == ["floor_c", "max_flow_c"] and "stage" not in keys
     assert all(r["status"] in {"ok", "consider", "no data"} for r in body)
+
+
+def test_the_model_catalog_lists_the_parameters(client):
+    http, service = client
+    service.run_once()
+    body = http.get("/api/plan/model").json()
+    keys = {e["key"] for e in body}
+    assert {"energy_per_rts", "k_slab", "comfort_cost_sek_per_c_hour", "end_cost_sek_per_c"} <= keys
+    assert all(e["description"] for e in body)

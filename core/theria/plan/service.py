@@ -28,6 +28,7 @@ from core.theria.plan.day_view import build_day_view, day_hours
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
+from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
 from core.theria.plan.regulator import Regulator, RoomStatus
 from core.theria.plan.skill import SkillTracker
@@ -519,6 +520,30 @@ class PlanService:
                 sum(d.baseline_cost_sek for d in outcomes)
             ),
         }
+
+    def model_catalog(self) -> list[dict[str, Any]]:
+        """Every parameter and weight the plan runs on, with what it is and where it comes from."""
+        now = self._now()
+        latest = self.latest()
+        return build_catalog(
+            settings=self._effective_settings(),
+            pump=self._pump,
+            pump_fitted=self._models is not None,
+            room=self._room,
+            room_fitted=self._models is not None and self._models.room is not None,
+            night=self._night,
+            warmup=self._warmup,
+            morning_margin_c=self._morning_margin_c,
+            disturbance_c_per_h=self._disturbance.at(now),
+            authority=self._skill.authority(now),
+            skill_error_c_per_h=self._skill.error(now),
+            regulator_rise_c=(
+                {}
+                if self._regulator is None
+                else {r.room: r.rise_c for r in self._regulator.rooms}
+            ),
+            plan=None if latest is None else latest.plan,
+        )
 
     def execution_status(self) -> dict[str, Any]:
         result: ExecutionResult | None = (
