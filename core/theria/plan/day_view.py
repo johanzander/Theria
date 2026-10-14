@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from core.theria.plan.outcomes import OutcomeInputs
+from core.theria.plan.plan_record import PlanRecord
 from core.theria.plan.planner import Plan
 from core.theria.plan.prices import QUARTERS_PER_HOUR, PricePeriod
 from core.theria.plan.series import hour_floor
@@ -50,6 +51,13 @@ def _known(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
 
+def _saving(price: float | None, baseline_kwh: float | None, kwh: float | None) -> float | None:
+    """What the hour's energy was worth against the flat setpoint's, at the hour's price."""
+    if price is None or baseline_kwh is None or kwh is None:
+        return None
+    return float(price * (baseline_kwh - kwh))
+
+
 def build_day_view(
     day: date,
     now: datetime,
@@ -57,9 +65,14 @@ def build_day_view(
     periods: list[PricePeriod],
     plan: Plan | None,
     measured: OutcomeInputs | None,
+    records: dict[datetime, PlanRecord] | None = None,
 ) -> dict[str, Any]:
-    """`measured` covers the hours before now; None when it could not be read."""
+    """`measured` covers the hours before now; None when it could not be read.
+
+    Every hour carries the plan, the flat baseline and what was measured side by side: for hours that
+    have passed the plan is the one that was applied (from `records`), for the rest the latest plan."""
     current = hour_floor(now)
+    records = records or {}
     prices = {p.start: p.price_sek_per_kwh for p in periods}
     planned = (
         {}
@@ -69,41 +82,41 @@ def build_day_view(
             for h, b in zip(plan.hours, plan.baseline_hours, strict=True)
         }
     )
-    measured_at = (
-        {}
-        if measured is None
-        else {
-            hour: (rts, room)
-            for hour, rts, room in zip(
-                measured.hours, measured.rts_c, measured.room_c, strict=True
-            )
-        }
-    )
-    measured_index = (
-        {} if measured is None else {h: i for i, h in enumerate(measured.hours)}
-    )
+    index = {} if measured is None else {h: i for i, h in enumerate(measured.hours)}
     loops = {} if measured is None else measured.loops_open
     rows: list[dict[str, Any]] = []
     for hour in day_hours(day, settings.timezone):
         night = settings.in_night(hour)
+        past = hour < current
         row: dict[str, Any] = {
             "start": hour,
-            "past": hour < current,
+            "past": past,
             "price_sek_per_kwh": _hour_price(prices, hour),
             "price_quarters": _quarter_prices(prices, hour),
             "floor_c": settings.night_floor_c if night else settings.floor_c,
-            "rts_c": None,
-            "room_c": None,
-            "baseline_rts_c": None,
-            "baseline_room_c": None,
             "extreme": False,
+            "rts_measured": None,
+            "rts_planned": None,
+            "rts_baseline": None,
+            "room_measured": None,
+            "room_planned": None,
+            "room_baseline": None,
+            "energy_measured_kwh": None,
+            "energy_planned_kwh": None,
+            "energy_baseline_kwh": None,
+            "saving_planned_sek": None,
+            "saving_measured_sek": None,
             "loops_open": {},
             "thermostats": {},
         }
-        if row["past"] and hour in measured_at:
-            rts, room = measured_at[hour]
-            row["rts_c"], row["room_c"] = _known(rts), _known(room)
-            i = measured_index[hour]
+        price = row["price_sek_per_kwh"]
+        if past and hour in index:
+            i = index[hour]
+            row["rts_measured"] = _known(measured.rts_c[i])
+            row["room_measured"] = _known(measured.room_c[i])
+            row["energy_measured_kwh"] = _known(
+                measured.compressor_kwh[i] + measured.aux_kwh[i]
+            )
             row["thermostats"] = {
                 name: {
                     "room_c": _known(measured.thermostat_room_c[name][i]),
@@ -112,20 +125,39 @@ def build_day_view(
                 for name in measured.thermostat_room_c
             }
             row["loops_open"] = {
-                name: _known(counts[measured_index[hour]])
-                for name, counts in loops.items()
+                name: _known(counts[i]) for name, counts in loops.items()
             }
-        elif not row["past"] and hour in planned:
-            hour_plan, baseline = planned[hour]
+        if past and hour in records:
+            record = records[hour]
+            price = record.price_sek_per_kwh
             row.update(
-                price_sek_per_kwh=hour_plan.price_sek_per_kwh,
-                floor_c=hour_plan.floor_c,
-                rts_c=hour_plan.rts_c,
-                room_c=hour_plan.room_c_end + hour_plan.sun_swing_c,
-                baseline_rts_c=baseline.rts_c,
-                baseline_room_c=baseline.room_c_end + baseline.sun_swing_c,
-                extreme=hour_plan.extreme,
+                rts_planned=record.rts_c,
+                rts_baseline=record.baseline_rts_c,
+                room_planned=record.room_c,
+                room_baseline=record.baseline_room_c,
+                energy_planned_kwh=record.energy_kwh,
+                energy_baseline_kwh=record.baseline_energy_kwh,
             )
+        elif not past and hour in planned:
+            hour_plan, baseline = planned[hour]
+            price = hour_plan.price_sek_per_kwh
+            row.update(
+                price_sek_per_kwh=price,
+                floor_c=hour_plan.floor_c,
+                extreme=hour_plan.extreme,
+                rts_planned=hour_plan.rts_c,
+                rts_baseline=baseline.rts_c,
+                room_planned=hour_plan.room_c_end + hour_plan.sun_swing_c,
+                room_baseline=baseline.room_c_end + baseline.sun_swing_c,
+                energy_planned_kwh=hour_plan.energy_kwh,
+                energy_baseline_kwh=baseline.energy_kwh,
+            )
+        row["saving_planned_sek"] = _saving(
+            price, row["energy_baseline_kwh"], row["energy_planned_kwh"]
+        )
+        row["saving_measured_sek"] = _saving(
+            price, row["energy_baseline_kwh"], row["energy_measured_kwh"]
+        )
         rows.append(row)
     return {
         "day": day,

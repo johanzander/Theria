@@ -32,6 +32,7 @@ from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.event_log import EventLog
+from core.theria.plan.plan_record import PlanRecordStore
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import (
@@ -237,6 +238,13 @@ async def lifespan(app: FastAPI):
                         os.path.dirname(__file__), "..", ".plan_events.jsonl"
                     )
                 )
+                record_path = (
+                    "/data/plan_record.jsonl"
+                    if os.path.isdir("/data")
+                    else os.path.join(
+                        os.path.dirname(__file__), "..", ".plan_record.jsonl"
+                    )
+                )
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -272,6 +280,7 @@ async def lifespan(app: FastAPI):
                     outcome_loader=outcome_loader,
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
+                    plan_record=PlanRecordStore(record_path),
                     actuals_loader=actuals_loader,
                     price_periods=(
                         NordpoolFeed(

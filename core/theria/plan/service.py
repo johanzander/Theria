@@ -28,6 +28,7 @@ from core.theria.plan.day_view import build_day_view, day_hours
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
+from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
 from core.theria.plan.regulator import Regulator, RoomStatus
 from core.theria.plan.skill import SkillTracker
 from core.theria.plan.morning import MorningRules, update_margin
@@ -120,6 +121,7 @@ class PlanService:
         sensor_guard: SensorGuard | None = None,
         executor: PlanExecutor | None = None,
         lk_executor: LKExecutor | None = None,
+        plan_record: PlanRecordStore | None = None,
         safety: Safety | None = None,
         notifier: Notifier | None = None,
         outcome_loader: OutcomeLoader | None = None,
@@ -159,6 +161,7 @@ class PlanService:
         self._parameter_log = parameter_log
         self._executor = executor
         self._lk = lk_executor
+        self._plan_record = plan_record
         self._safety = safety
         self._notifier = notifier
         self._outcome_loader = outcome_loader
@@ -721,6 +724,12 @@ class PlanService:
                 measured = self._actuals_loader(first - timedelta(days=1), current)
             except TheriaError:
                 logger.warning("could not read today's measurements", exc_info=True)
+        hours = day_hours(day, self._settings.timezone)
+        records = (
+            {}
+            if self._plan_record is None
+            else self._plan_record.read(hours[0], hours[-1] + timedelta(hours=1))
+        )
         return build_day_view(
             day,
             now,
@@ -728,6 +737,7 @@ class PlanService:
             periods,
             None if latest is None else latest.plan,
             measured,
+            records,
         )
 
     def history(self, hours: int) -> list[PlanSnapshot]:
@@ -866,7 +876,30 @@ class PlanService:
             },
         )
         self._snapshots.append(snapshot)
+        self._record_plan(snapshot)
         return snapshot
+
+    def _record_plan(self, snapshot: PlanSnapshot) -> None:
+        """Keep the first plan of each hour: the one that is applied for it."""
+        if self._plan_record is None or not snapshot.plan.hours:
+            return
+        hour, flat = snapshot.plan.hours[0], snapshot.plan.baseline_hours[0]
+        try:
+            self._plan_record.append(
+                PlanRecord(
+                    hour=hour.start,
+                    computed_at=snapshot.computed_at,
+                    rts_c=hour.rts_c,
+                    room_c=hour.room_c_end + hour.sun_swing_c,
+                    energy_kwh=hour.energy_kwh,
+                    baseline_rts_c=flat.rts_c,
+                    baseline_room_c=flat.room_c_end + flat.sun_swing_c,
+                    baseline_energy_kwh=flat.energy_kwh,
+                    price_sek_per_kwh=hour.price_sek_per_kwh,
+                )
+            )
+        except OSError:
+            logger.warning("could not write the plan record", exc_info=True)
 
     @staticmethod
     def _forecast_at(

@@ -46,14 +46,13 @@ def test_hours_already_passed_show_what_was_measured_and_the_rest_the_plan(setti
     service = started(settings)
     rows = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}
     past = rows[PLAN_START - timedelta(hours=1)]
-    assert past["past"] and past["rts_c"] == 18.0 and past["room_c"] == 20.0
-    assert past["baseline_rts_c"] is None
+    assert past["past"] and past["rts_measured"] == 18.0 and past["room_measured"] == 20.0
+    assert past["rts_baseline"] is None  # no plan was recorded for this hour
     planned = rows[PLAN_START]
     first = service.latest().plan.hours[0]
-    assert not planned["past"] and planned["rts_c"] == first.rts_c
-    assert (
-        planned["room_c"] == first.room_c_end and planned["baseline_rts_c"] is not None
-    )
+    assert not planned["past"] and planned["rts_planned"] == first.rts_c
+    assert planned["room_planned"] == first.room_c_end and planned["rts_baseline"] is not None
+    assert planned["rts_measured"] is None
 
 
 def test_prices_cover_the_hours_that_have_passed_too(settings):
@@ -75,7 +74,7 @@ def test_the_chart_still_has_prices_when_the_measurements_cannot_be_read(setting
         r["start"]: r for r in started(settings, broken).day_view(LOCAL_DAY)["hours"]
     }
     past = rows[PLAN_START - timedelta(hours=1)]
-    assert past["rts_c"] is None and past["price_sek_per_kwh"] == 1.0
+    assert past["rts_measured"] is None and past["price_sek_per_kwh"] == 1.0
 
 
 def test_hours_that_passed_carry_the_open_floor_loops_per_room(settings):
