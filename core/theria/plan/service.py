@@ -31,6 +31,7 @@ from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
 from core.theria.plan.regulator import Regulator, RoomStatus
+from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.skill import SkillTracker
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
@@ -79,6 +80,8 @@ SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
 class Safety(Protocol):
     def check(self, raised: bool = False, deviated: bool = True) -> str | None: ...
 
+    def use_settings(self, settings: PlanSettings) -> None: ...
+
 
 class Notifier(Protocol):
     def notify(self, notification_id: str, title: str, message: str) -> None: ...
@@ -123,6 +126,7 @@ class PlanService:
         executor: PlanExecutor | None = None,
         lk_executor: LKExecutor | None = None,
         plan_record: PlanRecordStore | None = None,
+        settings_manager: SettingsManager | None = None,
         safety: Safety | None = None,
         notifier: Notifier | None = None,
         outcome_loader: OutcomeLoader | None = None,
@@ -163,6 +167,7 @@ class PlanService:
         self._executor = executor
         self._lk = lk_executor
         self._plan_record = plan_record
+        self._settings_manager = settings_manager
         self._safety = safety
         self._notifier = notifier
         self._outcome_loader = outcome_loader
@@ -520,6 +525,41 @@ class PlanService:
                 sum(d.baseline_cost_sek for d in outcomes)
             ),
         }
+
+    def settings_catalog(self) -> list[dict[str, Any]]:
+        """The settings that can be changed in the UI, with value, default and where the value comes from."""
+        return [] if self._settings_manager is None else self._settings_manager.catalog()
+
+    def update_settings(self, values: dict[str, Any]) -> list[dict[str, Any]]:
+        """Check, save and apply a change at once; raises ConfigurationError and changes nothing if invalid."""
+        if self._settings_manager is None:
+            raise ConfigurationError("settings cannot be changed here")
+        with self._lock:
+            self._use_settings(self._settings_manager.update(values))
+        return self.settings_catalog()
+
+    def reset_setting(self, key: str) -> list[dict[str, Any]]:
+        if self._settings_manager is None:
+            raise ConfigurationError("settings cannot be changed here")
+        with self._lock:
+            self._use_settings(self._settings_manager.reset(key))
+        return self.settings_catalog()
+
+    def _use_settings(self, settings: PlanSettings) -> None:
+        self._settings = settings
+        if self._executor is not None:
+            self._executor.use_settings(settings)
+        if self._lk is not None:
+            self._lk.use_settings(settings)
+        if self._safety is not None:
+            self._safety.use_settings(settings)
+        if self._regulator is not None:
+            learned = self._regulator.export_state()
+            self._regulator = Regulator(
+                settings.room_controls, settings.lk_limit_c, settings.room_actuators
+            )
+            self._regulator.load_state(learned)
+        self._save_state()
 
     def model_catalog(self) -> list[dict[str, Any]]:
         """Every parameter and weight the plan runs on, with what it is and where it comes from."""

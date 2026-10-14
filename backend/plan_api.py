@@ -29,6 +29,10 @@ def get_service() -> PlanService:
     return service
 
 
+class SettingsRequest(BaseModel):
+    values: dict[str, Any]
+
+
 class ModeRequest(BaseModel):
     mode: str
     confirm: bool = False  # required for active mode, which writes to the heat pump
@@ -143,6 +147,34 @@ async def refit_models(svc: Annotated[PlanService, Depends(get_service)]) -> Any
 async def get_model_catalog(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
     """Every parameter and weight of the model with its value, unit, source and meaning."""
     return jsonable_encoder(svc.model_catalog())
+
+
+@router.get("/plan/settings")
+async def get_settings(svc: Annotated[PlanService, Depends(get_service)]) -> Any:
+    """The settings that can be changed here, with value, default and where the value comes from."""
+    return jsonable_encoder(svc.settings_catalog())
+
+
+@router.put("/plan/settings")
+async def put_settings(
+    svc: Annotated[PlanService, Depends(get_service)], request: SettingsRequest
+) -> Any:
+    """Change settings; they are checked, saved and in use at once."""
+    try:
+        return jsonable_encoder(await asyncio.to_thread(svc.update_settings, request.values))
+    except ConfigurationError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.delete("/plan/settings/{key}")
+async def reset_setting(
+    key: str, svc: Annotated[PlanService, Depends(get_service)]
+) -> Any:
+    """Go back to the value in the add-on configuration."""
+    try:
+        return jsonable_encoder(await asyncio.to_thread(svc.reset_setting, key))
+    except ConfigurationError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.get("/plan/execution")

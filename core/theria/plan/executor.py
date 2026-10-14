@@ -72,6 +72,9 @@ class PlanExecutor:
         self._pause_until: datetime | None = None
         self.last_result: ExecutionResult | None = None
 
+    def use_settings(self, settings: PlanSettings) -> None:
+        self._s = settings
+
     def export_state(self) -> dict[str, Any]:
         """What the executor remembers, so that a restart does not forget a hand change."""
         return {
@@ -240,6 +243,9 @@ class SafetyMonitor:
         self._states = states
         self._s = settings
         self._aux = 0
+
+    def use_settings(self, settings: PlanSettings) -> None:
+        self._s = settings
 
     def check(self, raised: bool = False) -> str | None:
         """Trouble worth reporting, or None. A reported trouble starts the counting over."""

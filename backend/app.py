@@ -33,6 +33,7 @@ from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.plan_record import PlanRecordStore
+from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import (
@@ -214,6 +215,15 @@ async def lifespan(app: FastAPI):
                 os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
             )
             if plan_settings:
+                overrides_path = (
+                    "/data/plan_overrides.json"
+                    if os.path.isdir("/data")
+                    else os.path.join(
+                        os.path.dirname(__file__), "..", ".plan_overrides.json"
+                    )
+                )
+                settings_manager = SettingsManager(plan_settings, overrides_path)
+                plan_settings = settings_manager.current
                 weather_client = OpenMeteoClient(
                     plan_settings.latitude, plan_settings.longitude
                 )
@@ -281,6 +291,7 @@ async def lifespan(app: FastAPI):
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
                     plan_record=PlanRecordStore(record_path),
+                    settings_manager=settings_manager,
                     actuals_loader=actuals_loader,
                     price_periods=(
                         NordpoolFeed(

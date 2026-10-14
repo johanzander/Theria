@@ -90,6 +90,7 @@ def make_service(
     state_store=None,
     sensor_guard=None,
     parameter_log=None,
+    settings_manager=None,
 ):
     from dataclasses import replace
 
@@ -102,6 +103,7 @@ def make_service(
         state_store=state_store,
         sensor_guard=sensor_guard,
         parameter_log=parameter_log,
+        settings_manager=settings_manager,
     )
 
 

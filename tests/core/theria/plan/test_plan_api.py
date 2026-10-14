@@ -140,3 +140,41 @@ def test_the_model_catalog_lists_the_parameters(client):
     keys = {e["key"] for e in body}
     assert {"energy_per_rts", "k_slab", "comfort_cost_sek_per_c_hour", "end_cost_sek_per_c"} <= keys
     assert all(e["description"] for e in body)
+
+
+@pytest.fixture
+def editable_client(settings, tmp_path):
+    from core.theria.plan.settings_manager import SettingsManager
+
+    manager = SettingsManager(settings, str(tmp_path / "overrides.json"))
+    service = make_service(
+        settings, calibrator=FakeCalibrator(fitted_models()), settings_manager=manager
+    )
+    app = FastAPI()
+    app.include_router(plan_api.router)
+    app.dependency_overrides[plan_api.get_service] = lambda: service
+    return TestClient(app), service
+
+
+def test_the_settings_are_listed_with_value_default_and_meaning(editable_client):
+    http, _ = editable_client
+    body = {e["key"]: e for e in http.get("/api/plan/settings").json()}
+    entry = body["floor_mix_max_c"]
+    assert entry["value"] == 40.0 and entry["unit"] == "°C" and entry["description"]
+
+
+def test_a_setting_can_be_changed_and_reset(editable_client):
+    http, service = editable_client
+    response = http.put("/api/plan/settings", json={"values": {"ceiling_c": 21.5}})
+    assert response.status_code == 200
+    assert {e["key"]: e for e in response.json()}["ceiling_c"]["source"] == "override"
+    assert service._settings.ceiling_c == 21.5
+    response = http.delete("/api/plan/settings/ceiling_c")
+    assert response.status_code == 200 and service._settings.ceiling_c == 22.0
+
+
+def test_an_invalid_change_is_a_422_that_says_why(editable_client):
+    http, service = editable_client
+    response = http.put("/api/plan/settings", json={"values": {"floor_c": 99}})
+    assert response.status_code == 422 and "floor_c" in response.json()["detail"]
+    assert service._settings.floor_c == 18.0

@@ -67,6 +67,9 @@ class FakeSafety:
         self.calls.append({"raised": raised})
         return self.trouble
 
+    def use_settings(self, settings):
+        pass
+
 
 class FakeNotifier:
     def __init__(self):
@@ -91,6 +94,7 @@ def make(
     actuals_loader=None,
     evening=3.0,
     plan_record=None,
+    settings_manager=None,
 ):
     ha = WritableHA(price_attributes(evening=evening), setpoint)
     current = [EVENING]
@@ -116,6 +120,7 @@ def make(
         event_log=event_log,
         actuals_loader=actuals_loader,
         plan_record=plan_record,
+        settings_manager=settings_manager,
     )
     return service, ha, notifier, calls, current
 

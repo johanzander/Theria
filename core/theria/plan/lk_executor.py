@@ -55,6 +55,9 @@ class LKExecutor:
         self._pause_until: datetime | None = None
         self.last_result: LKResult | None = None
 
+    def use_settings(self, settings: PlanSettings) -> None:
+        self._s = settings
+
     def export_state(self) -> dict[str, Any]:
         return {
             "last_written": self._last_written,
