@@ -131,7 +131,7 @@ def test_the_lk_limit_defaults_to_the_room_ceiling_and_the_shunt_cap_to_40(setti
     assert settings.floor_mix_max_c == 40.0
 
 
-def test_the_lk_limit_must_lie_between_the_floor_and_the_ceiling(settings):
+def test_the_lk_limit_must_lie_between_the_floor_and_the_plans_ceiling_must_not_pass_it(settings):
     from dataclasses import replace
 
     import pytest
@@ -141,7 +141,7 @@ def test_the_lk_limit_must_lie_between_the_floor_and_the_ceiling(settings):
     with pytest.raises(ConfigurationError):
         replace(settings, lk_limit_c=settings.floor_c - 0.5)
     with pytest.raises(ConfigurationError):
-        replace(settings, lk_limit_c=settings.ceiling_c + 0.5)
+        replace(settings, ceiling_c=settings.lk_limit_c + 0.5)  # the plan aims above where the valves close
     with pytest.raises(ConfigurationError):
         replace(settings, lk_base_c=settings.lk_limit_c + 0.5)
     with pytest.raises(ConfigurationError):

@@ -366,8 +366,13 @@ class PlanService:
         )
 
     def _effective_settings(self) -> PlanSettings:
-        """The settings the plan runs on: the night kept warmer by the learned margin."""
+        """The settings the plan runs on: the night kept warmer by the learned margin, and the
+        ceiling lowered by the rise the floor adds after the valves close."""
         s = self._settings
+        if self._regulator is not None:
+            rise = max((r.rise_c for r in self._regulator.rooms), default=0.0)
+            ceiling = max(s.ceiling_c - rise, s.target_c + 0.5)
+            s = replace(s, ceiling_c=min(s.ceiling_c, ceiling))
         if self._morning_margin_c <= 0.0 or s.night_start_hour == s.night_end_hour:
             return s
         return replace(

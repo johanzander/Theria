@@ -133,9 +133,13 @@ class PlanSettings:
                 "night temperatures must satisfy extreme_floor <= night_floor <= floor and "
                 "night_floor <= night_target <= target"
             )
-        if not self.floor_c <= self.lk_base_c <= self.lk_limit_c <= self.ceiling_c:
+        if not self.floor_c <= self.lk_base_c <= self.lk_limit_c:
             raise ConfigurationError(
-                "the LK settings must satisfy floor <= lk_base_c <= lk_limit_c <= ceiling"
+                "the LK settings must satisfy floor <= lk_base_c <= lk_limit_c"
+            )
+        if self.ceiling_c > self.lk_limit_c + 1e-9:
+            raise ConfigurationError(
+                "the plan's ceiling must not be above lk_limit_c, where the valves close"
             )
         if self.floor_mix_max_c <= 0:
             raise ConfigurationError("floor_mix_max_c must be positive")

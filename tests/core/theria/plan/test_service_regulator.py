@@ -74,3 +74,14 @@ def test_the_learned_rise_survives_a_restart(settings, tmp_path):
     first._save_state()
     second, *_ = regulated(settings, state_store=PlanStateStore(path))
     assert second._regulator._rooms["bibliotek"].rise_c == 0.6
+
+
+def test_the_plan_aims_below_the_limit_by_the_rise_the_floor_adds_after_the_valves_close(
+    settings,
+):
+    service, *_ = regulated(settings)
+    assert service._effective_settings().ceiling_c == 22.0
+    service._regulator._rooms["bibliotek"].rise_c = 0.6
+    assert service._effective_settings().ceiling_c == 21.4
+    service._regulator._rooms["bibliotek"].rise_c = 2.0
+    assert service._effective_settings().ceiling_c >= settings.target_c + 0.5

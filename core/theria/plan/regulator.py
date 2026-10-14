@@ -164,6 +164,10 @@ class Regulator:
             statuses.append(self._rooms[control.room].update(now, temperature, fraction))
         return statuses
 
+    @property
+    def rooms(self) -> list[RoomRegulator]:
+        return list(self._rooms.values())
+
     def holds(self, statuses: Sequence[RoomStatus]) -> dict[str, float]:
         """Thermostat setpoints that close the rooms that should be closed (half a degree steps)."""
         thermostats = {c.room: c.thermostat_entity for c in self._controls}
