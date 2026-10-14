@@ -45,7 +45,7 @@ class ScoreBoard:
                     continue
                 actual = _reading_near(readings, end)
                 if actual is not None:
-                    errors[lead].append(hour.room_c_end - actual)
+                    errors[lead].append(hour.room_c_end + hour.sun_swing_c - actual)
         return [
             LeadScore(
                 lead_h=lead,

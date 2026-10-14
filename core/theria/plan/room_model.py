@@ -34,6 +34,9 @@ class RoomParams:
     k_sun: float
     sun_lag_h: float
     drift_c_per_h: float
+    # The sun lifts the room above its slow level by this much per W/m2 of filtered irradiation:
+    # a swing on top of the level, not a heating rate (the room is slow, the sun is quick).
+    sun_swing_c_per_wm2: float = 0.0
 
 
 # Medians of the four winters' daily fits on Johan's data (2026-10-11): one degree of flow

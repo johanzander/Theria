@@ -21,6 +21,7 @@ MAX_LEVEL_STEP = 0.05  # night change per degree of room level, per day
 MAX_APPLIED_SCALE_STEP = 0.10  # warm-up scale the planner uses, per day
 MAX_GAIN_STEP = 0.05  # room response, degrees per degree of flow, per day
 MAX_RATE_STEP_PER_DAY = 0.03  # share of the gap the room closes per day, per day
+MAX_SWING_STEP = 0.001  # the sun's swing on the room, C per W/m2, per day
 
 
 def limit_step(old: float, new: float, max_step: float) -> float:
@@ -71,11 +72,18 @@ def trim_room(
     rate = limit_step(
         old.response.rate_per_day, new.response.rate_per_day, MAX_RATE_STEP_PER_DAY
     )
+    swing = limit_step(
+        old.params.sun_swing_c_per_wm2, new.params.sun_swing_c_per_wm2, MAX_SWING_STEP
+    )
     notes = []
     if gain != new.response.gain_c_per_c:
         notes.append(f"room gain {new.response.gain_c_per_c:.3f} limited to {gain:.3f}")
     if rate != new.response.rate_per_day:
         notes.append(f"room rate {new.response.rate_per_day:.3f} limited to {rate:.3f}")
+    if swing != new.params.sun_swing_c_per_wm2:
+        notes.append(
+            f"sun swing {new.params.sun_swing_c_per_wm2:.4f} limited to {swing:.4f}"
+        )
     if not notes:
         return new, []
     response = replace(
@@ -84,4 +92,9 @@ def trim_room(
         rate_per_day=rate,
         time_constant_days=1.0 / rate,
     )
-    return replace(new, params=room_params_from_fit(response), response=response), notes
+    params = replace(
+        room_params_from_fit(response),
+        sun_swing_c_per_wm2=swing,
+        sun_lag_h=new.params.sun_lag_h,
+    )
+    return replace(new, params=params, response=response), notes

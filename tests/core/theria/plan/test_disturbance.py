@@ -151,3 +151,15 @@ def test_a_sunny_rise_is_not_taken_as_a_disturbance_while_the_sun_is_not_modelle
     service._now = lambda: clock_after
     run_cycle(service)
     assert service.parameters()["disturbance_c_per_h"] == 0.0
+
+
+def test_with_the_suns_swing_known_the_plan_starts_from_the_room_minus_the_swing(settings):
+    from dataclasses import replace
+
+    afternoon = EVENING.replace(hour=13, minute=0)  # the fake sun shines 09-15 UTC
+    service, ha, *_ = make(settings, clock=lambda: afternoon)
+    service._room = replace(service._room, sun_swing_c_per_wm2=0.006)
+    run_cycle(service)
+    initial = service.latest().initial
+    assert initial.room_c < 19.8 - 0.3  # the sensor reads 19.8, part of it is the sun
+    assert initial.sun_filtered_wm2 > 100

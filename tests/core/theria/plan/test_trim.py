@@ -11,6 +11,7 @@ from core.theria.plan.trim import (
     MAX_GAIN_STEP,
     MAX_INTERCEPT_STEP_C,
     MAX_RATE_STEP_PER_DAY,
+    MAX_SWING_STEP,
     limit_step,
     trim_night,
     trim_room,
@@ -117,3 +118,28 @@ def test_a_faster_room_is_limited_too_and_the_time_constant_stays_consistent():
 def test_a_small_change_in_the_room_response_is_left_alone():
     new = room_fit(0.46, 0.21)
     assert trim_room(room_fit(0.45, 0.20), new) == (new, [])
+
+
+def room_fit_with_sun(swing):
+    fit = room_fit(0.4, 0.2)
+    return replace(fit, params=replace(fit.params, sun_swing_c_per_wm2=swing))
+
+
+def test_the_sun_swing_moves_in_steps_and_the_cut_is_reported():
+    old, new = room_fit_with_sun(0.002), room_fit_with_sun(0.01)
+    trimmed, notes = trim_room(old, new)
+    assert trimmed.params.sun_swing_c_per_wm2 == pytest.approx(0.002 + MAX_SWING_STEP)
+    assert any("sun" in note for note in notes)
+
+
+def test_the_sun_swing_survives_a_limit_on_the_response():
+    old, new = room_fit_with_sun(0.005), room_fit_with_sun(0.005)
+    new = replace(new, response=replace(new.response, gain_c_per_c=0.9, rate_per_day=0.9))
+    trimmed, _ = trim_room(old, new)
+    assert trimmed.params.sun_swing_c_per_wm2 == 0.005
+
+
+def test_a_small_change_in_the_sun_swing_is_left_alone():
+    old, new = room_fit_with_sun(0.005), room_fit_with_sun(0.0055)
+    trimmed, notes = trim_room(old, new)
+    assert trimmed.params.sun_swing_c_per_wm2 == 0.0055 and notes == []

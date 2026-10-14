@@ -63,6 +63,9 @@ class HourPlan:
     comfort_cost_sek: float
     tail: bool
     reason: dict[str, Any]
+    # What the sun adds on top of room_c_end (the slow level) at the end of the hour; the room the
+    # sensors show, and the room comfort is judged on, is the level plus this.
+    sun_swing_c: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -136,6 +139,10 @@ class _Problem:
         self.sun_f = sun_filtered_sequence(
             room, inputs.initial.sun_filtered_wm2, inputs.sun_wm2
         )
+        sun_end = self.sun_f + (inputs.sun_wm2 - self.sun_f) * (
+            1.0 - np.exp(-1.0 / room.sun_lag_h)
+        )
+        self.swing = room.sun_swing_c_per_wm2 * sun_end
         # The room is judged at the end of each hour, so the night ends (and comfort is due)
         # when the state at 06:00 is reached.
         night = np.array(
@@ -228,7 +235,7 @@ class _Problem:
             energy_cost
             + other_rooms
             + self.comfort_cost(
-                room_next, float(self.floors[t]), float(self.targets[t])
+                room_next + self.swing[t], float(self.floors[t]), float(self.targets[t])
             )
         )
 
@@ -361,11 +368,12 @@ class _Problem:
             energy_cost_sek=price * energy,
             comfort_cost_sek=float(
                 self.comfort_cost(
-                    np.array([room_end]), floor_c, float(self.targets[t])
+                    np.array([room_end + self.swing[t]]), floor_c, float(self.targets[t])
                 )[0]
             ),
             tail=tail,
             reason=reason,
+            sun_swing_c=float(self.swing[t]),
         )
 
     def follow_policy(
@@ -409,7 +417,7 @@ class _Problem:
                     float(self.actions[a]),
                     room_end,
                     slab_end,
-                    self.reason(a, room_end, t, float(rank[t]), marginal),
+                    self.reason(a, room_end + float(self.swing[t]), t, float(rank[t]), marginal),
                     tail=t >= self.horizon - TAIL_HOURS,
                 )
             )
@@ -501,5 +509,7 @@ def plan(
     ):
         hours = [replace(h, reason={"binding": "below_min_saving"}) for h in baseline]
         objective = base_objective
-    violations = sum(1 for h in hours if h.room_c_end < h.floor_c - 0.05)
+    violations = sum(
+        1 for h in hours if h.room_c_end + h.sun_swing_c < h.floor_c - 0.05
+    )
     return Plan(hours, baseline, float(objective), float(base_objective), violations)

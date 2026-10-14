@@ -34,6 +34,7 @@ from core.theria.plan.room_model import (
     RoomParams,
 )
 from core.theria.plan.settings import PlanSettings
+from core.theria.plan.sun_fit import SunFit, fit_sun
 from core.theria.plan.warmup import WarmupFit, fit_warmup
 
 # The heat curve is changed by hand; only recent data describes it.
@@ -45,6 +46,7 @@ MIN_FLOW_ROWS = 200
 MIN_ENERGY_ROWS = 500
 MIN_FLOW_SLOPE, MAX_FLOW_SLOPE = -1.5, -0.2  # C of flow per C outdoors
 MIN_MEAN_KWH, MAX_MEAN_KWH = 0.2, 4.0  # plausible mean heating electricity per hour
+SUN_FIT_DAYS = 120  # the sun gain is fitted on the recent heating hours
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,8 @@ class RoomFit:
 
     params: RoomParams
     response: DailyRoomFit
+    sun: SunFit | None = None  # the sun swing behind params; None when it was not fitted
+    sun_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,7 +192,19 @@ def fit_room(inputs: CalibrationInputs) -> RoomFit:
         sun=daily_means(hours, inputs.sun_wm2),
     )
     response = fit_daily_room(data)
-    return RoomFit(params=room_params_from_fit(response), response=response)
+    params = room_params_from_fit(response)
+    recent = slice(-24 * SUN_FIT_DAYS, None)
+    try:
+        sun = fit_sun(
+            hours[recent],
+            inputs.room_reference_c[recent],
+            inputs.t_out_c[recent],
+            inputs.sun_wm2[recent],
+        )
+    except ModelFitError as e:  # the room model is still useful without the sun
+        return RoomFit(params, response, sun=None, sun_error=f"{type(e).__name__}: {e}")
+    params = replace(params, sun_swing_c_per_wm2=sun.swing_c_per_wm2, sun_lag_h=sun.lag_h)
+    return RoomFit(params, response, sun=sun)
 
 
 class Calibrator:

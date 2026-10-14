@@ -265,6 +265,8 @@ class PlanService:
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
             "disturbance_c_per_h": self._disturbance.at(self._now()),
+            "sun_swing_c_per_wm2": self._room.sun_swing_c_per_wm2,
+            "sun_lag_h": self._room.sun_lag_h,
         }
         fitted = self._models
         if fitted is not None:
@@ -338,7 +340,8 @@ class PlanService:
                 hours[k + 1].start
             ):
                 hour = hours[k]
-                deficit = max(0.0, settings.target_c - hour.room_c_end)
+                expected = hour.room_c_end + hour.sun_swing_c
+                deficit = max(0.0, settings.target_c - expected)
                 cap = min(
                     settings.max_flow_c,
                     max(settings.boost_flow_limit_c, float(baseline_flow[k])),
@@ -349,7 +352,7 @@ class PlanService:
                 )
                 return ComfortOutlook(
                     hour.start + timedelta(hours=1),
-                    hour.room_c_end,
+                    expected,
                     settings.target_c,
                     deficit,
                     extra,
@@ -775,8 +778,15 @@ class PlanService:
         previous_rts = float(
             self._ha.get_climate_state(s.room_setpoint_entity)["target_temperature"]
         )
-        level_c = self._room_level(now, room_c)
-        self._sample_disturbance(now, room_c, weather)
+        swing_now = self._room.sun_swing_c_per_wm2 * sun_filtered_now
+        self._sample_disturbance(now, room_c - swing_now, weather)
+        # with the sun's swing known the level is the measured room minus the swing; without it the
+        # lower of the room and its day's median stands in for it
+        level_c = (
+            room_c - swing_now
+            if self._room.sun_swing_c_per_wm2 > 0
+            else self._room_level(now, room_c)
+        )
         initial = RoomState(
             room_c=level_c,
             slab_c=level_c + SLAB_INIT_FRACTION * (flow_now - level_c),

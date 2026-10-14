@@ -8,8 +8,8 @@ for the coming hours and that fades with time, because what the house does that 
 predict (stove, people, a window) does not last. Because the inputs are the measured ones, the plan's
 own effect (the flow it chose, valves that opened or closed) is not read as disturbance.
 
-While the sun is not in the model (`k_sun == 0`) sunny samples are skipped: the estimator learns in
-the hours without sun. Nothing is persisted: after a restart the estimate starts from zero.
+While the sun is not in the model sunny samples are skipped: the estimator learns in the hours
+without sun. With the sun's swing in the model the caller passes the room minus the swing. Nothing is persisted: after a restart the estimate starts from zero.
 """
 
 from collections.abc import Sequence
@@ -79,7 +79,8 @@ class DisturbanceEstimator:
             valve_scale=scale,
         )
         sunny = max(previous.sun_wm2, sample.sun_wm2) > SUN_OFF_WM2
-        if params.k_sun > 0 or not sunny:
+        modelled = params.k_sun > 0 or params.sun_swing_c_per_wm2 > 0
+        if modelled or not sunny:
             rate = (sample.room_c - float(predicted)) / hours
             faded = self.at(sample.at)
             estimate = faded + GAIN * (rate - faded)

@@ -63,6 +63,7 @@ class World:
         late_room_params: RoomParams | None = None,
         late_days: int = 0,
         cold_swing_c: float = 0.0,
+        sun_swing: float = 0.0,
     ):
         rng = np.random.default_rng(seed)
         n = days * 24
@@ -126,6 +127,14 @@ class World:
         end_of_hour = np.concatenate(parts)
         # the history is labelled by hour: hour i holds the temperature at the START of hour i
         self.room = np.concatenate([[19.0], end_of_hour[:-1]])
+        if sun_swing:
+            lag = room_params.sun_lag_h
+            smoothed = np.empty(n)
+            value, k = float(self.sun[0]), 1.0 - np.exp(-1.0 / lag)
+            for i, s in enumerate(self.sun):
+                smoothed[i] = value
+                value += (s - value) * k
+            self.room = self.room + sun_swing * smoothed
 
     def hours_list(self) -> list[datetime]:
         return [self.start + timedelta(hours=i) for i in range(len(self.t_out))]

@@ -121,9 +121,9 @@ def build_day_view(
                 price_sek_per_kwh=hour_plan.price_sek_per_kwh,
                 floor_c=hour_plan.floor_c,
                 rts_c=hour_plan.rts_c,
-                room_c=hour_plan.room_c_end,
+                room_c=hour_plan.room_c_end + hour_plan.sun_swing_c,
                 baseline_rts_c=baseline.rts_c,
-                baseline_room_c=baseline.room_c_end,
+                baseline_room_c=baseline.room_c_end + baseline.sun_swing_c,
                 extreme=hour_plan.extreme,
             )
         rows.append(row)

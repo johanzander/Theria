@@ -213,3 +213,16 @@ def test_the_night_cooling_is_learned_with_the_other_models(settings):
 def test_without_a_night_window_there_is_no_night_model_and_no_failure(settings):
     fitted = calibrator(settings, World()).run(END)  # the fixture has no night window
     assert fitted.night_drift is None and "night" in fitted.night_drift_error
+
+
+def test_the_sun_swing_of_the_house_is_fitted_with_the_room_model(settings):
+    world = three_seasons(sun_swing=0.008)
+    fitted = calibrator(settings, world, days=3 * 365).run(END)
+    assert fitted.room is not None and fitted.room.sun is not None
+    assert fitted.room.params.sun_swing_c_per_wm2 == pytest.approx(0.008, rel=0.3)
+    assert fitted.room.sun.sunny_hours > 100
+
+
+def test_a_house_without_a_sun_swing_gets_none(settings):
+    fitted = calibrator(settings, three_seasons(), days=3 * 365).run(END)
+    assert fitted.room is not None and fitted.room.params.sun_swing_c_per_wm2 < 0.0005

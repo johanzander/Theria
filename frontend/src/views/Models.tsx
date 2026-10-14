@@ -13,6 +13,7 @@ const TRACKED: { key: string; title: string; unit: string }[] = [
   { key: 'aux_per_flow_c', title: 'Electric heater (kWh per °C above 44)', unit: '' },
   { key: 'energy_per_rts', title: 'Energy per °C setpoint (kWh/h)', unit: '' },
   { key: 'disturbance_c_per_h', title: 'Room drift the model missed (disturbance, °C/h)', unit: '' },
+  { key: 'sun_swing_c_per_wm2', title: 'Sun: °C the room is lifted per W/m² of sun', unit: '' },
   { key: 'morning_margin_c', title: 'Night margin (learned from mornings)', unit: ' °C' },
 ]
 

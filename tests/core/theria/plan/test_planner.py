@@ -321,6 +321,53 @@ def test_when_the_flow_is_above_the_shunt_cap_a_lower_setpoint_costs_the_floor_n
         assert abs(plan_hour.room_c_end - flat_hour.room_c_end) < 0.01
 
 
+def _with_midday_sun(inputs, hours=range(4, 10)):
+    sun = np.zeros(HORIZON)
+    sun[list(hours)] = 400.0
+    return replace(inputs, sun_wm2=sun)
+
+
+def run_with_sun(inputs, settings, swing):
+    baseline_flow = np.minimum(
+        flow_target(PRIOR_PUMP_PARAMS, inputs.t_out_c, settings.rts_base_c),
+        settings.floor_mix_max_c,
+    )
+    room = anchored_room_params(
+        PRIOR_ROOM_PARAMS,
+        inputs.initial.room_c,
+        inputs.t_out_c,
+        baseline_flow,
+        settings.lk_limit_c,
+    )
+    return plan(
+        inputs, settings, PRIOR_PUMP_PARAMS, replace(room, sun_swing_c_per_wm2=swing)
+    )
+
+
+def test_the_suns_swing_warms_the_room_the_plan_is_judged_on(settings, make_inputs):
+    inputs = _with_midday_sun(make_inputs(np.full(HORIZON, 1.0), room_c=18.6, slab_c=27.0))
+    without = run_with_sun(inputs, settings, 0.0)
+    with_sun = run_with_sun(inputs, settings, 0.006)
+    sunny = slice(4, 10)
+    # the level is slow, so the setpoint does not change in the sunny hours themselves, but the
+    # room is warmer there: less discomfort, and a cheaper plan
+    assert sum(h.comfort_cost_sek for h in with_sun.hours[sunny]) < sum(
+        h.comfort_cost_sek for h in without.hours[sunny]
+    )
+    assert with_sun.objective_sek < without.objective_sek
+    assert all(h.sun_swing_c > 0 for h in with_sun.hours[sunny])
+    assert all(h.sun_swing_c == 0 for h in without.hours)
+
+
+def test_a_room_the_sun_pushes_over_the_ceiling_is_not_heated_further(
+    settings, make_inputs
+):
+    inputs = _with_midday_sun(make_inputs(np.full(HORIZON, 1.0), room_c=20.8, slab_c=30.0))
+    with_sun = run_with_sun(inputs, settings, 0.01)  # level 20.8 + a swing of about 3 C
+    sunny = slice(4, 10)
+    assert max(h.rts_c for h in with_sun.hours[sunny]) <= settings.rts_base_c
+
+
 def test_the_other_rooms_cost_keeps_a_small_price_difference_from_moving_the_setpoint(
     settings, make_inputs
 ):
