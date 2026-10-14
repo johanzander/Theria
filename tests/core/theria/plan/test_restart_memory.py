@@ -64,3 +64,31 @@ def test_the_base_that_stop_wrote_is_not_taken_for_a_hand_change_after_the_resta
     second = build(settings, ha, path, at=EVENING)
     run_cycle(second)
     assert second.execution_status()["last_execution"].action != "paused"
+
+
+def test_the_state_is_saved_before_the_base_is_written_in_case_the_stop_is_cut_short(
+    settings, tmp_path
+):
+    import asyncio
+    import json
+
+    path = str(tmp_path / "state.json")
+    ha = WritableHA(price_attributes(), 18.0)
+    service = build(settings, ha, path, at=EVENING)
+    service.set_mode("active", confirm=True)
+    run_cycle(service)
+    assert ha.setpoint != 18.0
+    saved_at_first_write = []
+    real = ha.set_temperature
+
+    def watching(entity_id, temperature):
+        if not saved_at_first_write:
+            with open(path) as f:
+                saved_at_first_write.append(json.load(f)["executor"]["last_written"])
+        real(entity_id, temperature)
+
+    ha.set_temperature = watching
+    asyncio.run(service.stop())
+    # the supervisor may kill the add-on while the thermostats are still being confirmed: what
+    # is on disk by then must already say that the base is what was written
+    assert saved_at_first_write == [18.0]

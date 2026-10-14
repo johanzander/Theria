@@ -889,6 +889,12 @@ class PlanService:
                 pass
             self._task = None
         if self._mode == "active" and self._executor is not None:
+            # confirming the thermostats takes up to 20 s and the supervisor may not wait for it:
+            # what is saved first already says that the base is what the executors wrote
+            self._executor.expect_base()
+            if self._lk is not None:
+                self._lk.expect_base()
+            self._save_state()
             failure = await asyncio.to_thread(self._restore_locked)
             if failure is not None:
                 logger.error("base setpoints not restored at shutdown: %s", failure)

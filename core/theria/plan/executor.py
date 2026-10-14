@@ -154,6 +154,12 @@ class PlanExecutor:
             desired, current, "wrote", "plan", now, desired > current + 1e-9
         )
 
+    def expect_base(self) -> None:
+        """Remember the base as the last written value, before it is written: a stop that is cut
+        short must not leave the next start to take the base for a hand change."""
+        self._last_written = self._s.rts_base_c
+        self._pause_until = None
+
     def restore_base(self) -> ExecutionResult:
         """Write the base setpoint (kill switch, leaving active mode)."""
         now = self._now()

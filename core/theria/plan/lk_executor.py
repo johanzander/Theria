@@ -98,6 +98,12 @@ class LKExecutor:
         }
         return self._apply(targets, current, "hold" if holds else "limit", now)
 
+    def expect_base(self) -> None:
+        """As the pump executor's: the base is what the thermostats will be left at."""
+        entities = self._s.room_thermostat_entities
+        self._last_written = dict.fromkeys(entities, self._s.lk_base_c)
+        self._pause_until = None
+
     def restore_base(self) -> LKResult:
         """Thermostats back to the base (kill switch, leaving active mode, trouble)."""
         now = self._now()
