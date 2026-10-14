@@ -33,6 +33,9 @@ class HAClient:
         self.session.headers.update(self.headers)
         # Set default timeout
         self.timeout = 5
+        # A service call that makes a cloud thermostat change its setpoint answers only after that
+        # call has finished (the LK integration took more than 5 s several times)
+        self.write_timeout = 30
 
     def get_state(self, entity_id: str) -> dict[str, Any]:
         """Get current state of an entity.
@@ -149,7 +152,7 @@ class HAClient:
 
         try:
             logger.debug(f"Calling {url} with data: {data}")
-            response = self.session.post(url, json=data, timeout=self.timeout)
+            response = self.session.post(url, json=data, timeout=self.write_timeout)
             response.raise_for_status()
             logger.info(
                 f"Set {entity_id} to {temperature}°C - Response: {response.status_code}"

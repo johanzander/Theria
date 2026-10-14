@@ -33,6 +33,7 @@ class FakeSession:
         return self.response
 
     def post(self, url, json=None, timeout=None):
+        self.last_timeout = timeout
         self.calls.append(("POST", url, json))
         if self.error:
             raise self.error
@@ -105,3 +106,11 @@ def test_notifier_failure_is_a_runtime_error_not_silent():
     )
     with pytest.raises(RuntimeError):
         notifier.notify("theria_x", "t", "m")
+
+
+def test_setting_a_temperature_waits_long_enough_for_a_slow_cloud_thermostat():
+    session = FakeSession(FakeResponse())
+    client = HAClient("http://ha", "token")
+    client.session = session
+    client.set_temperature("climate.lk_a", 21.0)
+    assert session.last_timeout >= 30  # the LK integration answers only after its cloud call

@@ -7,11 +7,12 @@ from core.theria.plan.state_store import PlanStateStore
 
 from .test_service import FakeWeather, price_attributes
 from .test_service_active import FakeNotifier, FakeSafety, WritableHA, run_cycle
+from .test_service_active import EVENING
 from .test_service_lk import LIMIT, NOW as CHEAP_BEFORE_PEAK
 
 
-def build(settings, ha, path):
-    now = lambda: CHEAP_BEFORE_PEAK  # noqa: E731
+def build(settings, ha, path, at=CHEAP_BEFORE_PEAK):
+    now = lambda: at  # noqa: E731
     return PlanService(
         ha,
         replace(settings, mode="shadow"),
@@ -44,3 +45,22 @@ def test_a_hand_change_made_while_the_service_was_down_is_noticed_after_restart(
     assert ha.writes == [] and ha.lk_writes == []
     assert second.execution_status()["last_execution"].action == "paused"
     assert second.execution_status()["last_lk"].action == "paused"
+
+
+def test_the_base_that_stop_wrote_is_not_taken_for_a_hand_change_after_the_restart(
+    settings, tmp_path
+):
+    import asyncio
+
+    path = str(tmp_path / "state.json")
+    ha = WritableHA(price_attributes(), 18.0)
+    first = build(settings, ha, path, at=EVENING)  # the expensive hours: the plan cuts
+    first.set_mode("active", confirm=True)
+    run_cycle(first)
+    first_write = ha.setpoint
+    assert first_write != 18.0, "precondition: the plan holds a setpoint other than the base"
+    asyncio.run(first.stop())  # restores the base (the add-on is being updated)
+    assert ha.setpoint == 18.0
+    second = build(settings, ha, path, at=EVENING)
+    run_cycle(second)
+    assert second.execution_status()["last_execution"].action != "paused"

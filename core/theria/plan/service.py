@@ -892,6 +892,9 @@ class PlanService:
             failure = await asyncio.to_thread(self._restore_locked)
             if failure is not None:
                 logger.error("base setpoints not restored at shutdown: %s", failure)
+            # what the executors now remember is the base they just wrote: without this the next
+            # start finds the base where it last wrote a plan value and takes it for a hand change
+            self._save_state()
 
     def _restore_locked(self) -> str | None:
         with self._lock:
