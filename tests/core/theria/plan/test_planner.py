@@ -368,6 +368,12 @@ def test_a_room_the_sun_pushes_over_the_ceiling_is_not_heated_further(
     assert max(h.rts_c for h in with_sun.hours[sunny]) <= settings.rts_base_c
 
 
+def test_a_setpoint_range_narrower_than_the_rise_limit_still_plans(settings, make_inputs):
+    narrow = replace(settings, rts_min_c=18.0, rts_max_c=19.0)
+    result = run(make_inputs(daily_prices()), narrow)
+    assert all(18.0 <= h.rts_c <= 19.0 for h in result.hours)
+
+
 def test_the_other_rooms_cost_keeps_a_small_price_difference_from_moving_the_setpoint(
     settings, make_inputs
 ):

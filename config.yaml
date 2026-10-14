@@ -101,6 +101,14 @@ options:
         thermostat_entity: "climate.lk_bibliotek_thermostat"
         temperature_entities:
           - "sensor.lk_bibliotek_temperature"
+    radiator_entities:  # radiators on the shared flow: while one calls for heat the plan does not cut
+      - "climate.vantsidan"  # salon / boutique (Netatmo)
+      - "climate.klippsidan"
+      - "climate.bedroom"  # guest house (Tado)
+      - "climate.hallway"
+      - "climate.kitchen"
+      - "climate.tv_room_gh"
+      - "climate.storage_room"
     regulator_active: false  # true: the regulator closes a room's valves; false: it only logs
     room_history_entities:  # older sensors that extend the room history back before the LK sensors
       - "sensor.sonoff_a480045bf5_temperature"
@@ -244,6 +252,8 @@ schema:
         thermostat_entity: str
         temperature_entities:
           - str
+    radiator_entities:
+      - str
     regulator_active: bool?
     heating_mode_entity: str
     flow_measured_entity: str

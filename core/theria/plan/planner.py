@@ -328,7 +328,7 @@ class _Problem:
             best_a = np.zeros(shape, dtype=np.int8)
             # raising the setpoint is limited to max_move steps per hour (the rebound is where
             # the electric heater starts); lowering it is not
-            for offset in range(-(n_actions - 1), max_move + 1):
+            for offset in range(-(n_actions - 1), min(max_move, n_actions - 1) + 1):
                 shifted = np.full(shape, np.inf)
                 lo, hi = max(0, -offset), min(n_actions, n_actions - offset)
                 shifted[:, :, lo:hi] = q[:, :, lo + offset : hi + offset] + (

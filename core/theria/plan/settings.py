@@ -45,6 +45,9 @@ class PlanSettings:
     room_controls: tuple[RoomControl, ...] = ()
     # False: the regulator measures, decides and logs what it would do, but does not close valves.
     regulator_active: bool = False
+    # Climate entities of radiators on the shared flow (guest house, salon). While one of them calls
+    # for heat (hvac_action heating) the plan may not cut the pump setpoint below its base.
+    radiator_entities: tuple[str, ...] = ()
     # Home Assistant's built-in Nord Pool integration, read with nordpool.get_prices_for_date.
     # Empty config entry = prices come from the attributes of `price_entity` (HACS Nordpool).
     price_config_entry: str = ""
@@ -186,6 +189,7 @@ class PlanSettings:
             "room_temp_entities",
             "room_thermostat_entities",
             "room_history_entities",
+            "radiator_entities",
         ):
             if key in converted:
                 converted[key] = tuple(converted[key])

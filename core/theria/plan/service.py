@@ -171,6 +171,7 @@ class PlanService:
         self._event_log = event_log
         self._disturbance = DisturbanceEstimator()
         self._skill = SkillTracker()
+        self._radiators: dict[str, Any] | None = None
         self._regulator = (
             Regulator(settings.room_controls, settings.lk_limit_c, settings.room_actuators)
             if settings.room_controls
@@ -383,6 +384,8 @@ class PlanService:
         down = round((s.rts_base_c - s.rts_min_c) * authority / step) * step
         up = round((s.rts_max_c - s.rts_base_c) * authority / step) * step
         s = replace(s, rts_min_c=s.rts_base_c - down, rts_max_c=s.rts_base_c + up)
+        if self._radiators is not None and self._radiators["calling"]:
+            s = replace(s, rts_min_c=s.rts_base_c)
         if self._regulator is not None:
             rise = max((r.rise_c for r in self._regulator.rooms), default=0.0)
             ceiling = max(s.ceiling_c - rise, s.target_c + 0.5)
@@ -527,6 +530,7 @@ class PlanService:
             "last_lk": lk_result,
             "regulator": self._regulator_statuses,
             "authority": self._skill.authority(self._now()),
+            "radiators": self._radiators,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
         }
@@ -630,6 +634,24 @@ class PlanService:
         )
         if innovation is not None:
             self._skill.add(innovation)
+
+    def _read_radiators(self) -> None:
+        """Whether any radiator on the shared flow calls for heat; unreadable ones are not counted."""
+        entities = self._settings.radiator_entities
+        if not entities:
+            self._radiators = None
+            return
+        calling, readable = False, 0
+        for entity in entities:
+            try:
+                state = self._ha.get_state(entity)
+            except (RuntimeError, ValueError, KeyError, TypeError):
+                continue
+            if state["state"] in ("unavailable", "unknown"):
+                continue
+            readable += 1
+            calling = calling or state["attributes"].get("hvac_action") == "heating"
+        self._radiators = {"calling": calling, "readable": readable}
 
     def _open_fraction(self) -> float | None:
         """Share of the floor loops that are open now; None when no actuators are configured."""
@@ -795,6 +817,7 @@ class PlanService:
         )
         swing_now = self._room.sun_swing_c_per_wm2 * sun_filtered_now
         self._sample_disturbance(now, room_c - swing_now, weather)
+        self._read_radiators()
         # with the sun's swing known the level is the measured room minus the swing; without it the
         # lower of the room and its day's median stands in for it
         level_c = (
