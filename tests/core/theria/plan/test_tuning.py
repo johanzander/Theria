@@ -8,7 +8,7 @@ from .days import day
 NIGHT = NightDrift(-0.5, 0.06, -0.2, 19.5, 6, 120, 0.1, ())
 
 
-def recommend(settings, days=(), plan_hours=(), night=NIGHT):
+def recommend(settings, days=(), plan_hours=(), night=NIGHT, authority=1.0):
     return {
         r.key: r
         for r in build_recommendations(
@@ -16,6 +16,7 @@ def recommend(settings, days=(), plan_hours=(), night=NIGHT):
             list(days),
             list(plan_hours),
             night,
+            authority=authority,
         )
     }
 
@@ -52,25 +53,41 @@ def test_days_without_room_readings_do_not_count(settings):
 
 
 class Hour:
-    def __init__(self, binding):
+    def __init__(self, binding, flow_target_c=36.0):
         self.reason = {"binding": binding}
+        self.flow_target_c = flow_target_c
 
 
-def test_a_flow_cap_that_binds_often_is_reported(settings):
-    hours = [Hour("flow_cap")] * 10 + [Hour("price_trade_off")] * 20
-    rec = recommend(settings, plan_hours=hours)["max_flow_c"]
+def hours_with_flow(n_over, n_under, cap):
+    return [Hour("price_trade_off", cap + 4.0)] * n_over + [Hour("price_trade_off", cap - 4.0)] * n_under
+
+
+def test_hours_where_the_pump_asks_for_more_than_the_floor_gets_are_reported(settings):
+    hours = hours_with_flow(10, 20, settings.floor_mix_max_c)
+    rec = recommend(settings, plan_hours=hours)["floor_mix_max_c"]
     assert rec.status == "consider" and "33" in rec.observed
+    assert "nothing" in rec.reason.lower()  # lowering the pump setpoint costs the floor nothing there
 
 
-def test_a_flow_cap_that_rarely_binds_is_fine(settings):
-    hours = [Hour("flow_cap")] * 1 + [Hour("price_trade_off")] * 30
-    assert recommend(settings, plan_hours=hours)["max_flow_c"].status == "ok"
+def test_a_floor_cap_that_rarely_matters_is_fine(settings):
+    hours = hours_with_flow(1, 30, settings.floor_mix_max_c)
+    assert recommend(settings, plan_hours=hours)["floor_mix_max_c"].status == "ok"
 
 
-def test_setpoint_limits_that_bind_for_most_hours_are_reported(settings):
+def test_setpoint_limits_that_bind_for_most_hours_are_reported_at_full_authority(settings):
     hours = [Hour("rts_min")] * 25 + [Hour("price_trade_off")] * 5
     rec = recommend(settings, plan_hours=hours)["rts_min_c"]
     assert rec.status == "consider" and "electric heater" in rec.reason.lower()
+
+
+def test_while_the_plan_has_only_part_of_the_range_the_limits_are_not_judged(settings):
+    hours = [Hour("rts_min")] * 25 + [Hour("price_trade_off")] * 5
+    rec = recommend(settings, plan_hours=hours, authority=0.5)["rts_min_c"]
+    assert rec.status == "no data" and "50 %" in rec.observed
+
+
+def test_the_old_flow_cap_advice_is_gone_the_shunts_protect_the_floor(settings):
+    assert "max_flow_c" not in recommend(settings)
 
 
 def test_an_uncertain_night_model_is_called_uncertain(settings):

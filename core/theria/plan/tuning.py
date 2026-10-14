@@ -26,6 +26,7 @@ MIN_NIGHTS = 60
 
 class PlannedHour(Protocol):
     reason: dict[str, Any]
+    flow_target_c: float
 
 
 @dataclass(frozen=True)
@@ -141,42 +142,69 @@ def _night_model(night: NightDrift | None) -> Recommendation:
     )
 
 
+def _floor_cap(settings: PlanSettings, hours: Sequence[PlannedHour]) -> Recommendation:
+    cap = settings.floor_mix_max_c
+    share = (
+        sum(1 for h in hours if h.flow_target_c > cap) / len(hours) if hours else 0.0
+    )
+    return Recommendation(
+        "floor_mix_max_c",
+        "Floor mixing valve limit",
+        f"{cap:.0f} °C",
+        f"the pump asks for more than that in {share * 100:.0f} % of the planned hours",
+        None,
+        "The floor receives only the limit whatever the pump asks for, so lowering the pump setpoint "
+        "costs the floor nothing in those hours (the plan does that); check that the limit is what "
+        "the mixing valves are set to.",
+        "consider" if share >= CAP_SHARE else "ok",
+    )
+
+
+def _limit_rec(
+    key: str,
+    title: str,
+    current: str,
+    hours: Sequence[PlannedHour],
+    binding: str,
+    authority: float,
+) -> Recommendation:
+    if authority < 1.0:
+        return Recommendation(
+            key,
+            title,
+            current,
+            f"the plan has {authority * 100:.0f} % of the range until the model has shown it predicts well",
+            None,
+            "The range the plan may use is widened as the model proves itself, so a limit is not "
+            "judged until it has the whole range.",
+            "no data",
+        )
+    return _share_rec(
+        key,
+        title,
+        current,
+        hours,
+        binding,
+        LIMIT_SHARE,
+        "A wider range lets the plan pre-heat more; watch the electric heater when raising it.",
+    )
+
+
 def build_recommendations(
     settings: PlanSettings,
     days: list[DayOutcome],
     plan_hours: Sequence[PlannedHour],
     night: NightDrift | None,
+    authority: float = 1.0,
 ) -> list[Recommendation]:
-    heater_note = "A wider range lets the plan pre-heat more; watch the electric heater when raising it."
     return [
         _floor(settings, days),
-        _share_rec(
-            "max_flow_c",
-            "Maximum flow temperature",
-            f"{settings.max_flow_c:.0f} °C",
-            plan_hours,
-            "flow_cap",
-            CAP_SHARE,
-            "The 45 °C is what the floor was designed for; raising it is a hardware "
-            "and parquet question, not a tuning one.",
+        _floor_cap(settings, plan_hours),
+        _limit_rec(
+            "rts_min_c", "Lowest setpoint", f"{settings.rts_min_c:.1f} °C", plan_hours, "rts_min", authority
         ),
-        _share_rec(
-            "rts_min_c",
-            "Lowest setpoint",
-            f"{settings.rts_min_c:.1f} °C",
-            plan_hours,
-            "rts_min",
-            LIMIT_SHARE,
-            heater_note,
-        ),
-        _share_rec(
-            "rts_max_c",
-            "Highest setpoint",
-            f"{settings.rts_max_c:.1f} °C",
-            plan_hours,
-            "rts_max",
-            LIMIT_SHARE,
-            heater_note,
+        _limit_rec(
+            "rts_max_c", "Highest setpoint", f"{settings.rts_max_c:.1f} °C", plan_hours, "rts_max", authority
         ),
         _night_model(night),
     ]

@@ -763,6 +763,7 @@ class PlanService:
             days,
             [] if latest is None else latest.plan.hours,
             self._night,
+            authority=self._skill.authority(now),
         )
 
     @property

@@ -129,7 +129,7 @@ def test_tuning_lists_the_settings_with_advice_and_applies_nothing(client):
     service.run_once()
     body = http.get("/api/plan/tuning").json()
     keys = [r["key"] for r in body]
-    assert keys[:2] == ["floor_c", "max_flow_c"] and "stage" not in keys
+    assert keys[:2] == ["floor_c", "floor_mix_max_c"] and "stage" not in keys
     assert all(r["status"] in {"ok", "consider", "no data"} for r in body)
 
 
