@@ -11,6 +11,16 @@ SUPPORTED_MODES = ("off", "shadow", "active")
 
 
 @dataclass(frozen=True)
+class RoomControl:
+    """One ground-floor room as the regulator sees it: its LK thermostat and its temperature sensors
+    (several are averaged)."""
+
+    room: str
+    thermostat_entity: str
+    temperature_entities: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PlanSettings:
     """Plan configuration. Defaults are the values agreed in the design spec."""
 
@@ -32,6 +42,9 @@ class PlanSettings:
     conflicting_automation_entity: str = "automation.set_room_temp_setpoint"
     # LK floor-loop actuators (binary sensors, on = open) per room name (config: a list of {room, entities})
     room_actuators: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    room_controls: tuple[RoomControl, ...] = ()
+    # False: the regulator measures, decides and logs what it would do, but does not close valves.
+    regulator_active: bool = False
     # Home Assistant's built-in Nord Pool integration, read with nordpool.get_prices_for_date.
     # Empty config entry = prices come from the attributes of `price_entity` (HACS Nordpool).
     price_config_entry: str = ""
@@ -177,6 +190,15 @@ class PlanSettings:
                 item["room"]: tuple(item["entities"])
                 for item in converted["room_actuators"]
             }
+        if "room_controls" in converted:
+            converted["room_controls"] = tuple(
+                RoomControl(
+                    item["room"],
+                    item["thermostat_entity"],
+                    tuple(item["temperature_entities"]),
+                )
+                for item in converted["room_controls"]
+            )
         try:
             return cls(**converted)
         except TypeError as e:

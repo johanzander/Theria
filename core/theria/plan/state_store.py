@@ -26,6 +26,7 @@ class PlanState:
     morning_margin_c: float = 0.0  # learned: how much warmer the night is kept
     margin_changed_on: date | None = None
     last_trouble: str | None = None
+    regulator: dict[str, Any] | None = None  # the learned rise per room
 
 
 def _response_to_dict(r: DailyRoomFit) -> dict[str, Any]:
@@ -194,6 +195,7 @@ class PlanStateStore:
                     else date.fromisoformat(raw["margin_changed_on"])
                 ),
                 last_trouble=raw.get("last_trouble"),
+                regulator=raw.get("regulator"),
             )
         except (
             OSError,
@@ -221,6 +223,7 @@ class PlanStateStore:
                 None if state.reviewed_on is None else state.reviewed_on.isoformat()
             ),
             "last_trouble": state.last_trouble,
+            "regulator": state.regulator,
         }
         temporary = f"{self._path}.tmp"
         try:

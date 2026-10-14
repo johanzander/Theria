@@ -92,6 +92,16 @@ options:
           - "binary_sensor.lk_bibliotek_actuator_8"
           - "binary_sensor.lk_bibliotek_actuator_10"
           - "binary_sensor.lk_bibliotek_actuator_12"
+    room_controls:  # the regulator's view of each room; several temperature sensors are averaged
+      - room: "vardagsrum"
+        thermostat_entity: "climate.lk_vardagsrum_thermostat"
+        temperature_entities:
+          - "sensor.lk_vardagsrum_temperature"
+      - room: "bibliotek"
+        thermostat_entity: "climate.lk_bibliotek_thermostat"
+        temperature_entities:
+          - "sensor.lk_bibliotek_temperature"
+    regulator_active: false  # true: the regulator closes a room's valves; false: it only logs
     room_history_entities:  # older sensors that extend the room history back before the LK sensors
       - "sensor.sonoff_a480045bf5_temperature"
     heating_mode_entity: "binary_sensor.switch_valve_1"
@@ -229,6 +239,12 @@ schema:
       - room: str
         entities:
           - str
+    room_controls:
+      - room: str
+        thermostat_entity: str
+        temperature_entities:
+          - str
+    regulator_active: bool?
     heating_mode_entity: str
     flow_measured_entity: str
     energy_counter_entity: str

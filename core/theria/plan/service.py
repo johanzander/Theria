@@ -28,6 +28,7 @@ from core.theria.plan.day_view import build_day_view, day_hours
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
+from core.theria.plan.regulator import Regulator, RoomStatus
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
 from core.theria.plan.disturbance import DisturbanceEstimator, Sample
@@ -168,6 +169,12 @@ class PlanService:
         self._lock = threading.RLock()
         self._event_log = event_log
         self._disturbance = DisturbanceEstimator()
+        self._regulator = (
+            Regulator(settings.room_controls, settings.lk_limit_c, settings.room_actuators)
+            if settings.room_controls
+            else None
+        )
+        self._regulator_statuses: list[RoomStatus] = []
         self._anchored_room: RoomParams | None = None
         self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
@@ -189,6 +196,8 @@ class PlanService:
                 executor.load_state(state.executor)
             if state.lk is not None and lk_executor is not None:
                 lk_executor.load_state(state.lk)
+            if state.regulator is not None and self._regulator is not None:
+                self._regulator.load_state(state.regulator)
 
     def now(self) -> datetime:
         return self._now()
@@ -454,6 +463,9 @@ class PlanService:
                         else self._executor.export_state()
                     ),
                     lk=None if self._lk is None else self._lk.export_state(),
+                    regulator=(
+                        None if self._regulator is None else self._regulator.export_state()
+                    ),
                 )
             )
 
@@ -493,6 +505,7 @@ class PlanService:
             "plan_error": self._plan_error,
             "last_execution": result,
             "last_lk": lk_result,
+            "regulator": self._regulator_statuses,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
         }
@@ -848,11 +861,35 @@ class PlanService:
         except Exception as e:
             self._plan_error = f"{type(e).__name__}: {e}"
             logger.exception("plan computation failed")
+        try:
+            await asyncio.to_thread(self._regulate)
+        except Exception:  # supervisor boundary: the loop must survive
+            logger.exception("regulator failed")
         if self._mode == "active":
             try:
                 await asyncio.to_thread(self._control)
             except Exception:
                 logger.exception("plan control failed")
+
+    def _regulate(self) -> None:
+        """Measure every room, decide which valves should be closed and log what changed."""
+        if self._regulator is None or self._mode == "off":
+            return
+        statuses = self._regulator.step(
+            self._now(), lambda entity: self._ha.get_state(entity)["state"]
+        )
+        self._regulator_statuses = statuses
+        acting = self._mode == "active" and self._settings.regulator_active
+        for status in statuses:
+            for action, detail in status.events:
+                prefix = "" if acting or action == "learned" else "would: "
+                self._log("regulator", action, f"{prefix}{status.room} {detail}")
+
+    def _holds(self) -> dict[str, float] | None:
+        """Thermostat setpoints that close rooms, only when the regulator is allowed to act."""
+        if self._regulator is None or not self._settings.regulator_active:
+            return None
+        return self._regulator.holds(self._regulator_statuses)
 
     def _control(self) -> None:
         """Active mode: review the last days once a day, watch for trouble, apply the plan."""
@@ -881,7 +918,7 @@ class PlanService:
             if pump.action != "kept":
                 self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
             if self._lk is not None:
-                lk = self._lk.execute()
+                lk = self._lk.execute(self._holds())
                 if lk.action != "kept":
                     self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")
             self._save_state()
