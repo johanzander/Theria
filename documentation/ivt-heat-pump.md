@@ -198,13 +198,32 @@ Sources: `documentation/private/Reviderad beräkning 3 LK023393.pdf` (LK calcula
 - **[manual]** Heat demand at DUT -9.6 C and 20 C indoors: 7889 W, 63.2 W/m2 for the whole ground floor; kitchen 74.5,
   dining/living 70.6, hall #1 53.6, hall #2 92.4, guest room 53.5, library 53.9 W/m2. [Heat demand analysis]
   The kitchen and hall #1 circuits (1:4, 1:6) are not in the revised LK calculation.
-- **[per Johan] 45 C is the maximum flow temperature.** Nothing above LK's design value is acceptable for the
-  floor (earlier drafts used 50 C, derived from an assumed 27 C surface limit; that number appears in no
-  document and was removed). The planner default is `max_flow_c = 45`.
+- **[per Johan, superseded 2026-10-14] 45 C as the maximum flow temperature.** This was the rule before the shunts
+  were set (nothing above LK's design value for the floor; earlier drafts used 50 C from an assumed 27 C surface
+  limit). The floor is now protected in hardware by the shunts at 40 C (see below); the planner's `max_flow_c`
+  (45) is kept only as a sanity bound on the pump's own flow target.
 - **[derived]** At 45 C flow the parquet surface is 25.1 C at 20 C room temperature and about 25.9 C at 21 C, so
   neither a 26 C nor a 27 C surface limit is reached (general guidance for solid wood is 27 C: Bauhaus guide
   https://www.bauhaus.no/media/pdf/4005461A.pdf; the manufacturer's warranty is binding and is not in the
   project documents). Daily surface swing should stay under 5 C: 13 C of flow swing is about 3 C at the surface.
+
+- **[per Johan, 2026-10-14] Mixing valves on both floor systems, set to 40 C = at most 26-27 C at the parquet surface.**
+  The ground floor and the upstairs floor each have their own mixing valve (shunt). Johan has set the maximum
+  flow to the floor loops to **40 C**, chosen so that the surface does not exceed its limit, 27 C or 26 C (Johan is not sure which; an earlier "36"
+  was misremembered). The limit is Johan's; the parquet supplier's warranty text is not in the project
+  documents. LK's calculation designs for 45 C and gives a lower surface temperature than that limit (25.1 C at
+  20 C room temperature), so by LK's own figures 40 C leaves some headroom; the cost is floor capacity in cold
+  weather (LK already shows the living room 573 W short at 45 C). With the fitted flow curve the cap is reached
+  below about +1 C outdoors at room setpoint 18 (about +6 C at setpoint 20). The zone-control design carries it
+  as the setting `floor_mix_max_c` (40). The radiators in the guest house and the boutique/salon take the pump's
+  full flow.
+- **[external estimate, pasted by Johan 2026-10-14, conflicts with LK] Surface limit and flow.** Resistance above
+  the loops: 16 mm oak about 0.11, 10 mm ROT board about 0.07, underlay about 0.04 = about 0.22 m2K/W (trade
+  guidance: at most 0.15, so the floor is slow; LK's own figure for system G16 is Mtot 0.200). The estimate
+  says a 27 C surface at full load needs about 40-42 C in the loop, with a 13-15 C drop through the 26 mm
+  of wood and board. This does not agree with LK's calculation (45 C flow gives 25.1 C at the surface at 20 C
+  room temperature), so treat 40-42 C as a cautious upper estimate, not a result; the manufacturer's calculation
+  and the parquet supplier's warranty limit decide.
 
 ### Where the floor reaches its limit (derived from the two documents above)
 
