@@ -1,6 +1,6 @@
 import { fetchComfort } from '../api'
 import { formatAge } from '../model'
-import { Card, useLoaded } from '../ui'
+import { Card, PageIntro, useLoaded } from '../ui'
 
 export function Sensors() {
   const { data, error } = useLoaded(fetchComfort)
@@ -8,6 +8,10 @@ export function Sensors() {
   if (!data) return <p>Loading...</p>
   return (
     <>
+      <PageIntro>
+        The plan's starting point is the measured room temperature, so the sensors are watched: silence, flat batteries and sensors that disagree are
+        found and the plan only uses the ones it can trust. Several sensors in a room are averaged.
+      </PageIntro>
       <div className="cards">
         <Card label="Comfort sensors" value={data.status} tone={data.status === 'ok' ? 'good' : 'bad'} note={`checked ${data.checked_at.slice(11, 16)} UTC`} />
         <Card
@@ -18,6 +22,7 @@ export function Sensors() {
       </div>
       <div className="panel">
         <h2>Sensors</h2>
+        <p className="note">One row per temperature sensor: its latest value, how long ago it last changed, battery and signal, and what the check found.</p>
         <table>
           <thead>
             <tr><th>Sensor</th><th>Status</th><th>Value</th><th>Last change</th><th>Battery</th><th>Signal</th><th>Notes</th></tr>

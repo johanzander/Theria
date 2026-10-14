@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, quarterRows, roomRows, formatValue, tooltipFormatter, UNITS, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
+import {
+  planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, savingsSummary, tabHref,
+  timelineRows, quarterRows, hasData, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals,
+  type PlanResponse, type DayHour, type DayView,
+} from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -127,72 +131,12 @@ describe('tabHref', () => {
   })
 })
 
-describe('dayRows', () => {
-  const hours = ['2026-10-12T14:00:00+00:00', '2026-10-12T15:00:00+00:00', '2026-10-12T16:00:00+00:00'].map((start, i) => ({
-    start, past: i < 2, price_sek_per_kwh: 1, price_quarters: [0.5, 1, 1.5, null], floor_c: 18, extreme: false,
-    rts_c: 18 + i, room_c: 20 + i, baseline_rts_c: i < 2 ? null : 18, baseline_room_c: i < 2 ? null : 20,
-    loops_open: (i < 2 ? { bib: 2 } : {}) as Record<string, number | null>,
-    thermostats: (i < 2 ? { lk_a: { room_c: 19.8, set_c: 19.5 } } : {}) as DayHour['thermostats'],
-  }))
-  const rows = dayRows({ day: '2026-10-12', now: '2026-10-12T16:00:00+00:00', loops_total: { bib: 5 }, hours })
-
-  it('keeps every hour of the day, not only the ones still to come', () => {
-    expect(rows).toHaveLength(3)
-    expect(rows[0].label).toMatch(/^\d\d:00$/)
-  })
-
-  it('shows what was measured before now and the plan from now on', () => {
-    expect(rows[0]).toMatchObject({ measuredRts: 18, plannedRts: null, measuredRoom: 20, baselineRts: null })
-    expect(rows[2]).toMatchObject({ measuredRts: null, plannedRts: 20, plannedRoom: 22, baselineRts: 18 })
-    expect(rows.map((r) => r.current)).toEqual([false, false, true])
-  })
-
-  it('carries each thermostat with its temperature and setpoint', () => {
-    expect(rows[0].thermostats.lk_a).toEqual({ room_c: 19.8, set_c: 19.5 })
-  })
-
-  it('carries the open floor loops of the hours that have passed', () => {
-    expect(rows[0].loops).toEqual({ bib: 2 })
-    expect(rows[2].loops).toEqual({})
-  })
-})
-
-describe('energyRows', () => {
-  it('adds up the cost hour by hour for the plan and for the flat setpoint', () => {
-    const plan = { plan: { hours: [hour(10, 17, 20, 1), hour(11, 16, 20, 2)], baseline_hours: [hour(10, 18, 20, 1), hour(11, 18, 20, 2)] } } as unknown as PlanResponse
-    const rows = energyRows(plan)
-    expect(rows.map((r) => r.cumulativeCost)).toEqual([2, 6])
-    expect(rows[1]).toMatchObject({ flow: 36, baselineFlow: 36 })
-  })
-})
-
 describe('sortedRecommendations', () => {
   const rec = (key: string, status: 'ok' | 'consider' | 'no data') =>
     ({ key, title: key, current: '', observed: '', suggestion: null, reason: '', status })
   it('puts what is worth considering first and keeps the order otherwise', () => {
     const sorted = sortedRecommendations([rec('a', 'ok'), rec('b', 'consider'), rec('c', 'no data'), rec('d', 'consider')])
     expect(sorted.map((r) => r.key)).toEqual(['b', 'd', 'a', 'c'])
-  })
-})
-
-describe('quarterRows', () => {
-  const hours = ['2026-10-12T14:00:00+00:00', '2026-10-12T15:00:00+00:00'].map((start, i) => ({
-    start, past: i < 1, price_sek_per_kwh: 1, price_quarters: [1, 2, 3, 4], floor_c: 18, extreme: false,
-    rts_c: 18 + i, room_c: 20, baseline_rts_c: i < 1 ? null : 18, baseline_room_c: null,
-    loops_open: {} as Record<string, number | null>, thermostats: {} as DayHour['thermostats'],
-  }))
-  const rows = quarterRows({ day: '2026-10-12', now: '2026-10-12T15:00:00+00:00', loops_total: {}, hours })
-
-  it('has four rows per hour with the quarter price and a quarter-past label', () => {
-    expect(rows).toHaveLength(8)
-    expect(rows.map((r) => r.price)).toEqual([1, 2, 3, 4, 1, 2, 3, 4])
-    expect(rows[1].label.endsWith(':15')).toBe(true)
-  })
-
-  it('holds the hour setpoint through its quarters and marks now on the first one', () => {
-    expect(rows.slice(0, 4).every((r) => r.measuredRts === 18 && r.plannedRts === null)).toBe(true)
-    expect(rows.slice(4).every((r) => r.plannedRts === 19)).toBe(true)
-    expect(rows.map((r) => r.current)).toEqual([false, false, false, false, true, false, false, false])
   })
 })
 
@@ -232,5 +176,106 @@ describe('tooltip formatting', () => {
     const format = tooltipFormatter((name) => (name.includes('Price') ? UNITS.price : UNITS.temp))
     expect(format(1.5678, 'Price per quarter (SEK/kWh)')).toEqual(['1.57 kr/kWh', 'Price per quarter (SEK/kWh)'])
     expect(format(18, 'Plan setpoint')).toEqual(['18.0 °C', 'Plan setpoint'])
+  })
+})
+
+const dayHour = (start: string, extra: Partial<DayHour> = {}): DayHour => ({
+  start, past: false, price_sek_per_kwh: 1, price_quarters: [1, 1, 1, 1], floor_c: 18, extreme: false,
+  rts_measured: null, rts_planned: 18, rts_baseline: 18, room_measured: null, room_planned: 19.5, room_baseline: 19.5,
+  energy_measured_kwh: null, energy_planned_kwh: 1.5, energy_baseline_kwh: 2, saving_planned_sek: 0.5, saving_measured_sek: null,
+  flow_planned_c: 35, flow_baseline_c: 36, reason: 'price_trade_off', loops_open: {}, thermostats: {}, ...extra,
+})
+
+const day = (date: string, now: string, hours: DayHour[]): DayView => ({ day: date, now, loops_total: {}, hours })
+
+describe('timelineRows', () => {
+  const today = day('2026-10-14', '2026-10-14T01:00:00+00:00', [
+    dayHour('2026-10-14T00:00:00+00:00', { past: true, rts_measured: 18, room_measured: 19.4, energy_measured_kwh: 1.7, saving_measured_sek: 0.4 }),
+    dayHour('2026-10-14T01:00:00+00:00', { rts_planned: 19 }),
+  ])
+  const tomorrow = day('2026-10-15', '2026-10-14T01:00:00+00:00', [dayHour('2026-10-15T00:00:00+00:00', { rts_planned: 16 })])
+  const rows = timelineRows([today, tomorrow])
+
+  it('lists the hours of every day with data in order and marks where a day starts', () => {
+    expect(rows).toHaveLength(3)
+    expect(rows.map((r) => r.dayStart)).toEqual([true, false, true])
+    expect(new Set(rows.map((r) => r.key)).size).toBe(3)
+  })
+
+  it('keeps plan, baseline and what was measured side by side for the same hour', () => {
+    expect(rows[0]).toMatchObject({ rtsMeasured: 18, rtsPlanned: 18, rtsBaseline: 18, roomMeasured: 19.4, roomPlanned: 19.5, energyMeasured: 1.7, savingMeasured: 0.4 })
+  })
+
+  it('says whether the plan pre-heats, cuts or holds against the flat setpoint', () => {
+    expect(rows.map((r) => r.mode)).toEqual(['hold', 'preheat', 'cut'])
+    expect(modeOf(null, 18)).toBeNull()
+  })
+
+  it('marks the current hour', () => {
+    expect(rows.map((r) => r.current)).toEqual([false, true, false])
+  })
+
+  it('leaves out a day that has nothing to show', () => {
+    const empty = day('2026-10-16', '2026-10-14T01:00:00+00:00', [
+      dayHour('2026-10-16T00:00:00+00:00', { price_sek_per_kwh: null, rts_planned: null, rts_baseline: null }),
+    ])
+    expect(hasData(empty)).toBe(false)
+    expect(timelineRows([today, empty])).toHaveLength(2)
+    expect(timelineRows([null])).toEqual([])
+  })
+})
+
+describe('quarterRows', () => {
+  const view = day('2026-10-14', '2026-10-14T01:00:00+00:00', [
+    dayHour('2026-10-14T00:00:00+00:00', { price_quarters: [1, 2, 3, 4], rts_planned: 17 }),
+    dayHour('2026-10-14T01:00:00+00:00', { price_quarters: [5, 6, 7, null] }),
+  ])
+  const rows = quarterRows([view])
+
+  it('has four rows per hour with the quarter price and the hours setpoint held through them', () => {
+    expect(rows).toHaveLength(8)
+    expect(rows.map((r) => r.price)).toEqual([1, 2, 3, 4, 5, 6, 7, null])
+    expect(rows.slice(0, 4).every((r) => r.rtsPlanned === 17)).toBe(true)
+  })
+
+  it('has a unique key per quarter and marks now on the first quarter of the current hour', () => {
+    expect(new Set(rows.map((r) => r.key)).size).toBe(8)
+    expect(rows.map((r) => r.current)).toEqual([false, false, false, false, true, false, false, false])
+  })
+})
+
+describe('axis helpers', () => {
+  const keys = Array.from({ length: 10 }, (_, i) => `2026-10-14 ${String(i).padStart(2, '0')}:00`)
+
+  it('ticks every n-th key', () => {
+    expect(axisTicks(keys, 3)).toEqual([keys[0], keys[3], keys[6], keys[9]])
+  })
+
+  it('names the day in place of the time at midnight', () => {
+    expect(axisLabel('2026-10-14 00:00', { '2026-10-14': 'ons 14' })).toBe('ons 14')
+    expect(axisLabel('2026-10-14 00:00', {})).toBe('00:00')
+    expect(axisLabel('2026-10-14 06:00', {})).toBe('06:00')
+  })
+
+  it('gives the tooltip the span an hour or a quarter covers', () => {
+    expect(rangeLabel('2026-10-14 19:00')).toBe('2026-10-14  19:00-20:00')
+    expect(rangeLabel('2026-10-14 19:15', 15)).toBe('2026-10-14  19:15-19:30')
+  })
+})
+
+describe('savingsTotals', () => {
+  it('adds the planned saving of every hour and the measured one of the hours that have it', () => {
+    const rows = timelineRows([
+      day('2026-10-14', '2026-10-14T02:00:00+00:00', [
+        dayHour('2026-10-14T00:00:00+00:00', { saving_planned_sek: 1, saving_measured_sek: 0.5 }),
+        dayHour('2026-10-14T01:00:00+00:00', { saving_planned_sek: 2, saving_measured_sek: -0.25 }),
+        dayHour('2026-10-14T02:00:00+00:00', { saving_planned_sek: 3, saving_measured_sek: null }),
+      ]),
+    ])
+    expect(savingsTotals(rows)).toEqual({ planned: 6, measured: 0.25, hours: 2 })
+  })
+
+  it('has no measured total when nothing was measured', () => {
+    expect(savingsTotals(timelineRows([day('2026-10-14', '', [dayHour('2026-10-14T00:00:00+00:00')])])).measured).toBeNull()
   })
 })

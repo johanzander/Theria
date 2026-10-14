@@ -1,4 +1,4 @@
-import type { Recommendation, DayView, Execution, PlanResponse, SavingsResponse } from './model'
+import type { Recommendation, DayView, Execution, ModelEntry, PlanResponse, SavingsResponse, SettingEntry } from './model'
 
 // Served at <ingress>/static/plan/, so the API is two levels up; the dev server proxies /api.
 const BASE = import.meta.env.DEV ? '/api/' : '../../api/'
@@ -43,3 +43,18 @@ export async function refitModels(): Promise<string | null> {
 }
 
 export const fetchTuning = () => get<Recommendation[]>('plan/tuning')
+
+export const fetchModelCatalog = () => get<ModelEntry[]>('plan/model')
+export const fetchSettings = () => get<SettingEntry[]>('plan/settings')
+
+async function change(path: string, init: RequestInit): Promise<{ settings: SettingEntry[] | null; error: string | null }> {
+  const response = await fetch(BASE + path, init)
+  if (response.ok) return { settings: (await response.json()) as SettingEntry[], error: null }
+  const body = (await response.json()) as { detail?: string }
+  return { settings: null, error: body.detail ?? `HTTP ${response.status}` }
+}
+
+export const saveSettings = (values: Record<string, number | boolean>) =>
+  change('plan/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) })
+
+export const resetSetting = (key: string) => change(`plan/settings/${key}`, { method: 'DELETE' })

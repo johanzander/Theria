@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { fetchExecution, fetchLog, fetchPlan, fetchPreflight, refitModels, setMode } from '../api'
 import { roomRows, statusTone } from '../model'
-import { Card, useLoaded } from '../ui'
+import { Card, PageIntro, useLoaded } from '../ui'
 
 export function Control() {
   const execution = useLoaded(fetchExecution)
@@ -38,6 +38,11 @@ export function Control() {
 
   return (
     <>
+      <PageIntro>
+        Where Theria is allowed to act. Off: nothing is computed. Shadow: the plan is computed and shown but nothing is written. Active: the plan
+        sets the heat pump's setpoint and holds the LK thermostats at the room limit. A hand change of either pauses control for an hour, and
+        stopping and starting active mode clears the pause.
+      </PageIntro>
       <div className="cards">
         <Card label="Mode" value={mode} tone={mode === 'active' ? 'bad' : undefined} />
         <Card
@@ -84,6 +89,7 @@ export function Control() {
 
       <div className="panel">
         <h2>Before activating</h2>
+        <p className="note">Checks that must pass before active mode can be switched on.</p>
         {preflight.data ? (
           <table>
             <tbody>
@@ -106,6 +112,7 @@ export function Control() {
 
       <div className="panel">
         <h2>Mode</h2>
+        <p className="note">Change the mode. Active needs confirmation because it writes to the heat pump and the thermostats.</p>
         <p className="note">
           Off: nothing is computed. Shadow: plans are computed and shown, nothing is written. Active: the plan's setpoint is written to the
           heat pump and the LK thermostats are raised while pre-heating. Going back to shadow or off puts the base
@@ -147,6 +154,7 @@ export function Control() {
 
       <div className="panel">
         <h2>What it did</h2>
+        <p className="note">The latest writes, pauses, regulator decisions and mode changes, newest first.</p>
         {log.data && log.data.length > 0 ? (
           <table>
             <thead><tr><th>Time (UTC)</th><th>What</th><th>Action</th><th>Detail</th></tr></thead>

@@ -310,123 +310,7 @@ export function tabHref(id: string, location: { pathname: string; search: string
   return `${location.pathname}${location.search}#${id}`
 }
 
-export interface DayHour {
-  start: string
-  past: boolean
-  price_sek_per_kwh: number | null
-  /** the four 15-minute prices of the hour, null for a quarter without a price */
-  price_quarters: (number | null)[]
-  floor_c: number
-  rts_c: number | null
-  room_c: number | null
-  baseline_rts_c: number | null
-  baseline_room_c: number | null
-  extreme: boolean
-  loops_open: Record<string, number | null>
-  thermostats: Record<string, { room_c: number | null; set_c: number | null }>
-}
-
-export interface DayView {
-  day: string
-  now: string
-  loops_total: Record<string, number>
-  hours: DayHour[]
-}
-
-export interface DayRow {
-  label: string
-  price: number | null
-  floor: number
-  measuredRts: number | null
-  plannedRts: number | null
-  baselineRts: number | null
-  measuredRoom: number | null
-  plannedRoom: number | null
-  baselineRoom: number | null
-  /** floor loops open per room, one entry per room with actuator sensors */
-  loops: Record<string, number | null>
-  thermostats: DayHour['thermostats']
-  current: boolean
-}
-
-const clockLabel = (iso: string) =>
-  new Date(iso).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
-
-/** One row per hour of the whole day; measured values before now, the plan from now on. */
-export function dayRows(view: DayView): DayRow[] {
-  return view.hours.map((h) => ({
-    label: clockLabel(h.start),
-    price: h.price_sek_per_kwh,
-    floor: h.floor_c,
-    measuredRts: h.past ? h.rts_c : null,
-    plannedRts: h.past ? null : h.rts_c,
-    baselineRts: h.past ? null : h.baseline_rts_c,
-    measuredRoom: h.past ? h.room_c : null,
-    plannedRoom: h.past ? null : h.room_c,
-    baselineRoom: h.past ? null : h.baseline_room_c,
-    loops: h.loops_open,
-    thermostats: h.thermostats,
-    current: h.start === view.now,
-  }))
-}
-
-export interface QuarterRow {
-  label: string
-  price: number | null
-  measuredRts: number | null
-  plannedRts: number | null
-  baselineRts: number | null
-  current: boolean
-}
-
-/** The price chart at the resolution the market has (15 minutes); the setpoint holds for its hour. */
-export function quarterRows(view: DayView): QuarterRow[] {
-  return dayRows(view).flatMap((row, i) =>
-    view.hours[i].price_quarters.map((price, q) => ({
-      label: clockLabel(new Date(new Date(view.hours[i].start).getTime() + q * 15 * 60_000).toISOString()),
-      price,
-      measuredRts: row.measuredRts,
-      plannedRts: row.plannedRts,
-      baselineRts: row.baselineRts,
-      current: row.current && q === 0,
-    })),
-  )
-}
-
-export interface EnergyRow {
-  label: string
-  flow: number
-  baselineFlow: number
-  energy: number
-  baselineEnergy: number
-  cost: number
-  baselineCost: number
-  cumulativeCost: number
-  cumulativeBaselineCost: number
-}
-
-/** Per hour of the plan: flow temperature, energy and electricity cost, with the running totals. */
-export function energyRows(response: PlanResponse): EnergyRow[] {
-  const { hours, baseline_hours } = response.plan
-  let total = 0
-  let baselineTotal = 0
-  return hours.map((h, i) => {
-    const b = baseline_hours[i]
-    total += h.energy_cost_sek
-    baselineTotal += b.energy_cost_sek
-    return {
-      label: clockLabel(h.start),
-      flow: h.flow_target_c,
-      baselineFlow: b.flow_target_c,
-      energy: h.energy_kwh,
-      baselineEnergy: b.energy_kwh,
-      cost: h.energy_cost_sek,
-      baselineCost: b.energy_cost_sek,
-      cumulativeCost: total,
-      cumulativeBaselineCost: baselineTotal,
-    }
-  })
-}
+export * from './timeline'
 
 export interface Recommendation {
   key: string
@@ -465,4 +349,46 @@ export function formatValue(value: unknown, unit: Unit): string {
 /** For a chart's Tooltip: `unitFor` picks the unit from the series' name. */
 export function tooltipFormatter(unitFor: (name: string) => Unit) {
   return (value: unknown, name: unknown): [string, string] => [formatValue(value, unitFor(String(name))), String(name)]
+}
+
+export interface SettingEntry {
+  key: string
+  group: string
+  label: string
+  description: string
+  unit: string
+  kind: 'float' | 'int' | 'bool'
+  minimum: number | null
+  maximum: number | null
+  step: number | null
+  value: number | boolean
+  default: number | boolean
+  source: 'default' | 'override'
+}
+
+export interface ModelEntry {
+  group: string
+  key: string
+  label: string
+  value: number | null
+  unit: string
+  source: 'fitted' | 'prior' | 'learned' | 'setting' | 'constant' | 'derived'
+  description: string
+}
+
+/** Entries grouped in the order the groups first appear. */
+export function groupBy<T extends { group: string }>(items: T[]): [string, T[]][] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) groups.set(item.group, [...(groups.get(item.group) ?? []), item])
+  return [...groups.entries()]
+}
+
+/** A value for display: whole numbers as they are, small ones with enough digits to be told apart. */
+export function formatNumber(value: number | boolean | null): string {
+  if (value === null) return '-'
+  if (typeof value === 'boolean') return value ? 'on' : 'off'
+  if (Number.isInteger(value)) return String(value)
+  const magnitude = Math.abs(value)
+  const digits = magnitude >= 100 ? 1 : magnitude >= 1 ? 2 : magnitude >= 0.01 ? 3 : 5
+  return value.toFixed(digits)
 }
