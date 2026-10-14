@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, quarterRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
+import { planRows, dayRows, quarterRows, roomRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -193,5 +193,24 @@ describe('quarterRows', () => {
     expect(rows.slice(0, 4).every((r) => r.measuredRts === 18 && r.plannedRts === null)).toBe(true)
     expect(rows.slice(4).every((r) => r.plannedRts === 19)).toBe(true)
     expect(rows.map((r) => r.current)).toEqual([false, false, false, false, true, false, false, false])
+  })
+})
+
+describe('roomRows', () => {
+  const rooms = [
+    { room: 'vardagsrum', temperature_c: 22.34, rate_c_per_h: 0.123, state: 'closed', limit_c: 22, rise_c: 0.7, close_at_c: 21.3, valve_fraction: 0 },
+    { room: 'bibliotek', temperature_c: null, rate_c_per_h: null, state: 'unknown', limit_c: 22, rise_c: 0, close_at_c: 21.9, valve_fraction: null },
+    { room: 'kok', temperature_c: 20, rate_c_per_h: -0.04, state: 'open', limit_c: 22, rise_c: 0.2, close_at_c: 21.8, valve_fraction: 0.6 },
+  ]
+  const rows = roomRows(rooms)
+
+  it('formats the readings and flags a closed or unreadable room', () => {
+    expect(rows[0]).toMatchObject({ temperature: '22.3 °C', rate: '+0.12 °C/h', valves: '0 % open', tone: 'warn' })
+    expect(rows[1]).toMatchObject({ temperature: '-', rate: '-', valves: '-', tone: 'bad' })
+    expect(rows[2]).toMatchObject({ rate: '-0.04 °C/h', valves: '60 % open', tone: undefined })
+  })
+
+  it('shows the level it closes at and the rise it has learned', () => {
+    expect(rows[0]).toMatchObject({ closeAt: '21.3 °C', rise: '0.7 °C' })
   })
 })

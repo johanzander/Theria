@@ -63,12 +63,51 @@ export interface SavingsResponse {
   total_baseline_cost_sek: number
 }
 
+export interface RoomStatus {
+  room: string
+  temperature_c: number | null
+  rate_c_per_h: number | null
+  state: string // open | closed | unknown
+  limit_c: number
+  rise_c: number
+  close_at_c: number
+  valve_fraction: number | null
+}
+
 export interface Execution {
   mode: string
+  regulator: RoomStatus[]
+  authority: number
+  radiators: { calling: boolean; readable: number } | null
   last_execution: { action: string; target_c: number | null; reason: string; at: string } | null
   last_lk: { action: string; target_c: number | null; reason: string; at: string } | null
   last_trouble: string | null
   plan_error: string | null
+}
+
+export interface RoomRow {
+  room: string
+  temperature: string
+  rate: string
+  state: string
+  closeAt: string
+  rise: string
+  valves: string
+  tone: string | undefined
+}
+
+/** One line per room for the regulator panel; a closed room is flagged, a missing reading is a dash. */
+export function roomRows(rooms: RoomStatus[]): RoomRow[] {
+  return rooms.map((r) => ({
+    room: r.room,
+    temperature: r.temperature_c === null ? '-' : `${r.temperature_c.toFixed(1)} °C`,
+    rate: r.rate_c_per_h === null ? '-' : `${r.rate_c_per_h >= 0 ? '+' : ''}${r.rate_c_per_h.toFixed(2)} °C/h`,
+    state: r.state,
+    closeAt: `${r.close_at_c.toFixed(1)} °C`,
+    rise: `${r.rise_c.toFixed(1)} °C`,
+    valves: r.valve_fraction === null ? '-' : `${Math.round(r.valve_fraction * 100)} % open`,
+    tone: r.state === 'closed' ? 'warn' : r.state === 'unknown' ? 'bad' : undefined,
+  }))
 }
 
 export interface PlanRow {

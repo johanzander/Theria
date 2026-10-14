@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { fetchExecution, fetchLog, fetchPlan, fetchPreflight, refitModels, setMode } from '../api'
-import { statusTone } from '../model'
+import { roomRows, statusTone } from '../model'
 import { Card, useLoaded } from '../ui'
 
 export function Control() {
@@ -51,6 +51,34 @@ export function Control() {
           note={execution.data?.last_lk?.reason}
         />
       </div>
+
+      {execution.data && (
+        <div className="panel">
+          <h2>Rooms</h2>
+          <p className="note">
+            The regulator watches each room every 15 minutes. The LK thermostat is held at the room limit; a room is closed a little
+            earlier, by the rise it has learned after the valves close. Plan freedom (authority): {Math.round((execution.data.authority ?? 0.5) * 100)} % of the setpoint range.
+            {execution.data.radiators
+              ? ` Radiators: ${execution.data.radiators.calling ? 'calling for heat, no cuts' : 'satisfied'} (${execution.data.radiators.readable} readable).`
+              : ''}
+          </p>
+          {execution.data.regulator && execution.data.regulator.length > 0 ? (
+            <table>
+              <thead><tr><th>Room</th><th>Now</th><th>Trend</th><th>Valves</th><th>State</th><th>Closes at</th><th>Learned rise</th></tr></thead>
+              <tbody>
+                {roomRows(execution.data.regulator).map((r) => (
+                  <tr key={r.room}>
+                    <td>{r.room}</td><td>{r.temperature}</td><td>{r.rate}</td><td>{r.valves}</td>
+                    <td className={r.tone}>{r.state}</td><td>{r.closeAt}</td><td>{r.rise}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="note">No rooms are configured for the regulator.</p>
+          )}
+        </div>
+      )}
 
       <div className="panel">
         <h2>Before activating</h2>
