@@ -1,7 +1,7 @@
 from core.theria.plan.event_log import EventLog
 
 from .test_service_active import make, run_cycle
-from .test_service_lk import CHEAP_BEFORE_PEAK, PEAK_PRICE
+from .test_service_lk import CHEAP_BEFORE_PEAK, PEAK_PRICE, preheating
 
 
 def kinds(service):
@@ -9,12 +9,12 @@ def kinds(service):
 
 
 def test_writes_to_the_pump_and_the_thermostats_are_logged_with_the_time(settings):
-    service, *_ = make(settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
+    service, *_ = make(preheating(settings), clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     assert ("pump", "wrote") in kinds(service) and ("lk", "wrote") in kinds(service)
     entry = next(e for e in service.action_log() if e["kind"] == "pump")
-    assert entry["at"] == CHEAP_BEFORE_PEAK and "18.5" in entry["detail"]
+    assert entry["at"] == CHEAP_BEFORE_PEAK and "20.0" in entry["detail"]
 
 
 def test_cycles_that_change_nothing_are_not_logged(settings):
@@ -28,7 +28,7 @@ def test_cycles_that_change_nothing_are_not_logged(settings):
 
 def test_mode_changes_and_trouble_are_logged(settings):
     service, *_ = make(
-        settings, clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE, trouble="stopped", setpoint=17.0
+        preheating(settings), clock=lambda: CHEAP_BEFORE_PEAK, evening=PEAK_PRICE, trouble="stopped", setpoint=17.0
     )
     service.set_mode("active", confirm=True)
     run_cycle(service)

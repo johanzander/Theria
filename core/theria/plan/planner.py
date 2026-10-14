@@ -9,7 +9,7 @@ import numpy.typing as npt
 
 from core.theria.exceptions import OptimizationError
 from core.theria.plan.pump_model import PumpParams, flow_target, total_kwh_per_hour
-from core.theria.plan.room_model import RoomParams, RoomState, step
+from core.theria.plan.room_model import RoomParams, RoomState, step, valve_open
 from core.theria.plan.settings import PlanSettings
 
 FloatArray = npt.NDArray[np.float64]
@@ -117,11 +117,10 @@ class _Problem:
         self.pump = pump
         self.room = room
         self.horizon = len(inputs.hour_starts)
-        # A room that ends the horizon below target stays below it for about the room's time
-        # constant, not for a few hours: charge the deficit for that long.
-        # ... and the horizon must end where it started: a sag has to be paid back inside the
-        # known prices (like the battery's state of charge in the BESS planner), otherwise
-        # every replan would start a little lower than the last one.
+        # The horizon must end where it started: a sag has to be paid back (like the battery's
+        # state of charge in the BESS planner), otherwise every replan would start a little
+        # lower than the last one. The room closes a gap in about its time constant, so the
+        # payback is that many hours of the energy that holds the room higher.
         self.reference_room_c = max(inputs.initial.room_c, settings.target_c)
         self.terminal_hours = min(MAX_TERMINAL_HOURS, 1.0 / (room.k_slab + room.k_out))
         self.actions = np.arange(
@@ -243,6 +242,46 @@ class _Problem:
         )
         return self.stage_cost(t, a, room_next) + future
 
+    def end_terms(self) -> tuple[float, float]:
+        """The level the horizon must end at and what each degree under it costs (SEK).
+
+        Never a level the flat setpoint itself does not reach: a room that sits under the target
+        anyway would otherwise value every degree at the end above the whole day's energy bill,
+        and the plan would just heat whatever the price.
+        """
+        reference_c = min(
+            self.reference_room_c, self.flat_plan(self.settings.rts_base_c)[-1].room_c_end
+        )
+        return reference_c, self.deficit_cost_sek_per_c(reference_c)
+
+    def deficit_cost_sek_per_c(self, reference_c: float) -> float:
+        """What it costs to win back one degree of room that the plan gave up at the end.
+
+        From the two fitted models: holding the room one degree higher takes
+        `d(energy)/d(setpoint)` divided by how far a setpoint step moves the room in the long
+        run, in kWh per hour; the gap closes in the room's time constant, so winning a degree
+        back takes that many hours of it, bought at the horizon's average price. The cost is
+        in the energy the models measure and follows their fit.
+        """
+        s = self.settings
+        t_out = float(np.mean(self.inputs.t_out_c))
+        up, down = s.rts_base_c + 0.5, s.rts_base_c - 0.5
+        d_kwh = float(
+            total_kwh_per_hour(self.pump, t_out, up)
+            - total_kwh_per_hour(self.pump, t_out, down)
+        )
+        d_flow = float(flow_target(self.pump, t_out, up) - flow_target(self.pump, t_out, down))
+        valve = float(valve_open(reference_c, s.lk_setpoint_c))
+        coupling = valve * self.room.k_slab
+        rate = coupling + self.room.k_out
+        room_per_rts = d_flow * coupling / rate
+        if room_per_rts <= 1e-6 or d_kwh <= 0.0:
+            # the setpoint does not move the room: all that is left is to wait for it
+            return self.terminal_hours * s.comfort_cost_sek_per_c_hour
+        kwh_per_c_hour = d_kwh / room_per_rts
+        hours = min(MAX_TERMINAL_HOURS, 1.0 / rate)
+        return float(np.mean(self.inputs.price_sek_per_kwh)) * kwh_per_c_hour * hours
+
     def solve(self) -> tuple[FloatGrid, npt.NDArray[np.int8]]:
         """Backward induction. Returns cost-to-go and policy, indexed by previous action."""
         s = self.settings
@@ -251,17 +290,8 @@ class _Problem:
         rr, ss = np.meshgrid(self.room_grid, self.slab_grid, indexing="ij")
         shape = (len(self.room_grid), len(self.slab_grid), n_actions)
         value = np.empty((self.horizon + 1, *shape), dtype=np.float32)
-        # ... but never against a level the flat setpoint itself does not reach: a room that sits
-        # under the target anyway would otherwise value every degree at the end above the whole
-        # day's energy bill, and the plan would just heat whatever the price.
-        reference_c = min(
-            self.reference_room_c, self.flat_plan(s.rts_base_c)[-1].room_c_end
-        )
-        terminal = (
-            self.terminal_hours
-            * s.comfort_cost_sek_per_c_hour
-            * np.maximum(0.0, reference_c - rr)
-        )
+        reference_c, cost_per_c = self.end_terms()
+        terminal = cost_per_c * np.maximum(0.0, reference_c - rr)
         value[self.horizon] = terminal[:, :, None]
         policy = np.empty((self.horizon, *shape), dtype=np.int8)
         for t in range(self.horizon - 1, -1, -1):
@@ -441,7 +471,10 @@ def plan(
     value, policy = problem.solve()
     hours = problem.follow_policy(value, policy)
     baseline = problem.flat_plan(settings.rts_base_c)
-    objective = sum(h.energy_cost_sek + h.comfort_cost_sek for h in hours)
+    reference_c, cost_per_c = problem.end_terms()
+    # the part of the end-of-horizon payback the plan leaves for later counts against it
+    payback = cost_per_c * max(0.0, reference_c - hours[-1].room_c_end)
+    objective = payback + sum(h.energy_cost_sek + h.comfort_cost_sek for h in hours)
     base_objective = sum(h.energy_cost_sek + h.comfort_cost_sek for h in baseline)
     if (
         settings.min_saving_sek > 0

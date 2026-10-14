@@ -209,7 +209,7 @@ def daily_prices():
 def test_the_setpoint_varies_over_the_day_and_the_average_stays_near_the_base(
     settings, make_inputs
 ):
-    result = run(make_inputs(daily_prices(), room_c=20.0, slab_c=33.0), settings)
+    result = run(make_inputs(daily_prices(), room_c=19.0, slab_c=28.0), settings)
     rts = np.array([h.rts_c for h in result.hours])
     assert rts.min() < settings.rts_base_c - 0.5  # lower in the expensive hours
     assert rts.max() >= settings.rts_base_c + 0.5  # higher in the cheap hours
@@ -229,11 +229,12 @@ def test_the_heat_is_never_off_for_long_stretches(settings, make_inputs):
     assert longest <= 6
 
 
-def test_the_room_ends_the_horizon_where_it_started_when_it_started_above_target(
+def test_the_room_ends_the_horizon_near_where_the_flat_setpoint_would_leave_it(
     settings, make_inputs
 ):
     result = run(make_inputs(daily_prices(), room_c=20.3, slab_c=33.0), settings)
-    assert result.hours[-1].room_c_end > 20.3 - 0.1
+    flat_end = result.baseline_hours[-1].room_c_end
+    assert result.hours[-1].room_c_end > flat_end - 0.15
 
 
 def test_a_room_the_flat_setpoint_keeps_below_target_still_shifts_heat_to_the_cheap_hours(
@@ -247,6 +248,51 @@ def test_a_room_the_flat_setpoint_keeps_below_target_still_shifts_heat_to_the_ch
     rts = np.array([h.rts_c for h in result.hours])
     price = daily_prices()
     assert rts[price == price.min()].mean() > rts[price == price.max()].mean() + 0.5
+
+
+def test_an_expensive_peak_is_cut_when_winning_the_small_sag_back_costs_less_than_it_saves(
+    settings, make_inputs
+):
+    # The cut lowers the room by hundredths of a degree; what that costs is the energy it takes
+    # to bring those hundredths back at an ordinary price, not a comfort deficit that is held
+    # against the plan for days. A cut of the peak that saves a few crowns must therefore pay.
+    price = np.full(HORIZON, 1.0)
+    price[8:16] = 2.5
+    result = run(make_inputs(price, room_c=19.0, slab_c=28.0), settings)
+    peak = [h.rts_c for h in result.hours[8:16]]
+    assert np.mean(peak) <= settings.rts_base_c - 0.75
+    assert result.baseline_objective_sek - result.objective_sek > 1.0
+
+
+def _end_cost_per_degree(settings, make_inputs, pump):
+    from core.theria.plan.planner import _Problem
+
+    inputs = make_inputs(np.full(HORIZON, 1.0), room_c=19.0, slab_c=28.0)
+    problem = _Problem(inputs, settings, pump, PRIOR_ROOM_PARAMS)
+    return problem.deficit_cost_sek_per_c(19.0)
+
+
+def test_a_degree_at_the_end_costs_what_the_fitted_models_say_it_takes_to_win_back(
+    settings, make_inputs
+):
+    cost = _end_cost_per_degree(settings, make_inputs, PRIOR_PUMP_PARAMS)
+    assert cost > 0
+    # the pump needing twice the energy per setpoint degree makes a degree twice as dear
+    thirsty = replace(
+        PRIOR_PUMP_PARAMS, energy_per_rts=2 * PRIOR_PUMP_PARAMS.energy_per_rts
+    )
+    assert _end_cost_per_degree(settings, make_inputs, thirsty) > 1.5 * cost
+
+
+def test_the_objective_counts_the_payback_of_a_room_that_ends_lower_than_the_flat_one(
+    settings, make_inputs
+):
+    price = np.full(HORIZON, 1.0)
+    price[24:] = 2.5  # the peak sits at the end: there is no time left to win the heat back
+    result = run(make_inputs(price, room_c=19.0, slab_c=28.0), settings)
+    assert result.hours[-1].room_c_end < result.baseline_hours[-1].room_c_end
+    hours_cost = sum(h.energy_cost_sek + h.comfort_cost_sek for h in result.hours)
+    assert result.objective_sek > hours_cost
 
 
 def test_the_other_rooms_cost_keeps_a_small_price_difference_from_moving_the_setpoint(
