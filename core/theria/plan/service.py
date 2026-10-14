@@ -30,7 +30,7 @@ from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
-from core.theria.plan.observer import DriftObserver, predicted_room_c
+from core.theria.plan.disturbance import DisturbanceEstimator, Sample
 from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
@@ -69,8 +69,6 @@ TUNING_DAYS = 14
 TUNING_CACHE = timedelta(
     hours=1
 )  # the measured days change slowly; the query is not cheap
-OBSERVE_MIN_LEAD = timedelta(hours=2)  # plans younger than this say too little to judge
-OBSERVE_MAX_LEAD = timedelta(hours=4)
 SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
 
 
@@ -169,7 +167,8 @@ class PlanService:
         # set_mode and the control cycle never interleave
         self._lock = threading.RLock()
         self._event_log = event_log
-        self._observer = DriftObserver()
+        self._disturbance = DisturbanceEstimator()
+        self._anchored_room: RoomParams | None = None
         self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
         self._events: deque[dict[str, Any]] = deque(
@@ -256,7 +255,7 @@ class PlanService:
             "energy_per_rts": pump.energy_per_rts,
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
-            "observer_drift_c_per_h": self._observer.at(self._now()),
+            "disturbance_c_per_h": self._disturbance.at(self._now()),
         }
         fitted = self._models
         if fitted is not None:
@@ -566,8 +565,8 @@ class PlanService:
     def _extra_drift(
         self, starts: list[datetime], t_out: np.ndarray, level_c: float, now: datetime
     ) -> np.ndarray:
-        """What the room does on top of the anchored drift: the night pattern and the observer."""
-        corrected = self._observer.correction(starts, now)
+        """What the room does on top of the anchored drift: the night pattern and the disturbance."""
+        corrected = self._disturbance.correction(starts, now)
         if self._night is None:
             return corrected
         pattern = drift_pattern(
@@ -575,23 +574,36 @@ class PlanService:
         )
         return corrected + pattern
 
-    def _observe(self, now: datetime, level_c: float) -> None:
-        """Compare the room's level with what a plan from a few hours ago expected for now."""
-        recent = [
-            s
-            for s in self._snapshots
-            if OBSERVE_MIN_LEAD <= now - s.computed_at <= OBSERVE_MAX_LEAD
-        ]
-        if not recent:
+    def _sample_disturbance(
+        self, now: datetime, room_c: float, weather: dict[datetime, WeatherHour]
+    ) -> None:
+        """Give the disturbance estimator what was measured this cycle."""
+        s = self._settings
+        try:
+            sample = Sample(
+                at=now,
+                room_c=room_c,
+                flow_c=min(self._read_float(s.flow_measured_entity), s.floor_mix_max_c),
+                valve=self._open_fraction(),
+                t_out_c=self._read_float(s.outdoor_entity),
+                sun_wm2=self._forecast_at(weather, _floor_hour(now)).shortwave_wm2,
+            )
+        except (RuntimeError, ValueError, KeyError, TypeError, WeatherDataError):
+            logger.debug("no complete sample for the disturbance estimator", exc_info=True)
             return
-        snapshot = recent[-1]
-        predicted = predicted_room_c(
-            snapshot.plan.baseline_hours, snapshot.initial.room_c, now
+        self._disturbance.update(
+            sample, self._anchored_room or self._warmed_room(), s.lk_limit_c
         )
-        if predicted is None:
-            return
-        lead_h = (now - snapshot.computed_at) / timedelta(hours=1)
-        self._observer.update(now, level_c, predicted, lead_h)
+
+    def _open_fraction(self) -> float | None:
+        """Share of the floor loops that are open now; None when no actuators are configured."""
+        entities = [e for group in self._settings.room_actuators.values() for e in group]
+        if not entities:
+            return None
+        states = [self._ha.get_state(e)["state"] for e in entities]
+        if any(state not in ("on", "off") for state in states):
+            raise ValueError("an actuator is unavailable")
+        return sum(state == "on" for state in states) / len(states)
 
     def _room_level(self, now: datetime, room_c: float) -> float:
         """The room temperature the plan starts from (see room_level)."""
@@ -746,7 +758,7 @@ class PlanService:
             self._ha.get_climate_state(s.room_setpoint_entity)["target_temperature"]
         )
         level_c = self._room_level(now, room_c)
-        self._observe(now, level_c)
+        self._sample_disturbance(now, room_c, weather)
         initial = RoomState(
             room_c=level_c,
             slab_c=level_c + SLAB_INIT_FRACTION * (flow_now - level_c),
@@ -770,6 +782,7 @@ class PlanService:
         room_params = anchored_room_params(
             self._warmed_room(), level_c, t_out, baseline_flow, s.lk_limit_c
         )
+        self._anchored_room = room_params
         result = plan(inputs, self._effective_settings(), self._pump, room_params)
         snapshot = PlanSnapshot(
             computed_at=now,

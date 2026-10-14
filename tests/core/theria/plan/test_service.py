@@ -56,6 +56,7 @@ class FakeHA:
             "sensor.outdoor": {"state": "6.0", "attributes": {}},
             "sensor.lk_bibliotek_temperature": {"state": "19.8", "attributes": {}},
             "sensor.heating_setpoint": {"state": "36.0", "attributes": {}},
+            "sensor.radiator_forward": {"state": "36.0", "attributes": {}},
         }
         return states[entity_id]
 
