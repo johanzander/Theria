@@ -39,6 +39,15 @@ class Sample:
     sun_wm2: float
 
 
+@dataclass(frozen=True)
+class Innovation:
+    """How far the measured room was from the model's one-step prediction, per hour."""
+
+    at: datetime
+    rate_c_per_h: float
+    dark: bool  # no sun in the hour: the sun does not enter the judgement
+
+
 class DisturbanceEstimator:
     def __init__(self) -> None:
         self.drift_c_per_h = 0.0
@@ -54,14 +63,17 @@ class DisturbanceEstimator:
         hours = (moment - self._at).total_seconds() / 3600
         return self.drift_c_per_h * 0.5 ** (max(hours, 0.0) / HALF_LIFE_H)
 
-    def update(self, sample: Sample, params: RoomParams, lk_limit_c: float) -> None:
+    def update(
+        self, sample: Sample, params: RoomParams, lk_limit_c: float
+    ) -> Innovation | None:
+        """Take in a sample; returns the innovation when the step could be judged."""
         previous = self._last
         if previous is None or sample.at - previous.at > MAX_GAP:
             self._start(sample)
-            return
+            return None
         hours = (sample.at - previous.at).total_seconds() / 3600
         if hours < MIN_STEP_H:
-            return
+            return None
         if previous.valve is None:
             setpoint, scale = lk_limit_c, 1.0
         else:  # the measured valves replace the model's: it sees them as fully open
@@ -80,8 +92,10 @@ class DisturbanceEstimator:
         )
         sunny = max(previous.sun_wm2, sample.sun_wm2) > SUN_OFF_WM2
         modelled = params.k_sun > 0 or params.sun_swing_c_per_wm2 > 0
+        innovation = None
         if modelled or not sunny:
             rate = (sample.room_c - float(predicted)) / hours
+            innovation = Innovation(sample.at, rate, dark=not sunny)
             faded = self.at(sample.at)
             estimate = faded + GAIN * (rate - faded)
             self.drift_c_per_h = float(
@@ -90,6 +104,7 @@ class DisturbanceEstimator:
             self._at = sample.at
         self._slab_c, self._sun_filtered = float(slab), float(sun_filtered)
         self._last = sample
+        return innovation
 
     def _start(self, sample: Sample) -> None:
         self._last = sample

@@ -29,6 +29,7 @@ from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.regulator import Regulator, RoomStatus
+from core.theria.plan.skill import SkillTracker
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
 from core.theria.plan.disturbance import DisturbanceEstimator, Sample
@@ -169,6 +170,7 @@ class PlanService:
         self._lock = threading.RLock()
         self._event_log = event_log
         self._disturbance = DisturbanceEstimator()
+        self._skill = SkillTracker()
         self._regulator = (
             Regulator(settings.room_controls, settings.lk_limit_c, settings.room_actuators)
             if settings.room_controls
@@ -198,6 +200,8 @@ class PlanService:
                 lk_executor.load_state(state.lk)
             if state.regulator is not None and self._regulator is not None:
                 self._regulator.load_state(state.regulator)
+            if state.skill is not None:
+                self._skill.load_state(state.skill)
 
     def now(self) -> datetime:
         return self._now()
@@ -265,6 +269,7 @@ class PlanService:
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
             "disturbance_c_per_h": self._disturbance.at(self._now()),
+            "authority": self._skill.authority(self._now()),
             "sun_swing_c_per_wm2": self._room.sun_swing_c_per_wm2,
             "sun_lag_h": self._room.sun_lag_h,
         }
@@ -372,6 +377,12 @@ class PlanService:
         """The settings the plan runs on: the night kept warmer by the learned margin, and the
         ceiling lowered by the rise the floor adds after the valves close."""
         s = self._settings
+        # the swing of the setpoint around its base grows with the model's measured skill
+        authority = self._skill.authority(self._now())
+        step = s.rts_step_c
+        down = round((s.rts_base_c - s.rts_min_c) * authority / step) * step
+        up = round((s.rts_max_c - s.rts_base_c) * authority / step) * step
+        s = replace(s, rts_min_c=s.rts_base_c - down, rts_max_c=s.rts_base_c + up)
         if self._regulator is not None:
             rise = max((r.rise_c for r in self._regulator.rooms), default=0.0)
             ceiling = max(s.ceiling_c - rise, s.target_c + 0.5)
@@ -474,6 +485,7 @@ class PlanService:
                     regulator=(
                         None if self._regulator is None else self._regulator.export_state()
                     ),
+                    skill=self._skill.export_state(),
                 )
             )
 
@@ -514,6 +526,7 @@ class PlanService:
             "last_execution": result,
             "last_lk": lk_result,
             "regulator": self._regulator_statuses,
+            "authority": self._skill.authority(self._now()),
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
         }
@@ -612,9 +625,11 @@ class PlanService:
         except (RuntimeError, ValueError, KeyError, TypeError, WeatherDataError):
             logger.debug("no complete sample for the disturbance estimator", exc_info=True)
             return
-        self._disturbance.update(
+        innovation = self._disturbance.update(
             sample, self._anchored_room or self._warmed_room(), s.lk_limit_c
         )
+        if innovation is not None:
+            self._skill.add(innovation)
 
     def _open_fraction(self) -> float | None:
         """Share of the floor loops that are open now; None when no actuators are configured."""

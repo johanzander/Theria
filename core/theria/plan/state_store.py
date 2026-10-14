@@ -27,6 +27,7 @@ class PlanState:
     margin_changed_on: date | None = None
     last_trouble: str | None = None
     regulator: dict[str, Any] | None = None  # the learned rise per room
+    skill: dict[str, Any] | None = None  # the evidence behind the plan's authority
 
 
 def _response_to_dict(r: DailyRoomFit) -> dict[str, Any]:
@@ -196,6 +197,7 @@ class PlanStateStore:
                 ),
                 last_trouble=raw.get("last_trouble"),
                 regulator=raw.get("regulator"),
+                skill=raw.get("skill"),
             )
         except (
             OSError,
@@ -224,6 +226,7 @@ class PlanStateStore:
             ),
             "last_trouble": state.last_trouble,
             "regulator": state.regulator,
+            "skill": state.skill,
         }
         temporary = f"{self._path}.tmp"
         try:
