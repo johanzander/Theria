@@ -442,3 +442,27 @@ export interface Recommendation {
 export function sortedRecommendations(items: Recommendation[]): Recommendation[] {
   return [...items].sort((a, b) => Number(b.status === 'consider') - Number(a.status === 'consider'))
 }
+
+
+export interface Unit {
+  suffix: string
+  digits: number
+}
+
+export const UNITS = {
+  temp: { suffix: ' °C', digits: 1 },
+  price: { suffix: ' kr/kWh', digits: 2 },
+  kwh: { suffix: ' kWh', digits: 1 },
+  sek: { suffix: ' kr', digits: 1 },
+  count: { suffix: '', digits: 1 },
+} as const
+
+/** A tooltip value with a sensible number of decimals and its unit; a missing value is a dash. */
+export function formatValue(value: unknown, unit: Unit): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(unit.digits)}${unit.suffix}` : '-'
+}
+
+/** For a chart's Tooltip: `unitFor` picks the unit from the series' name. */
+export function tooltipFormatter(unitFor: (name: string) => Unit) {
+  return (value: unknown, name: unknown): [string, string] => [formatValue(value, unitFor(String(name))), String(name)]
+}

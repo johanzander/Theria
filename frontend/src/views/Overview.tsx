@@ -3,7 +3,7 @@ import {
 } from 'recharts'
 import { useState } from 'react'
 import { fetchDay, fetchExecution, fetchPlan, fetchSavings } from '../api'
-import { dayRows, quarterRows, outlookText, savingsSummary, type DayView, type Execution, type PlanResponse, type SavingsResponse } from '../model'
+import { dayRows, quarterRows, outlookText, tooltipFormatter, UNITS, savingsSummary, type DayView, type Execution, type PlanResponse, type SavingsResponse } from '../model'
 import { Card, useLoaded } from '../ui'
 
 const tomorrowIso = () => {
@@ -77,7 +77,7 @@ function DayCharts({ view }: { view: DayView }) {
             <XAxis dataKey="label" interval={7} />
             <YAxis yAxisId="price" orientation="right" unit=" kr" />
             <YAxis yAxisId="rts" domain={[16, 20]} unit="°" />
-            <Tooltip />
+            <Tooltip formatter={tooltipFormatter((n) => (n.includes('Price') ? UNITS.price : UNITS.temp))} />
             <Legend />
             <Bar yAxisId="price" dataKey="price" name="Price per quarter (SEK/kWh)" fill="#cbd2d9" />
             <Line yAxisId="rts" type="stepAfter" dataKey="measuredRts" name="Measured setpoint" stroke="#102a43" strokeWidth={2} dot={false} />
@@ -94,7 +94,7 @@ function DayCharts({ view }: { view: DayView }) {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="label" interval={2} />
             <YAxis domain={[roomLow, roomHigh]} unit="°" />
-            <Tooltip />
+            <Tooltip formatter={tooltipFormatter(() => UNITS.temp)} />
             <Legend />
             <Line type="stepAfter" dataKey="floor" name="Floor" stroke="#b42318" strokeDasharray="4 3" dot={false} />
             {thermostats.map((n, i) => (
@@ -118,7 +118,7 @@ function DayCharts({ view }: { view: DayView }) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="label" interval={2} />
               <YAxis domain={[0, Math.max(...Object.values(view.loops_total))]} allowDecimals={false} />
-              <Tooltip />
+              <Tooltip formatter={tooltipFormatter(() => UNITS.count)} />
               <Legend />
               {rooms.map((room, i) => (
                 <Line key={room} type="stepAfter" dataKey={room} name={`${room} (of ${view.loops_total[room]})`} stroke={loopColours[i % loopColours.length]} strokeWidth={2} dot={false} />
@@ -153,7 +153,7 @@ function SavingsChart({ savings }: { savings: SavingsResponse }) {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="day" />
           <YAxis unit=" kr" />
-          <Tooltip />
+          <Tooltip formatter={tooltipFormatter((n) => (n.includes('kWh') ? UNITS.kwh : UNITS.sek))} />
           <Legend />
           <Bar dataKey="saving_sek" name="Saving (SEK)" fill="#067647" />
           <Line type="monotone" dataKey="aux_kwh" name="Electric heater (kWh)" stroke="#b42318" dot={false} />

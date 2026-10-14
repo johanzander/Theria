@@ -1,6 +1,6 @@
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fetchPlan } from '../api'
-import { describeReason, energyRows, type PlanResponse } from '../model'
+import { describeReason, energyRows, tooltipFormatter, UNITS, type PlanResponse } from '../model'
 import { useLoaded } from '../ui'
 
 function PlanCharts({ plan }: { plan: PlanResponse }) {
@@ -14,7 +14,7 @@ function PlanCharts({ plan }: { plan: PlanResponse }) {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="label" interval={2} />
             <YAxis unit="°" domain={[(min: number) => Math.floor(min) - 2, (max: number) => Math.ceil(max) + 2]} />
-            <Tooltip />
+            <Tooltip formatter={tooltipFormatter(() => UNITS.temp)} />
             <Legend />
             <ReferenceLine y={45} stroke="#b42318" strokeDasharray="4 3" label="max 45" />
             <Line type="stepAfter" dataKey="flow" name="Plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
@@ -29,7 +29,7 @@ function PlanCharts({ plan }: { plan: PlanResponse }) {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="label" interval={2} />
             <YAxis unit=" kWh" />
-            <Tooltip />
+            <Tooltip formatter={tooltipFormatter(() => UNITS.kwh)} />
             <Legend />
             <Bar dataKey="baselineEnergy" name="Flat setpoint" fill="#cbd2d9" />
             <Bar dataKey="energy" name="Plan" fill="#0b6bcb" />
@@ -43,7 +43,7 @@ function PlanCharts({ plan }: { plan: PlanResponse }) {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="label" interval={2} />
             <YAxis unit=" kr" />
-            <Tooltip />
+            <Tooltip formatter={tooltipFormatter(() => UNITS.sek)} />
             <Legend />
             <Line type="monotone" dataKey="cumulativeBaselineCost" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
             <Line type="monotone" dataKey="cumulativeCost" name="Plan" stroke="#067647" strokeWidth={2} dot={false} />

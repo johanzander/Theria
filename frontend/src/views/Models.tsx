@@ -1,7 +1,7 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fetchModelHealth, fetchParameters } from '../api'
 import { Card, useLoaded } from '../ui'
-import { fitQuality, parameterSeries, warmupText, type ParameterHistory } from '../model'
+import { fitQuality, formatValue, parameterSeries, warmupText, type ParameterHistory } from '../model'
 
 const TRACKED: { key: string; title: string; unit: string }[] = [
   { key: 'room_gain_c_per_c', title: 'Room response (°C per °C flow)', unit: '' },
@@ -26,7 +26,7 @@ function Learning({ history }: { history: ParameterHistory }) {
         One point per refit (nightly) and per change of the night margin. {history.history.length} records so far.
       </p>
       <div className="mini-charts">
-        {TRACKED.map(({ key, title }) => {
+        {TRACKED.map(({ key, title, unit }) => {
           const series = parameterSeries(history.history, key)
           return (
             <div key={key} className="mini">
@@ -38,7 +38,7 @@ function Learning({ history }: { history: ParameterHistory }) {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="label" hide />
                     <YAxis domain={['auto', 'auto']} hide />
-                    <Tooltip />
+                    <Tooltip formatter={(value: unknown) => formatValue(value, { suffix: unit, digits: 3 })} />
                     <Line type="monotone" dataKey="value" stroke="#0b6bcb" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>

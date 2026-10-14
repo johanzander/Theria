@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planRows, dayRows, quarterRows, roomRows, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
+import { planRows, dayRows, quarterRows, roomRows, formatValue, tooltipFormatter, UNITS, energyRows, sortedRecommendations, savingsSummary, tabHref, type PlanResponse, type DayHour } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
@@ -212,5 +212,25 @@ describe('roomRows', () => {
 
   it('shows the level it closes at and the rise it has learned', () => {
     expect(rows[0]).toMatchObject({ closeAt: '21.3 °C', rise: '0.7 °C' })
+  })
+})
+
+describe('tooltip formatting', () => {
+  it('rounds to a few decimals and adds the unit', () => {
+    expect(formatValue(19.123456, UNITS.temp)).toBe('19.1 °C')
+    expect(formatValue(1.23456, UNITS.price)).toBe('1.23 kr/kWh')
+    expect(formatValue(3.97, UNITS.sek)).toBe('4.0 kr')
+  })
+
+  it('shows a dash for a value that is not there', () => {
+    expect(formatValue(null, UNITS.temp)).toBe('-')
+    expect(formatValue(undefined, UNITS.temp)).toBe('-')
+    expect(formatValue(NaN, UNITS.temp)).toBe('-')
+  })
+
+  it('picks the unit from the series name and keeps the name', () => {
+    const format = tooltipFormatter((name) => (name.includes('Price') ? UNITS.price : UNITS.temp))
+    expect(format(1.5678, 'Price per quarter (SEK/kWh)')).toEqual(['1.57 kr/kWh', 'Price per quarter (SEK/kWh)'])
+    expect(format(18, 'Plan setpoint')).toEqual(['18.0 °C', 'Plan setpoint'])
   })
 })
