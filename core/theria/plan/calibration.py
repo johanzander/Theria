@@ -46,7 +46,7 @@ MIN_FLOW_ROWS = 200
 MIN_ENERGY_ROWS = 500
 MIN_FLOW_SLOPE, MAX_FLOW_SLOPE = -1.5, -0.2  # C of flow per C outdoors
 MIN_MEAN_KWH, MAX_MEAN_KWH = 0.2, 4.0  # plausible mean heating electricity per hour
-SUN_FIT_DAYS = 120  # the sun gain is fitted on the recent heating hours
+SUN_FIT_DAYS = 365  # the sun swing is fitted on the last year's heating hours
 
 
 @dataclass(frozen=True)

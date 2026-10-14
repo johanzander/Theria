@@ -20,8 +20,8 @@ from core.theria.exceptions import ModelFitError
 
 FloatArray = npt.NDArray[np.float64]
 
-LAGS_H = (1.0, 2.0, 3.0, 4.0)
-SUNNY_WM2 = 100.0  # filtered irradiation that counts as a sunny hour
+LAGS_H = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+SUNNY_WM2 = 150.0  # irradiation that makes an hour a sunny one (counted on the raw values)
 DARK_WM2 = 20.0  # at most this is a dark hour (the day's level is read from these)
 MIN_SUNNY_HOURS = 80
 MIN_DARK_HOURS_PER_DAY = 6
@@ -71,7 +71,7 @@ def fit_sun(
             if len(dark) >= MIN_DARK_HOURS_PER_DAY:
                 y[idx] = room_c[idx] - float(np.mean(room_c[dark]))
         usable = np.isfinite(y) & (filtered > DARK_WM2) & (t_out_c <= MAX_OUTDOOR_C)
-        sunny = int(np.sum(usable & (filtered >= SUNNY_WM2)))
+        sunny = int(np.sum(usable & (sun >= SUNNY_WM2)))
         if sunny < MIN_SUNNY_HOURS:
             raise ModelFitError(
                 f"need {MIN_SUNNY_HOURS} sunny hours to judge the sun, found {sunny}"
