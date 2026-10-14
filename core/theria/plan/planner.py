@@ -23,6 +23,8 @@ ROOM_BIN_C = 0.1
 SLAB_BIN_C = 1.0
 VIOLATION_COST_SEK_PER_C_HOUR = 100.0  # floor / ceiling are effectively hard
 SWITCH_COST_SEK_PER_C = 0.02  # tie-breaker: prefer smooth plans, avoids pump jitter
+END_CREDIT_C = 0.5  # heat stored above the end level is credited up to this far (the model's
+# picture of how much of it is still there later is the least certain part)
 MAX_TERMINAL_HOURS = 168.0  # cap on how long an end-of-horizon deficit is charged
 FLOW_CAP_PENALTY_SEK = (
     1e6  # makes setpoints above the flow cap unattractive without inf/nan
@@ -254,6 +256,13 @@ class _Problem:
         )
         return reference_c, self.deficit_cost_sek_per_c(reference_c)
 
+    def end_charge(self, room_end: FloatArray | float) -> FloatArray:
+        """Cost (SEK) of ending the horizon at `room_end`: a deficit has to be bought back, a
+        surplus (up to END_CREDIT_C) is heat that does not have to be bought later."""
+        reference_c, cost_per_c = self.end_terms()
+        counted = np.minimum(room_end, reference_c + END_CREDIT_C)
+        return np.asarray(cost_per_c * (reference_c - counted), dtype=float)
+
     def deficit_cost_sek_per_c(self, reference_c: float) -> float:
         """What it costs to win back one degree of room that the plan gave up at the end.
 
@@ -290,8 +299,7 @@ class _Problem:
         rr, ss = np.meshgrid(self.room_grid, self.slab_grid, indexing="ij")
         shape = (len(self.room_grid), len(self.slab_grid), n_actions)
         value = np.empty((self.horizon + 1, *shape), dtype=np.float32)
-        reference_c, cost_per_c = self.end_terms()
-        terminal = cost_per_c * np.maximum(0.0, reference_c - rr)
+        terminal = self.end_charge(rr)
         value[self.horizon] = terminal[:, :, None]
         policy = np.empty((self.horizon, *shape), dtype=np.int8)
         for t in range(self.horizon - 1, -1, -1):
@@ -471,11 +479,13 @@ def plan(
     value, policy = problem.solve()
     hours = problem.follow_policy(value, policy)
     baseline = problem.flat_plan(settings.rts_base_c)
-    reference_c, cost_per_c = problem.end_terms()
-    # the part of the end-of-horizon payback the plan leaves for later counts against it
-    payback = cost_per_c * max(0.0, reference_c - hours[-1].room_c_end)
-    objective = payback + sum(h.energy_cost_sek + h.comfort_cost_sek for h in hours)
-    base_objective = sum(h.energy_cost_sek + h.comfort_cost_sek for h in baseline)
+    # what the end state of each trajectory is worth later: the plan and the baseline alike
+    objective = float(problem.end_charge(hours[-1].room_c_end)) + sum(
+        h.energy_cost_sek + h.comfort_cost_sek for h in hours
+    )
+    base_objective = float(problem.end_charge(baseline[-1].room_c_end)) + sum(
+        h.energy_cost_sek + h.comfort_cost_sek for h in baseline
+    )
     if (
         settings.min_saving_sek > 0
         and base_objective - objective < settings.min_saving_sek
