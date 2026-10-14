@@ -59,7 +59,9 @@ export function Control() {
             The regulator watches each room every 15 minutes. The LK thermostat is held at the room limit; a room is closed a little
             earlier, by the rise it has learned after the valves close. Plan freedom (authority): {Math.round((execution.data.authority ?? 0.5) * 100)} % of the setpoint range.
             {execution.data.radiators
-              ? ` Radiators: ${execution.data.radiators.calling ? 'calling for heat, no cuts' : 'satisfied'} (${execution.data.radiators.readable} readable).`
+              ? execution.data.radiators.readable === 0
+                ? ' Radiators: no signal (none of them can be read), so they do not limit the plan.'
+                : ` Radiators: ${execution.data.radiators.calling ? 'calling for heat, no cuts' : 'satisfied'} (${execution.data.radiators.readable} readable).`
               : ''}
           </p>
           {execution.data.regulator && execution.data.regulator.length > 0 ? (
