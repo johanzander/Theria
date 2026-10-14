@@ -230,3 +230,15 @@ Differences from the design above:
 4. Authority uses all dark hours, not only deviation days; deviation-day evidence needs more days of data.
 5. The 15-minute innovations are mostly sensor quantisation (0.1 C), so skill is judged on 6-hour means.
 6. A latent planner bug was found and fixed: a setpoint range narrower than the rise limit broke the DP.
+
+### UI (2026-10-14)
+
+- Charts and tables show whole local days (00:00-24:00): the chosen day and the next when it has data. Plan, flat
+  baseline and measurement are in the same chart; for hours that have passed the plan is the one that was applied
+  (`plan_record.py`, one line per hour in `/data/plan_record.jsonl`, so history before 2026-10-14 has no plan).
+- Saving per hour against the flat setpoint replaces the running cost chart; the schedule strip (pre-heat, cut, hold)
+  follows the BESS Manager's mode timeline.
+- Settings page: the plan settings are editable (`settings_manager.py`, overrides in `/data/plan_overrides.json`,
+  applied live, resettable). Models page: every parameter and weight (`model_catalog.py`), with source and meaning.
+- The tuning advice was rewritten for the shunts (floor limit) and the authority (setpoint limits are not judged
+  while the plan has half the range).
