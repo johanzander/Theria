@@ -178,11 +178,16 @@ class _Problem:
             SLAB_BIN_C,
         )
 
+    def floor_flow(self, t: int, rts_c: float) -> float:
+        """The flow temperature the floor sees: what the pump sends, up to the shunts' cap."""
+        pump_flow = float(flow_target(self.pump, self.inputs.t_out_c[t], rts_c))
+        return min(pump_flow, self.settings.floor_mix_max_c)
+
     def transition(
         self, t: int, a: int, room_c: FloatArray, slab_c: FloatArray
     ) -> tuple[FloatArray, FloatArray]:
         """Room and slab temperature at the end of hour t for action index a."""
-        flow = float(flow_target(self.pump, self.inputs.t_out_c[t], self.actions[a]))
+        flow = self.floor_flow(t, float(self.actions[a]))
         room_next, slab_next, _ = step(
             self.room,
             room_c,
@@ -279,7 +284,11 @@ class _Problem:
             total_kwh_per_hour(self.pump, t_out, up)
             - total_kwh_per_hour(self.pump, t_out, down)
         )
-        d_flow = float(flow_target(self.pump, t_out, up) - flow_target(self.pump, t_out, down))
+        cap = s.floor_mix_max_c
+        d_flow = float(
+            min(float(flow_target(self.pump, t_out, up)), cap)
+            - min(float(flow_target(self.pump, t_out, down)), cap)
+        )
         valve = float(valve_open(reference_c, s.lk_limit_c))
         coupling = valve * self.room.k_slab
         rate = coupling + self.room.k_out
@@ -412,7 +421,7 @@ class _Problem:
         room_c, slab_c = self.inputs.initial.room_c, self.inputs.initial.slab_c
         hours: list[HourPlan] = []
         for t in range(self.horizon):
-            flow = float(flow_target(self.pump, self.inputs.t_out_c[t], rts_c))
+            flow = self.floor_flow(t, rts_c)
             room_next, slab_next, _ = step(
                 self.room,
                 room_c,

@@ -38,7 +38,10 @@ EVENING = (HOUR_OF_DAY >= 16) & (HOUR_OF_DAY < 20)
 
 def run(inputs, settings):
     """Plan the way the service does: the baseline holds the room where it is."""
-    baseline_flow = flow_target(PRIOR_PUMP_PARAMS, inputs.t_out_c, settings.rts_base_c)
+    baseline_flow = np.minimum(
+        flow_target(PRIOR_PUMP_PARAMS, inputs.t_out_c, settings.rts_base_c),
+        settings.floor_mix_max_c,
+    )
     room = anchored_room_params(
         PRIOR_ROOM_PARAMS,
         inputs.initial.room_c,
@@ -260,7 +263,7 @@ def test_an_expensive_peak_gets_less_heat_than_the_hours_before_it(
     price[8:16] = 2.5
     result = run(make_inputs(price, room_c=19.0, slab_c=28.0), settings)
     rts = [h.rts_c for h in result.hours]
-    assert np.mean(rts[8:16]) < np.mean(rts[:8]) - 1.0
+    assert np.mean(rts[8:16]) < np.mean(rts[:8]) - 0.5
     assert result.baseline_objective_sek - result.objective_sek > 1.0
 
 
@@ -305,6 +308,17 @@ def test_the_credit_for_stored_heat_stops_half_a_degree_above_the_flat_setpoints
     result = run(make_inputs(price, room_c=19.5, slab_c=28.0), settings)
     ends = result.hours[-1].room_c_end - result.baseline_hours[-1].room_c_end
     assert ends <= END_CREDIT_C + 0.1
+
+
+def test_when_the_flow_is_above_the_shunt_cap_a_lower_setpoint_costs_the_floor_nothing(
+    settings, make_inputs
+):
+    # at -5 C outdoors the flow is above 40 C even at the lowest setpoint, so the floor only ever
+    # receives 40 C: cutting the pump setpoint saves electricity and the room does not notice
+    result = run(make_inputs(np.full(HORIZON, 1.0), t_out=-5.0), settings)
+    assert all(h.rts_c == settings.rts_min_c for h in result.hours)
+    for plan_hour, flat_hour in zip(result.hours, result.baseline_hours, strict=True):
+        assert abs(plan_hour.room_c_end - flat_hour.room_c_end) < 0.01
 
 
 def test_the_other_rooms_cost_keeps_a_small_price_difference_from_moving_the_setpoint(

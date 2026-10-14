@@ -763,8 +763,9 @@ class PlanService:
             previous_rts_c=previous_rts,
             extra_drift_c_per_h=self._extra_drift(starts, t_out, level_c, now),
         )
-        baseline_flow = np.asarray(
-            flow_target(self._pump, t_out, s.rts_base_c), dtype=float
+        baseline_flow = np.minimum(
+            np.asarray(flow_target(self._pump, t_out, s.rts_base_c), dtype=float),
+            s.floor_mix_max_c,
         )
         room_params = anchored_room_params(
             self._warmed_room(), level_c, t_out, baseline_flow, s.lk_limit_c
