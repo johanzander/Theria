@@ -195,3 +195,18 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
   runs when the plan raises, lower `rts_max_c` or `boost_flow_limit_c` (see the Tuning tab).
 - [x] `max_rts_step_per_hour_c` is 2 (was 1): the setpoint range 16-20 can be crossed in one step. It was an assumption, not a measurement; watch the electric heater when the plan ramps up.
 - [x] Prices come from HA's built-in Nord Pool integration (`nordpool.get_prices_for_date`, config entry in `plan.price_config_entry`, area `price_area`); the HACS template sensor `nordpool_kwh_se4_sek_2_10_025` is gone. `plan.price_entity` is now `sensor.nord_pool_se4_current_price` and is only used for the price history of measured days. Empty `price_config_entry` still reads `today`/`tomorrow` attributes from `price_entity`.
+
+
+## Zone control v2 (2026-10-14)
+
+Built per `docs/superpowers/specs/2026-10-14-zone-control-design.md` (section 14 lists the differences).
+
+- [ ] Read the regulator's "would: ..." log for a few days, then set `regulator_active: true`.
+- [ ] Hourly night fit of the loss and floor coupling from nights with actuator history (needs about two
+      weeks of `binary_sensor.lk_*_actuator_*` in InfluxDB; they were added 2026-10-13).
+- [ ] Learn the flow that satisfied the radiators per outdoor-temperature band instead of "no cuts while calling".
+      The Netatmo/Tado climate entities were `unavailable` on 2026-10-14; check why.
+- [ ] Authority from deviation days (compare predicted and measured room change on days the plan moved the setpoint).
+- [ ] Read the mixing valve and confirm the 40 C cap, and ask the parquet supplier for the surface limit (26 or 27 C).
+- [ ] Verify against history that the room's response to flow stops growing above the cap.
+- [ ] The kitchen cannot be measured today and is out of scope.

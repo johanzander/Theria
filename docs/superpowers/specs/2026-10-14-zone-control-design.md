@@ -1,6 +1,6 @@
 # Zone control with the flow temperature as the lever - requirements and design (v2)
 
-Status: draft for review (2026-10-14). Replaces the control parts of `2026-10-11-price-plan-design.md`
+Status: approved and implemented 2026-10-14 (see section 14 for what was built and where it differs). Replaces the control parts of `2026-10-11-price-plan-design.md`
 (sections on the LK thermostat lever, the observer and the stages). Measurements and manual quotes:
 `documentation/ivt-heat-pump.md`. Open items: `documentation/TODO.md`.
 
@@ -200,3 +200,33 @@ takes many consecutive hours); several sensors per room are averaged (R10).
 - Acceptance: over two weeks, no room above `U + o_i` by more than 0.3 C for more than 30 minutes; plan cost vs
   flat reported with the end-of-horizon payback counted; prediction skill on deviation days published on the
   Models page.
+
+## 14. Implementation status (2026-10-14)
+
+Plan: `docs/superpowers/plans/2026-10-14-zone-control.md`. Built:
+
+- Settings: `lk_limit_c` (static LK limit), `lk_base_c` (where the thermostats stand when Theria does not
+  control them), `floor_mix_max_c` (40), `ceiling_c` (22), `room_controls`, `regulator_active`, `radiator_entities`.
+- Model: the floor sees `min(flow, floor_mix_max_c)`; the sun is a swing on the slow room level
+  (`sun_swing_c_per_wm2`, lag fitted 1-6 h) and not a heating rate (a rate would pile up in a slow model);
+  fitted nightly from a year of heating hours, bounded step per day. On Johan's data: 0.0067 C per W/m2, lag
+  4 h, error in the sunny hours 0.90 -> 0.60 C.
+- `LKExecutor`: static limit, per-thermostat holds from the regulator, 1 h pause on a hand change.
+- `disturbance.py` replaces the observer: one-step innovation from measured flow, open loops, outdoor and sun.
+- `regulator.py`: per room, mean of valid sensors, learned rise after the valves close, closes earlier by it.
+  `regulator_active: false` by default: it measures and logs "would: ..." until its decisions have been read.
+- `skill.py`: authority in [0.5, 1] from the systematic error (6 h block means) in dark hours; the plan's
+  setpoint range around the base is scaled by it. Evidence is persisted.
+- Radiator calls: no cuts below the base while a radiator reports `hvac_action == heating`; unreadable
+  entities are ignored but reported (all were `unavailable` when this was built).
+- UI: Rooms panel (Control), sun swing and disturbance (Models), 15-minute prices (Overview).
+
+Differences from the design above:
+
+1. One room-level state in the planner, per-room logic in the regulator.
+2. `a_i`, `b_i` stay on the daily response and night drift; the nightly hourly fit needs nights with the
+   actuator history, which exists only since 2026-10-13. TODO.
+3. The radiator bound is the simple rule (no cuts while calling), not a learned flow per outdoor band. TODO.
+4. Authority uses all dark hours, not only deviation days; deviation-day evidence needs more days of data.
+5. The 15-minute innovations are mostly sensor quantisation (0.1 C), so skill is judged on 6-hour means.
+6. A latent planner bug was found and fixed: a setpoint range narrower than the rise limit broke the DP.
