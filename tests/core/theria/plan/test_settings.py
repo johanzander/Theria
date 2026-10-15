@@ -146,3 +146,17 @@ def test_the_lk_limit_must_lie_between_the_floor_and_the_plans_ceiling_must_not_
         replace(settings, lk_base_c=settings.lk_limit_c + 0.5)
     with pytest.raises(ConfigurationError):
         replace(settings, floor_mix_max_c=0.0)
+
+
+def test_the_plan_starts_with_three_quarters_of_the_setpoint_range_and_the_minimum_can_be_changed(settings):
+    from dataclasses import replace
+
+    import pytest
+
+    from core.theria.exceptions import ConfigurationError
+
+    assert settings.min_authority == 0.75
+    assert replace(settings, min_authority=1.0).min_authority == 1.0
+    for bad in (0.0, 1.5):
+        with pytest.raises(ConfigurationError):
+            replace(settings, min_authority=bad)

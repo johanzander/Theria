@@ -70,3 +70,13 @@ def test_the_evidence_survives_a_restart():
     again = SkillTracker()
     again.load_state(tracker.export_state())
     assert again.authority(end) == tracker.authority(end) == 1.0
+
+
+def test_the_minimum_authority_can_be_raised():
+    tracker = SkillTracker()
+    assert tracker.authority(NOW, minimum=0.8) == 0.8
+    end = fill(tracker, BAD_C_PER_H + 0.02)
+    assert tracker.authority(end, minimum=0.8) == 0.8
+    good = SkillTracker()
+    end = fill(good, 0.0, noise=0.2)
+    assert good.authority(end, minimum=0.8) == 1.0

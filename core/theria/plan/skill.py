@@ -48,12 +48,14 @@ class SkillTracker:
         ]
         return float(np.mean(means)) if len(means) >= MIN_BLOCKS else None
 
-    def authority(self, now: datetime) -> float:
+    def authority(self, now: datetime, minimum: float = MIN_AUTHORITY) -> float:
+        """The share of the setpoint range the plan may use: `minimum` with no evidence or a poor
+        model, up to 1 when the model predicts well."""
         error = self.error(now)
         if error is None:
-            return MIN_AUTHORITY
+            return minimum
         share = (BAD_C_PER_H - error) / (BAD_C_PER_H - GOOD_C_PER_H)
-        return MIN_AUTHORITY + (1.0 - MIN_AUTHORITY) * float(np.clip(share, 0.0, 1.0))
+        return minimum + (1.0 - minimum) * float(np.clip(share, 0.0, 1.0))
 
     def export_state(self) -> dict[str, Any]:
         return {str(block): values for block, values in self._samples.items()}

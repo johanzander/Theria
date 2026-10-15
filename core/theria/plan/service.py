@@ -279,7 +279,7 @@ class PlanService:
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
             "disturbance_c_per_h": self._disturbance.at(self._now()),
-            "authority": self._skill.authority(self._now()),
+            "authority": self._skill.authority(self._now(), self._settings.min_authority),
             "sun_swing_c_per_wm2": self._room.sun_swing_c_per_wm2,
             "sun_lag_h": self._room.sun_lag_h,
         }
@@ -388,7 +388,7 @@ class PlanService:
         ceiling lowered by the rise the floor adds after the valves close."""
         s = self._settings
         # the swing of the setpoint around its base grows with the model's measured skill
-        authority = self._skill.authority(self._now())
+        authority = self._skill.authority(self._now(), self._settings.min_authority)
         step = s.rts_step_c
         down = round((s.rts_base_c - s.rts_min_c) * authority / step) * step
         up = round((s.rts_max_c - s.rts_base_c) * authority / step) * step
@@ -575,7 +575,7 @@ class PlanService:
             warmup=self._warmup,
             morning_margin_c=self._morning_margin_c,
             disturbance_c_per_h=self._disturbance.at(now),
-            authority=self._skill.authority(now),
+            authority=self._skill.authority(now, self._settings.min_authority),
             skill_error_c_per_h=self._skill.error(now),
             regulator_rise_c=(
                 {}
@@ -597,7 +597,7 @@ class PlanService:
             "last_execution": result,
             "last_lk": lk_result,
             "regulator": self._regulator_statuses,
-            "authority": self._skill.authority(self._now()),
+            "authority": self._skill.authority(self._now(), self._settings.min_authority),
             "radiators": self._radiators,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
@@ -763,7 +763,7 @@ class PlanService:
             days,
             [] if latest is None else latest.plan.hours,
             self._night,
-            authority=self._skill.authority(now),
+            authority=self._skill.authority(now, self._settings.min_authority),
         )
 
     @property

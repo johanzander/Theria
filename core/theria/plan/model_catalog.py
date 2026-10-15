@@ -173,6 +173,7 @@ def build_catalog(
         ("rts_min_c", "Lowest pump setpoint", settings.rts_min_c, "°C", "The plan never goes below this."),
         ("rts_max_c", "Highest pump setpoint", settings.rts_max_c, "°C", "The plan never goes above this."),
         ("rts_base_c", "Base pump setpoint", settings.rts_base_c, "°C", "The setpoint the flat baseline holds."),
+        ("min_authority", "Least share of the setpoint range", settings.min_authority, "", "The plan always has at least this share of the setpoint range; it grows to all of it as the model proves itself."),
         ("max_rts_step_per_hour_c", "Largest rise per hour", settings.max_rts_step_per_hour_c, "°C", "How fast the setpoint may be raised."),
     ):
         e.append(_entry(g, key, label, value, unit, "setting", text))
@@ -182,7 +183,7 @@ def build_catalog(
         _entry(g, "disturbance_half_life_h", "Disturbance half-life", disturbance.HALF_LIFE_H, "h", "constant", "How fast the drift estimate fades."),
         _entry(g, "disturbance_max_c_per_h", "Largest drift the plan is told", disturbance.MAX_DRIFT_C_PER_H, "°C/h", "constant", "Sanity limit."),
         _entry(g, "skill_good_c_per_h", "Error for full authority", skill.GOOD_C_PER_H, "°C/h", "constant", "At or below this the plan has the whole setpoint range."),
-        _entry(g, "skill_bad_c_per_h", "Error for minimum authority", skill.BAD_C_PER_H, "°C/h", "constant", "At or above this the plan has half the range."),
+        _entry(g, "skill_bad_c_per_h", "Error for minimum authority", skill.BAD_C_PER_H, "°C/h", "constant", "At or above this the plan has only its least share of the range."),
         _entry(g, "regulator_hysteresis_c", "Regulator hysteresis", regulator.HYSTERESIS_C, "°C", "constant", "A closed room reopens this far below its closing level."),
         _entry(g, "regulator_max_rise_c", "Largest learned rise", regulator.MAX_RISE_C, "°C", "constant", "Bound on the learned overshoot."),
         _entry(g, "trim_gain_step", "Room gain: largest change per day", trim.MAX_GAIN_STEP, "°C/°C", "constant", "A refit may move the response this far per day."),

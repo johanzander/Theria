@@ -267,6 +267,7 @@ schema:
     ceiling_c: float?
     lk_limit_c: float?
     lk_base_c: float?
+    min_authority: float?
     min_saving_sek: float?
     night_start_hour: int?
     night_end_hour: int?

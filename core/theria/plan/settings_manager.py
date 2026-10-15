@@ -51,6 +51,7 @@ EDITABLE: dict[str, SettingInfo] = {
     "rts_base_c": _f("Pump setpoint", "Base setpoint", "What the flat baseline holds and what is restored when control stops.", "°C", 10, 25, 0.5),
     "rts_step_c": _f("Pump setpoint", "Setpoint step", "The size of one setpoint step the plan chooses between.", "°C", 0.1, 1, 0.1),
     "max_rts_step_per_hour_c": _f("Pump setpoint", "Largest rise per hour", "How far the setpoint may be raised in one hour (lowering is not limited).", "°C", 0.5, 5, 0.5),
+    "min_authority": _f("Pump setpoint", "Least share of the range", "The least share of the setpoint range the plan may use (1 = the whole range always). It grows to the whole range as the model proves it predicts the room well in hours without sun.", "", 0.25, 1, 0.05),
     "lk_limit_c": _f("Floor and valves", "LK thermostat setpoint (active)", "Where the LK thermostats are held while Theria controls them: the valves close when a room reaches it.", "°C", 15, 30, 0.5),
     "lk_base_c": _f("Floor and valves", "LK thermostat setpoint (otherwise)", "Where they stand when Theria does not control them (shadow, off, stop).", "°C", 15, 30, 0.5),
     "floor_mix_max_c": _f("Floor and valves", "Floor mixing valve limit", "The most flow temperature the floor loops receive, whatever the pump sends.", "°C", 20, 60, 1),

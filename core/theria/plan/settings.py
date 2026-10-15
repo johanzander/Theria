@@ -81,6 +81,9 @@ class PlanSettings:
     rts_base_c: float = 18.0
     rts_step_c: float = 0.5
     max_rts_step_per_hour_c: float = 2.0
+    # The least share of the setpoint range (rts_min..rts_max around the base) the plan may use; it
+    # grows to the whole range as the model proves it predicts the room (see skill.py).
+    min_authority: float = 0.75
     # A plan must beat the flat setpoint by at least this much (SEK over the horizon, comfort
     # cost included); otherwise the flat setpoint is kept and nothing is moved for a few öre. 0 switches it off.
     min_saving_sek: float = 0.2
@@ -150,6 +153,8 @@ class PlanSettings:
             raise ConfigurationError(
                 "plan room setpoint range must satisfy rts_min <= rts_base <= rts_max"
             )
+        if not 0 < self.min_authority <= 1:
+            raise ConfigurationError("min_authority must be above 0 and at most 1")
         if self.rts_step_c <= 0 or self.max_rts_step_per_hour_c < self.rts_step_c:
             raise ConfigurationError(
                 "rts_step_c must be positive and not larger than max_rts_step_per_hour_c"

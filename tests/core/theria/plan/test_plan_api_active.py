@@ -59,7 +59,7 @@ def test_execution_reports_the_last_write(client):
     body = http.get("/api/plan/execution").json()
     assert body["mode"] == "active"
     assert "stage" not in body
-    assert body["authority"] == 0.5 and body["radiators"] is None
+    assert body["authority"] == 0.75 and body["radiators"] is None
     assert body["regulator"] == []
     assert body["last_execution"]["action"] in ("wrote", "kept")
 

@@ -12,10 +12,14 @@ def good_evidence(service, hours=48):
         service._skill.add(Innovation(EVENING - timedelta(minutes=15 * k), wobble, True))
 
 
-def test_without_evidence_the_plan_has_half_the_swing_around_the_base(settings):
+def test_without_evidence_the_plan_has_the_minimum_share_of_the_swing_around_the_base(settings):
+    from dataclasses import replace
+
     service, *_ = make(settings)
     effective = service._effective_settings()
-    assert (effective.rts_min_c, effective.rts_max_c) == (17.0, 19.0)
+    assert (effective.rts_min_c, effective.rts_max_c) == (16.5, 19.5)  # 0.75 of 2 C
+    half, *_ = make(replace(settings, min_authority=0.5))
+    assert (half._effective_settings().rts_min_c, half._effective_settings().rts_max_c) == (17.0, 19.0)
 
 
 def test_a_model_that_has_predicted_well_gives_the_plan_the_full_range(settings):
