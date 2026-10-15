@@ -182,3 +182,16 @@ def test_what_was_still_pending_survives_a_restart_of_the_lk_executor(lk_setting
     again = LKExecutor(ha, lk_settings, now=lambda: now[0], sleep=lambda _: None)
     again.load_state(saved)
     assert again.execute({"climate.lk_a": 20.5}).action == "kept"
+
+
+def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_one_lagged(lk_settings):
+    ha = FakeLK(19.5)
+    executor2, ha, now2 = make(lk_settings, ha)
+    executor2.restore_base()  # both thermostats are known at the base
+    ha.ignore.add("climate.lk_b")  # the cloud does not deliver this one in time
+    result = executor2.execute()
+    assert result.action == "failed" and ha.values["climate.lk_a"] == LIMIT
+    ha.ignore.discard("climate.lk_b")
+    ha.values["climate.lk_b"] = LIMIT  # delivered late
+    now2[0] += timedelta(minutes=15)
+    assert executor2.execute().action == "kept"
