@@ -150,3 +150,35 @@ def test_the_state_survives_a_restart(lk_settings):
     again = LKExecutor(ha, lk_settings, now=lambda: now[0], sleep=lambda _: None)
     again.load_state(saved)
     assert again.execute({"climate.lk_a": 20.5}).action == "kept"
+
+
+def slow_cloud_failing_once(lk_settings):
+    """The thermostats held the limit; the cloud is too slow to confirm a hold in time."""
+    executor, ha, now = make(lk_settings, FakeLK(LIMIT))
+    assert executor.execute().action == "kept"
+    ha.lag = 1000
+    assert executor.execute({"climate.lk_a": 20.5}).action == "failed"
+    ha.lag, ha._pending = 0, {}
+    now[0] += timedelta(minutes=15)
+    return executor, ha, now
+
+
+def test_a_thermostat_that_accepts_after_the_wait_is_not_taken_for_a_hand_change(lk_settings):
+    executor, ha, _ = slow_cloud_failing_once(lk_settings)
+    ha.values["climate.lk_a"] = 20.5  # the cloud caught up
+    assert executor.execute({"climate.lk_a": 20.5}).action == "kept"
+
+
+def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_a_hand_change(lk_settings):
+    executor, ha, _ = slow_cloud_failing_once(lk_settings)
+    ha.values["climate.lk_a"] = 19.0
+    assert executor.execute({"climate.lk_a": 20.5}).action == "paused"
+
+
+def test_what_was_still_pending_survives_a_restart_of_the_lk_executor(lk_settings):
+    executor, ha, now = slow_cloud_failing_once(lk_settings)
+    saved = executor.export_state()
+    ha.values["climate.lk_a"] = 20.5
+    again = LKExecutor(ha, lk_settings, now=lambda: now[0], sleep=lambda _: None)
+    again.load_state(saved)
+    assert again.execute({"climate.lk_a": 20.5}).action == "kept"

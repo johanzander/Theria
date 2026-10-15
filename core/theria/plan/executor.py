@@ -68,6 +68,9 @@ class PlanExecutor:
         self._now = now
         self._sleep = sleep
         self._last_written: float | None = None
+        # A value that was written but not seen on the pump before the wait ran out: the pump may
+        # still accept it, and then it is not a hand change.
+        self._pending: float | None = None
         self._last_raise_at: datetime | None = None
         self._pause_until: datetime | None = None
         self.last_result: ExecutionResult | None = None
@@ -79,12 +82,14 @@ class PlanExecutor:
         """What the executor remembers, so that a restart does not forget a hand change."""
         return {
             "last_written": self._last_written,
+            "pending": self._pending,
             "last_raise_at": _iso(self._last_raise_at),
             "pause_until": _iso(self._pause_until),
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
         self._last_written = state["last_written"]
+        self._pending = state.get("pending")  # absent in older state files
         self._last_raise_at = _moment(state["last_raise_at"])
         self._pause_until = _moment(state["pause_until"])
 
@@ -111,11 +116,18 @@ class PlanExecutor:
                 )
             )
         if (
+            self._pending is not None
+            and abs(current - self._pending) < MANUAL_CHANGE_C
+        ):
+            self._last_written, self._pending = self._pending, None  # it got there
+        if (
             self._last_written is not None
             and abs(current - self._last_written) >= MANUAL_CHANGE_C
+            and (self._pending is None or abs(current - self._pending) >= MANUAL_CHANGE_C)
         ):
             self._pause_until = now + MANUAL_PAUSE
             self._last_written = None
+            self._pending = None
             return self._record(
                 ExecutionResult(
                     "paused", None, None, f"setpoint changed by hand to {current}", now
@@ -161,6 +173,7 @@ class PlanExecutor:
         """Remember the base as the last written value, before it is written: a stop that is cut
         short must not leave the next start to take the base for a hand change."""
         self._last_written = self._s.rts_base_c
+        self._pending = None
         self._pause_until = None
 
     def restore_base(self) -> ExecutionResult:
@@ -207,6 +220,7 @@ class PlanExecutor:
             )
         except (RuntimeError, ValueError, KeyError, TypeError) as e:
             logger.error("writing the room setpoint failed: %s", e)
+            self._pending = value  # the call may have gone through all the same
             return self._record(
                 ExecutionResult("failed", value, None, f"write failed: {e}", now)
             )
@@ -214,12 +228,14 @@ class PlanExecutor:
             logger.error(
                 "room setpoint %s was not accepted, read back %s", value, confirmed
             )
+            self._pending = value  # the pump may still accept it
             return self._record(
                 ExecutionResult(
                     "failed", value, None, f"read back {confirmed}, wrote {value}", now
                 )
             )
         self._last_written = value
+        self._pending = None
         if raising:
             self._last_raise_at = now
         logger.info("room setpoint %s -> %s (%s)", current, value, reason)

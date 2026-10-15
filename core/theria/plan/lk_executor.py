@@ -52,6 +52,8 @@ class LKExecutor:
         self._now = now
         self._sleep = sleep
         self._last_written: dict[str, float] | None = None
+        # values written but not seen before the wait ran out; the cloud may still deliver them
+        self._pending: dict[str, float] = {}
         self._pause_until: datetime | None = None
         self.last_result: LKResult | None = None
 
@@ -61,6 +63,7 @@ class LKExecutor:
     def export_state(self) -> dict[str, Any]:
         return {
             "last_written": self._last_written,
+            "pending": self._pending,
             "pause_until": (
                 None if self._pause_until is None else self._pause_until.isoformat()
             ),
@@ -69,6 +72,8 @@ class LKExecutor:
     def load_state(self, state: dict[str, Any]) -> None:
         written = state["last_written"]
         self._last_written = written if isinstance(written, dict) else None
+        pending = state.get("pending")  # absent in older state files
+        self._pending = pending if isinstance(pending, dict) else {}
         pause = state["pause_until"]
         self._pause_until = None if pause is None else datetime.fromisoformat(pause)
 
@@ -86,12 +91,19 @@ class LKExecutor:
                     now,
                 )
             )
+        for entity, wanted in list(self._pending.items()):
+            if abs(current[entity] - wanted) < MANUAL_CHANGE_C:  # it got there, late
+                if self._last_written is not None:
+                    self._last_written[entity] = wanted
+                del self._pending[entity]
         if self._last_written is not None and any(
             abs(value - self._last_written.get(entity, value)) >= MANUAL_CHANGE_C
+            and abs(value - self._pending.get(entity, value + 10)) >= MANUAL_CHANGE_C
             for entity, value in current.items()
         ):
             self._pause_until = now + MANUAL_PAUSE
             self._last_written = None
+            self._pending = {}
             return self._record(
                 LKResult("paused", None, "thermostat changed by hand", now)
             )
@@ -105,6 +117,7 @@ class LKExecutor:
         """As the pump executor's: the base is what the thermostats will be left at."""
         entities = self._s.room_thermostat_entities
         self._last_written = dict.fromkeys(entities, self._s.lk_base_c)
+        self._pending = {}
         self._pause_until = None
 
     def restore_base(self) -> LKResult:
@@ -155,10 +168,13 @@ class LKExecutor:
                 )
             except (RuntimeError, ValueError, KeyError, TypeError) as e:
                 failures.append(f"{entity}: {e}")
+                self._pending[entity] = target  # the call may have gone through all the same
                 continue
             if abs(confirmed - target) > CONFIRM_TOLERANCE_C:
                 failures.append(f"{entity}: read back {confirmed}, wrote {target}")
+                self._pending[entity] = target
                 continue
+            self._pending.pop(entity, None)
             wrote = True
         shown = self._s.lk_limit_c if len(set(targets.values())) != 1 else next(iter(targets.values()))
         if failures:

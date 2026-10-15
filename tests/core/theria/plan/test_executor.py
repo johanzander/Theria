@@ -222,3 +222,38 @@ def test_a_pump_that_never_confirms_is_a_failure_after_the_wait(make):
     ha.lag = 1000
     result = executor.execute(snapshot([17.0]))
     assert result.action == "failed" and "read back 18.0" in result.reason
+
+
+def slow_pump_failing_once(make, plan=18.0):
+    """The executor has held 17.0; the pump is too slow to confirm the write of `plan` in time."""
+    executor, ha, _ = make(17.0)
+    assert executor.execute(snapshot([17.0])).action == "kept"
+    ha.lag = 1000
+    assert executor.execute(snapshot([plan])).action == "failed"
+    ha.lag, ha._pending = 0, None
+    return executor, ha
+
+
+def test_a_pump_that_accepts_after_the_wait_is_not_taken_for_a_hand_change(make):
+    executor, ha = slow_pump_failing_once(make)
+    ha.setpoint = 18.0  # the pump took the value 15 seconds too late
+    assert executor.execute(snapshot([18.0])).action == "kept"
+
+
+def test_a_write_that_never_took_effect_is_simply_tried_again(make):
+    executor, ha = slow_pump_failing_once(make)  # still 17.0 on the pump
+    assert executor.execute(snapshot([18.0])).action == "wrote"
+
+
+def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_still_a_hand_change(make):
+    executor, ha = slow_pump_failing_once(make)
+    ha.setpoint = 19.5
+    assert executor.execute(snapshot([18.0])).action == "paused"
+
+
+def test_what_was_still_pending_survives_a_restart(make):
+    executor, ha = slow_pump_failing_once(make)
+    saved = executor.export_state()
+    again, ha2, _ = make(18.0)  # the pump accepted the value while the add-on was down
+    again.load_state(saved)
+    assert again.execute(snapshot([18.0])).action == "kept"
