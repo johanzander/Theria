@@ -84,11 +84,30 @@ def test_the_state_is_saved_before_the_base_is_written_in_case_the_stop_is_cut_s
     def watching(entity_id, temperature):
         if not saved_at_first_write:
             with open(path) as f:
-                saved_at_first_write.append(json.load(f)["executor"]["last_written"])
+                saved_at_first_write.append(json.load(f)["executor"]["pending"])
         real(entity_id, temperature)
 
     ha.set_temperature = watching
     asyncio.run(service.stop())
     # the supervisor may kill the add-on while the thermostats are still being confirmed: what
-    # is on disk by then must already say that the base is what was written
+    # is on disk by then must already say that the base may arrive
     assert saved_at_first_write == [18.0]
+
+
+def test_a_stop_that_was_cut_short_before_the_thermostats_changed_is_not_a_hand_change(
+    settings, tmp_path
+):
+    import asyncio
+
+    path = str(tmp_path / "state.json")
+    ha = WritableHA(price_attributes(), 18.0)
+    first = build(settings, ha, path, at=EVENING)
+    first.set_mode("active", confirm=True)
+    run_cycle(first)
+    assert ha.lk["climate.lk_bibliotek_thermostat"] == LIMIT
+    ha.fail_lk_writes = True  # the cloud never got to change them before the add-on was killed
+    asyncio.run(first.stop())
+    ha.fail_lk_writes = False
+    second = build(settings, ha, path, at=EVENING)
+    run_cycle(second)
+    assert second.execution_status()["last_lk"].action != "paused"

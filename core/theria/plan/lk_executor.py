@@ -114,10 +114,9 @@ class LKExecutor:
         return self._apply(targets, current, "hold" if holds else "limit", now)
 
     def expect_base(self) -> None:
-        """As the pump executor's: the base is what the thermostats will be left at."""
+        """As the pump executor's: the base may arrive, and the value it replaces is still fine."""
         entities = self._s.room_thermostat_entities
-        self._last_written = dict.fromkeys(entities, self._s.lk_base_c)
-        self._pending = {}
+        self._pending = dict.fromkeys(entities, self._s.lk_base_c)
         self._pause_until = None
 
     def restore_base(self) -> LKResult:

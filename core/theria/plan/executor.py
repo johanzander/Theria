@@ -170,10 +170,9 @@ class PlanExecutor:
         )
 
     def expect_base(self) -> None:
-        """Remember the base as the last written value, before it is written: a stop that is cut
-        short must not leave the next start to take the base for a hand change."""
-        self._last_written = self._s.rts_base_c
-        self._pending = None
+        """The base may arrive on the pump from here on: a stop that is cut short must not leave the next
+        start to take either the base or the value it was written over for a hand change."""
+        self._pending = self._s.rts_base_c
         self._pause_until = None
 
     def restore_base(self) -> ExecutionResult:
