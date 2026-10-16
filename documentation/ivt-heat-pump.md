@@ -449,10 +449,10 @@ has published), flow to the floor at most 40 C, compressor 5.0 kWh/h, comfort me
 - **Comfort floor:** 18.5 C instead of 17 C does not cost anything (8.9 % vs 8.5 % at 12-22) and keeps the room above 18.5.
 - **Value of heat left at the end of the plan:** 1.0 x the trailing 7-day mean price is best (0.5: 2.2 %, 0.75: 6.9 %, 1.25: 7.9 %,
   2.0: 4.0 %), a sharp in-sample optimum. **Plan time** hardly matters between 14:00 and 18:00 (8.5 to 8.2 %).
-- **Applied 2026-10-16:** the `PlanSettings` defaults are now `rts_min_c` 12, `rts_max_c` 22 and `floor_c` 18.5 (`max_rts_step_per_hour_c`
+- **Applied 2026-10-16:** the `PlanSettings` defaults are now `rts_min_c` 15 (first set to 12, raised the same day: the house has only ~130 hours below 15.5 C, 12 is extrapolation; 12 would give 8.5 %, 15 gives 6.9 %), `rts_max_c` 22 and `floor_c` 18.5 (`max_rts_step_per_hour_c`
   stays 2, `min_authority` 0.75 limits the range at first). The planner's own tests run on a fixture pinned to 16-20 and
   floor 18.0: with 12-22 the DP planner on the synthetic day ends 0.26 C lower and its mean setpoint is 1.8 C under the base,
-  i.e. it fails the energy-neutrality invariants that hold at 16-20. Watch the plans in shadow mode before writing.
+  i.e. it fails the energy-neutrality invariants that hold at 16-20 (measured at 12-22; not re-measured at 15-22). Watch the plans in shadow mode before writing.
 - **A flat lower comfort for comparison** (no optimisation, same model, 4 winters, spot): 19.0 C saves 628 kr/winter (6.3 %,
   678 kWh, 7.0 %), 18.5 C saves 1218 kr (12.1 %), 18.0 C saves 1794 kr (17.9 %): about 14 % of the heating energy per degree of room
   temperature, or 10 % per degree of setpoint.
@@ -513,3 +513,14 @@ has published), flow to the floor at most 40 C, compressor 5.0 kWh/h, comfort me
 - `documentation/private/C10.pdf`: Husdata H60/H66 register map
 - Capacity diagrams are read (see "Capacity, COP and maximum input").
 - Not yet read in depth: AirBox installation manual, the heat demand analysis files.
+
+## How the pump answers a setpoint cut (event study of 118 steps, 2026-10-16)
+
+**[observed]** 118 clean setpoint drops of 1.5 C or more (stable 6 h before and 8 h after, mean about -3 C, from the old manual and
+automation control, `documentation/savings-potential` scratch analysis). The flow follows within 1-3 hours and falls 5-7 C, in line
+with the 1.9 C per C of the heat curve. Compressor energy falls about proportionally to the demand: 4.1 to about 3.4 kWh/h below 3 C
+outdoors, 2.8 to about 2.2 at 3-8 C, 1.5 to about 1.1 at 8-14 C (0.26, 0.17 and 0.12 kWh/h per C of setpoint).
+The pump does not stop in cold weather: with the setpoint at 14-15.5 C the share of hours with under 0.2 kWh is 0-1 % below 5 C
+outdoors, 50 % at 5-8 C and 28-30 % at 8-12 C (setpoint 16-17). The lowest setpoint ever run is 13.0 C and there are only about 130 hours
+below 15.5 C, so cuts deeper than about 3 C are untested. The manuals in `private/IVT` do not describe the compressor control law.
+Planned next: controlled step tests (-4, -5, then deeper) on a cold and a mild day with flow, compressor and room logged.
