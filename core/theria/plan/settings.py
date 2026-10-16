@@ -53,7 +53,7 @@ class PlanSettings:
     price_config_entry: str = ""
     price_area: str = "SE4"
     mode: str = "off"
-    floor_c: float = 18.0
+    floor_c: float = 18.5  # savings study: a floor of 18.5 C costs nothing against 17-18 C and keeps the room above it
     extreme_floor_c: float = 17.0
     target_c: float = 19.5
     ceiling_c: float = 22.0  # the room limit U: the plan may store heat up to it
@@ -76,8 +76,11 @@ class PlanSettings:
     # Stands in for the rooms that react faster than the ground floor (salon, guest house):
     # every degree-hour the setpoint is away from the base setpoint costs this much.
     setpoint_deviation_cost_sek_per_c_hour: float = 0.1
-    rts_min_c: float = 16.0  # the old manual control moved the setpoint about +/- 2 C
-    rts_max_c: float = 20.0
+    # Savings study (documentation/savings-potential): with the floor loops held at 40 C, day-ahead
+    # planning gains most from cutting deep; below 12 C or above 22 C adds nothing. The old manual
+    # control moved the setpoint only about +/- 2 C (16-20). min_authority limits the range until the model proves itself.
+    rts_min_c: float = 12.0
+    rts_max_c: float = 22.0
     rts_base_c: float = 18.0
     rts_step_c: float = 0.5
     max_rts_step_per_hour_c: float = 2.0

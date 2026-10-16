@@ -27,7 +27,7 @@ BASE = {
 def test_defaults_match_the_agreed_design():
     s = PlanSettings.from_dict(BASE)
     assert (s.floor_c, s.extreme_floor_c, s.target_c, s.ceiling_c) == (
-        18.0,
+        18.5,
         17.0,
         19.5,
         22.0,

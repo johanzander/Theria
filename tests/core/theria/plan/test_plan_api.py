@@ -175,6 +175,7 @@ def test_a_setting_can_be_changed_and_reset(editable_client):
 
 def test_an_invalid_change_is_a_422_that_says_why(editable_client):
     http, service = editable_client
+    before = service._settings.floor_c
     response = http.put("/api/plan/settings", json={"values": {"floor_c": 99}})
     assert response.status_code == 422 and "floor_c" in response.json()["detail"]
-    assert service._settings.floor_c == 18.0
+    assert service._settings.floor_c == before

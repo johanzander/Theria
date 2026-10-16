@@ -30,6 +30,9 @@ def settings() -> PlanSettings:
         latitude=55.578,
         longitude=12.927,
         night_end_hour=0,  # the night window is off unless a test turns it on
+        rts_min_c=16.0,  # the planner's mechanics are tested on the old +/- 2 C range, whatever the production defaults are
+        rts_max_c=20.0,
+        floor_c=18.0,
     )
 
 
