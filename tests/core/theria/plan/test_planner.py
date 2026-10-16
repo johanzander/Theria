@@ -418,7 +418,7 @@ def test_the_default_setpoint_range_is_the_one_the_savings_study_found():
     from core.theria.plan.settings import PlanSettings as Settings
 
     s = Settings.from_dict(BASE_SETTINGS)
-    assert (s.rts_min_c, s.rts_base_c, s.rts_max_c) == (12.0, 18.0, 22.0)
+    assert (s.rts_min_c, s.rts_base_c, s.rts_max_c) == (15.0, 18.0, 22.0)
     assert s.max_rts_step_per_hour_c == 2.0  # the study's practical optimum with a 2 C/h ramp
     assert s.boost_flow_limit_c == 42.0
 

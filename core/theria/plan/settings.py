@@ -77,9 +77,11 @@ class PlanSettings:
     # every degree-hour the setpoint is away from the base setpoint costs this much.
     setpoint_deviation_cost_sek_per_c_hour: float = 0.1
     # Savings study (documentation/savings-potential): with the floor loops held at 40 C, day-ahead
-    # planning gains most from cutting deep; below 12 C or above 22 C adds nothing. The old manual
-    # control moved the setpoint only about +/- 2 C (16-20). min_authority limits the range until the model proves itself.
-    rts_min_c: float = 12.0
+    # planning gains most from cutting deep (12 C: 8.5 %, 15 C: 6.9 %, 16 C: 5.6 %) and nothing above 22 C. The
+    # house has run setpoints down to 13 C for only about 130 hours below 15.5 C, so the lower limit stays at 15 until
+    # step tests show how the pump answers a deeper cut. The old manual control moved the setpoint only about +/- 2 C (16-20).
+    # min_authority limits the range until the model proves itself.
+    rts_min_c: float = 15.0
     rts_max_c: float = 22.0
     rts_base_c: float = 18.0
     rts_step_c: float = 0.5
