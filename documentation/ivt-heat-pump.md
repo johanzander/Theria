@@ -364,9 +364,100 @@ own 3-day median, sometimes more). All values **[observed]**; the sample for dee
   The heater cost is not in the compressor energy counter that the plan's energy model is fitted to.
 - **Consequence for the plan:** a boost of the flow temperature into the 44+ C range in cold weather is what triggers the
   heater, and it removes the saving (aux has COP 1). The plan therefore (a) keeps the setpoint within +/- 2 C of the base
-  (16-20 C, like the manual control), (b) may raise it by at most 1 C per hour (lowering is not limited), and (c) does not ask
+  (was 16-20 C, like the manual control; widened to 12-22 C on 2026-10-16 after the savings study, the flow
+  limit in (c) below still guards the heater), (b) may raise it by at most 1 C per hour (lowering is not limited), and (c) does not ask
   for a flow target above `boost_flow_limit_c` = 42 C unless the baseline flow already is higher (cold weather): then it
   may only cut. The floor limit of 45 C stays.
+
+## Capacity, COP and maximum input (AirX 170, datasheet, 2026-10-16)
+
+The pump is an **AirX 170** (three-phase, 400 V 3N, fuse 13 A) with Airbox E9 130-170. All values **[manual]** from
+`private/IVT/Capacitetsdiagram Air X 5-17.pdf` (EN 14511, per outdoor temperature and flow temperature) and
+`private/IVT/Install_AirX_6720810160_01.pdf` section 4.2.
+
+| Outdoor | Flow 35 C: Q / P / COP | Flow 45 C: Q / P / COP | Flow 55 C: Q / P / COP | Compressor |
+|---|---|---|---|---|
+| -15 C | 10.20 / 4.39 / 2.33 kW | 9.44 / 4.71 / 2.01 | 8.42 / 5.27 / 1.60 | 220 Hz (max) |
+| -7 C | 12.93 / 4.81 / 2.69 | 11.97 / 5.16 / 2.32 | 10.68 / 5.77 / 1.85 | 220 Hz (max) |
+| 2 C | 7.37 / 1.83 / 4.03 | 6.96 / 2.18 / 3.20 | 6.50 / 2.62 / 2.48 | 92 Hz (part load) |
+| 7 C | 4.91 / 1.04 / 4.72 | 4.73 / 1.31 / 3.61 | 4.20 / 1.63 / 2.58 | 58 Hz (part load) |
+| 12 C | 6.00 / 1.06 / 5.68 | 5.50 / 1.38 / 3.99 | 5.42 / 2.01 / 2.70 | 58 Hz (part load) |
+
+- Q is heat output, P is electrical input. Only -15 and -7 C are at maximum frequency; the rows from +2 C up are
+  part load, so they are **not** the pump's maximum. The datasheet gives A7/W35 max as 17 kW.
+- At flow 40 C (mean of the 35 and 45 C columns): maximum heat about **9.8 kW at -15 C and 12.5 kW at -7 C**, at
+  **4.6 and 5.0 kW electrical**, COP 2.2 and 2.5.
+- **Maximum electrical input at full speed is about 4.4-5.8 kW** over flow 35-55 C and outdoor -15..-7 C.
+  The datasheet states "maximal tillförd effekt" **7.2 kW** for the 130 and 170 (covers the whole unit incl. fan
+  180-280 W; the compressor itself is lower).
+- **Mistake corrected:** `COMPRESSOR_MAX_KWH = 3.6` ("the pump draws at most 3.6 kW", also in
+  `core/theria/plan/calibration_data.py` as `MAX_ENERGY_KWH_PER_HOUR`) is the column of the **AirX 9**
+  (max input 2.3 / 3.2 / 3.6 kW for 5 / 7 / 9; 7.2 kW for 130 / 170). For this house use about 5.0 kW.
+- **[observed]** The 4.0 kWh/h ceiling seen in InfluxDB hourly data is the loader's clamp, not a pump limit, so
+  history cannot show the true maximum.
+- **[observed]** Superseded: an earlier note here said the fitted energy model overshoots in deep cold. That came from
+  comparing against data that had lost its cold hours to the 4.0 kWh/h spike limit. With the limit at 5.0 the measured
+  heating electricity at -12..-2 C is 94 kWh/day on average (see "Measured electricity by outdoor temperature"),
+  close to what the model gives (about 5 kWh/h at -7 C and setpoint 18 C).
+- Used in the savings study (`documentation/savings-potential/`, rerun 2026-10-16 as version 2): compressor cap 5.0
+  kWh/h, energy model refitted with the 5.0 spike limit, flow cap 40 C only. Results (4 winters, weekly comfort
+  neutral, % of spot heating cost): today's setpoint range 16-20 gives a ceiling of 7.4 % and 5.4 % with day-ahead
+  planning; setpoint 8-20 gives 12.5 % and 8.5 %. Hot water occupying 14 % of compressor time lowers these by
+  0.4-0.5 points.
+
+## Measured electricity by outdoor temperature, heating vs hot water (2026-10-16)
+
+**[observed]** Hourly increments of `sensor.compr_cons_heating`, `sensor.compr_cons_hotwat` and `sensor.aux_cons_heating`
+(InfluxDB, 2022-10 to 2026-10, spikes dropped above 5.0 kWh/h per counter). Mean kWh per hour with a bootstrap 95 % CI
+for the hot-water column; the counters add up exactly (`compr_consump_tot` = heating + hot water, mean difference 0.000).
+
+| Outdoor | Hours | Heating compressor | Hot water compressor | Hot water share | Electric heater (heating) |
+|---|---|---|---|---|---|
+| -12..-4 C | 144 | 4.53 | 0.35 [0.25, 0.46] | 7 % | 1.51 |
+| -4..0 C | 892 | 3.91 | 0.48 [0.43, 0.54] | 11 % | 0.47 |
+| 0..2 C | 1376 | 3.59 | 0.49 [0.46, 0.54] | 12 % | 0.18 |
+| 2..4 C | 1978 | 3.10 | 0.47 [0.43, 0.50] | 13 % | 0.03 |
+| 4..6 C | 2876 | 2.50 | 0.42 [0.40, 0.45] | 14 % | 0.03 |
+| 6..8 C | 2836 | 1.97 | 0.38 [0.36, 0.41] | 16 % | 0.03 |
+| 8..12 C | 4270 | 1.19 | 0.44 [0.42, 0.46] | 27 % | 0.00 |
+| above 12 C | 9209 | 0.23 | 0.35 [0.34, 0.37] | 60 % | 0.00 |
+
+- Per day below 8 C outdoors (days with at least 22 measured hours): heating 42-94 kWh and hot water 9-12 kWh;
+  the largest day was 115 kWh in total. Hot water is **about 9-19 % of compressor electricity in winter**, and the
+  compressor is busy with it in **23-33 % of all hours** (hours with more than 0.05 kWh on the hot-water counter),
+  at a higher flow temperature, so heating is interrupted in those hours.
+- Not in these numbers: the electric heater's share of hot water (counters `5C58`/`5C59` are not tracked) and
+  anything that is not compressor or heating-heater energy.
+- **The old 4.0 kWh/h spike limit dropped real cold hours.** In pure heating hours at -2..0 C, 44 % exceed 4 kWh
+  and the mean is 4.4; at -12..-4 C the mean is 6.0 (compressor plus heater). With the limit at 5.0 (raised from 4.0 on
+  2026-10-16) 23 029 instead of 21 930 hours are usable, and the fit changes from `-0.73 - 0.206*T_out + 0.223*RTS`
+  to `-0.95 - 0.238*T_out + 0.256*RTS` (9258 rows, RMSE 0.87 kWh). The old fit was about 20 % too low at -2..0 C.
+- The hot-water time is excluded in the fit (hours where the valve was on for hot water), so the fitted model is
+  heating only; hot water still occupies the compressor and is not modelled in the savings study.
+
+## Best settings under real limits (savings study sweep, 2026-10-16)
+
+**[observed in simulation]** Practical planning only: re-plan daily at 14:00 with prices to the end of tomorrow (what Nordpool
+has published), flow to the floor at most 40 C, compressor 5.0 kWh/h, comfort mean held weekly at 19.5 C, 4 winters
+2022/23-2025/26, % of spot heating cost (`documentation/savings-potential/code/sweep.py`). Tuned on the same winters.
+
+- **Setpoint range (max 2 C/h ramp both ways, comfort 17-22 C):** 16-20 gives 5.3 %; 14-22 7.7 %; **12-22 8.5 % (849 kr/winter)**;
+  8-24 8.4 %. Going lower than 12 adds nothing, going above 22 adds nothing, and an upper limit of 18 (no raise above the
+  base) gives a loss: the plan needs room to pre-heat as well as to cut.
+- **Ramp limit:** at range 8-20, no limit 8.8 %, 4 C/h 8.3 %, 2 C/h both ways 7.2 %, 1 C/h 5.7 %. If the pump accepts bigger
+  setpoint steps, the 2 C/h limit costs about 1.5 points.
+- **Comfort floor:** 18.5 C instead of 17 C does not cost anything (8.9 % vs 8.5 % at 12-22) and keeps the room above 18.5.
+- **Value of heat left at the end of the plan:** 1.0 x the trailing 7-day mean price is best (0.5: 2.2 %, 0.75: 6.9 %, 1.25: 7.9 %,
+  2.0: 4.0 %), a sharp in-sample optimum. **Plan time** hardly matters between 14:00 and 18:00 (8.5 to 8.2 %).
+- **Applied 2026-10-16:** the `PlanSettings` defaults are now `rts_min_c` 12, `rts_max_c` 22 and `floor_c` 18.5 (`max_rts_step_per_hour_c`
+  stays 2, `min_authority` 0.75 limits the range at first). The planner's own tests run on a fixture pinned to 16-20 and
+  floor 18.0: with 12-22 the DP planner on the synthetic day ends 0.26 C lower and its mean setpoint is 1.8 C under the base,
+  i.e. it fails the energy-neutrality invariants that hold at 16-20. Watch the plans in shadow mode before writing.
+- **A flat lower comfort for comparison** (no optimisation, same model, 4 winters, spot): 19.0 C saves 628 kr/winter (6.3 %,
+  678 kWh, 7.0 %), 18.5 C saves 1218 kr (12.1 %), 18.0 C saves 1794 kr (17.9 %): about 14 % of the heating energy per degree of room
+  temperature, or 10 % per degree of setpoint.
+- Caveats: setpoints below 16 C have never been run in this house, hot water lowers these by about 0.4-0.5 points, and the
+  best range 12-22 is extrapolated.
 
 ## Heating vs hot water
 
@@ -420,4 +511,5 @@ own 3-day median, sometimes more). All values **[observed]**; the sample for dee
 - `IVT/Anvandarmanual_AirX400-400S_AirModule.pdf`, `IVT/Anvandarhandl_AirX_6720810156_01.pdf`
 - `IVT/Install_AirBox_6720810154_01.pdf`, `IVT/Capacitetsdiagram Air X 5-17.pdf`
 - `documentation/private/C10.pdf`: Husdata H60/H66 register map
-- Not yet read in depth: AirBox installation manual, capacity diagrams, the heat demand analysis files.
+- Capacity diagrams are read (see "Capacity, COP and maximum input").
+- Not yet read in depth: AirBox installation manual, the heat demand analysis files.
