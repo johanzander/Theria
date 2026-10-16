@@ -23,7 +23,7 @@ from core.theria.plan.settings import PlanSettings
 from core.theria.plan.weather import WeatherHour
 
 MAX_ENERGY_KWH_PER_HOUR = (
-    4.0  # the pump draws at most 3.6 kW (AirX installation manual)
+    5.0  # AirX 170 draws about 4.4-5.8 kW at full speed (capacity diagram); anything above is a counter spike
 )
 SETPOINT_FFILL_HOURS = 24 * 60  # setpoints are only logged when they change
 SMALL_GAP_HOURS = 3
