@@ -16,7 +16,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.theria.ha_client import HAClient
 from core.theria.history import history_tracker
-from core.theria.price_optimizer import PriceOptimizer
 from core.theria.settings import ZoneSettings
 
 router = APIRouter()
@@ -88,41 +87,6 @@ def load_zones_from_config():
 
 # Load zones on module import
 load_zones_from_config()
-
-# Initialize price optimizer
-price_optimizer = None
-if ha_client:
-    try:
-        import yaml
-
-        config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
-                options = config.get("options", {})
-                sensors = options.get("sensors", {})
-                price_config = options.get("price_optimization", {})
-
-                if price_config.get("enabled"):
-                    # Resolve sensor key to entity ID (BESS pattern)
-                    sensor_key = price_config.get("price_sensor")
-                    if sensor_key and sensor_key in sensors:
-                        price_entity = sensors[sensor_key]
-                        price_optimizer = PriceOptimizer(
-                            ha_client,
-                            price_entity=price_entity,
-                            expensive_hours=price_config.get("expensive_hours", 4),
-                            cheap_hours=price_config.get("cheap_hours", 4),
-                            adjustment_degrees=price_config.get(
-                                "adjustment_degrees", 0.5
-                            ),
-                        )
-                        logger.info(
-                            f"Price optimizer initialized (sensor: {sensor_key} -> {price_entity})"
-                        )
-    except Exception as e:
-        logger.warning(f"Failed to initialize price optimizer in API: {e}")
-
 
 class SetTemperatureRequest(BaseModel):
     """Request body for setting temperature."""
@@ -615,72 +579,6 @@ async def get_zone_events(zone_id: str, hours: int = 24):
     events = history_tracker.get_control_events(zone_id=zone_id, hours=hours)
 
     return {"zone_id": zone_id, "hours": hours, "count": len(events), "events": events}
-
-
-@router.get("/api/price/current")
-async def get_current_price():
-    """Get current electricity price and optimization status."""
-    if not price_optimizer:
-        return {"enabled": False, "message": "Price optimization not enabled"}
-
-    current_price = price_optimizer.get_current_price()
-    price_adjustment = price_optimizer.get_price_adjustment()
-    category = price_optimizer.get_current_category()
-
-    # Calculate historical average
-    historical_avg = None
-    if len(price_optimizer.historical_prices) > 24:
-        historical_avg = sum(price_optimizer.historical_prices) / len(
-            price_optimizer.historical_prices
-        )
-
-    return {
-        "enabled": True,
-        "current_price": current_price,
-        "price_adjustment": price_adjustment,
-        "category": category,
-        "historical_avg_7d": historical_avg,
-        "is_expensive_hour": price_adjustment < 0,
-        "is_cheap_hour": price_adjustment > 0,
-        # Legacy fields (for backward compatibility)
-        "expensive_hours": sorted(price_optimizer.expensive_hour_set),
-        "cheap_hours": sorted(price_optimizer.cheap_hour_set),
-    }
-
-
-@router.get("/api/price/forecast")
-async def get_price_forecast(hours: int = 24):
-    """Get electricity price forecast.
-
-    Args:
-        hours: How many hours ahead to forecast (default: 24)
-
-    Returns:
-        List of price forecast entries with categories
-    """
-    if not price_optimizer:
-        return {"enabled": False, "forecast": []}
-
-    forecast = price_optimizer.get_price_forecast_24h()
-
-    return {
-        "enabled": True,
-        "count": len(forecast),
-        "forecast": [
-            {
-                "timestamp": entry["timestamp"].isoformat(),
-                "hour": entry["hour"],
-                "price": entry["price"],
-                "category": price_optimizer.hour_categories.get(
-                    entry["hour"], "NORMAL"
-                ),
-                # Legacy fields (for backward compatibility)
-                "is_expensive": entry["hour"] in price_optimizer.expensive_hour_set,
-                "is_cheap": entry["hour"] in price_optimizer.cheap_hour_set,
-            }
-            for entry in forecast[:hours]
-        ],
-    }
 
 
 @router.get("/api/heatpump/status")

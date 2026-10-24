@@ -54,7 +54,7 @@ def test_resetting_goes_back_to_the_configured_value(settings, tmp_path):
 def test_an_unknown_setting_is_refused(settings, tmp_path):
     m, _ = manager(settings, tmp_path)
     with pytest.raises(ConfigurationError, match="not editable"):
-        m.update({"price_entity": "sensor.other"})
+        m.update({"outdoor_entity": "sensor.other"})
 
 
 def test_a_value_out_of_range_or_of_the_wrong_kind_is_refused_and_nothing_is_saved(settings, tmp_path):

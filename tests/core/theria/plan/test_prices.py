@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pytest
 
 from core.theria.exceptions import PriceDataError
@@ -7,56 +8,11 @@ from core.theria.plan.prices import (
     PriceHistory,
     PricePeriod,
     extreme_threshold,
+    hourly_price_array,
     hourly_prices,
-    parse_nordpool_attributes,
 )
 
 DAY = datetime(2026, 10, 12, 0, tzinfo=UTC)
-
-
-def attrs(values, day=DAY, key="today"):
-    raw = [
-        {"start": (day + timedelta(minutes=15 * i)).isoformat(), "price": v * 1000.0}
-        for i, v in enumerate(values)
-    ]
-    return {key: list(values), f"raw_{key}": raw}
-
-
-def test_values_come_from_sek_per_kwh_list_not_the_sek_per_mwh_raw_price():
-    periods = parse_nordpool_attributes(attrs([1.5, 2.5]))
-    assert [p.price_sek_per_kwh for p in periods] == [1.5, 2.5]
-    assert periods[1].start == DAY + timedelta(minutes=15)
-
-
-def test_tomorrow_is_optional_and_days_are_merged_in_order():
-    both = {
-        **attrs([1.0] * 96),
-        **attrs([2.0] * 96, DAY + timedelta(days=1), "tomorrow"),
-    }
-    periods = parse_nordpool_attributes(both)
-    assert len(periods) == 192
-    assert periods[0].start < periods[-1].start
-    assert parse_nordpool_attributes(
-        {**attrs([1.0] * 96), "tomorrow": [], "raw_tomorrow": []}
-    )
-
-
-@pytest.mark.parametrize(
-    "bad",
-    [
-        {"today": [1.0, 2.0], "raw_today": [{"start": DAY.isoformat()}]},
-        {"today": [1.0], "raw_today": [{"start": "2026-10-12T00:00:00"}]},  # naive time
-        {"today": ["x"], "raw_today": [{"start": DAY.isoformat()}]},
-        {
-            "today": [1.0, 1.0],
-            "raw_today": [{"start": DAY.isoformat()}] * 2,
-        },  # duplicate
-        {"today": [1.0]},  # raw missing
-    ],
-)
-def test_malformed_attributes_raise(bad):
-    with pytest.raises(PriceDataError):
-        parse_nordpool_attributes(bad)
 
 
 def test_hourly_prices_average_quarters_and_drop_incomplete_trailing_hour():
@@ -95,7 +51,14 @@ def test_history_prunes_old_periods_and_deduplicates():
 
 def test_dst_change_day_with_100_quarters_is_parsed_and_aggregated():
     day = datetime(2026, 10, 24, 22, tzinfo=UTC)  # local midnight, CEST
-    periods = parse_nordpool_attributes(attrs([1.0] * 100, day))
+    periods = [PricePeriod(day + timedelta(minutes=15 * i), 1.0) for i in range(100)]
     hourly = hourly_prices(periods, day)
     assert len(hourly) == 25
     assert hourly[-1][0] == day + timedelta(hours=24)
+
+
+def test_a_price_per_hour_for_the_hours_asked_nan_where_a_quarter_is_missing():
+    periods = [PricePeriod(DAY + timedelta(minutes=15 * i), float(i)) for i in range(7)]
+    hours = [DAY, DAY + timedelta(hours=1), DAY + timedelta(hours=2)]
+    out = hourly_price_array(periods, hours)
+    assert out[0] == 1.5 and np.isnan(out[1]) and np.isnan(out[2])  # hour 1 has three quarters only

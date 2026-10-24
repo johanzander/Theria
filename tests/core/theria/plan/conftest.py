@@ -14,7 +14,7 @@ START = datetime(2026, 10, 12, 0, tzinfo=UTC)
 @pytest.fixture
 def settings() -> PlanSettings:
     return PlanSettings(
-        price_entity="sensor.price",
+        price_config_entry="entry",
         outdoor_entity="sensor.outdoor",
         room_setpoint_entity="climate.room_temp_setpoint",
         flow_setpoint_entity="sensor.heating_setpoint",

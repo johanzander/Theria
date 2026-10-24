@@ -219,7 +219,7 @@ zones:
 ## Electricity Pricing
 
 **Provider:** Nordpool (Sweden SE4)
-**Sensor:** `sensor.nord_pool_se4_current_price`
+**Source:** Home Assistant's built-in Nord Pool integration, read with the service `nordpool.get_prices_for_date` (15-minute prices, the only price source)
 **Currency:** SEK
 **Market:** Day-ahead spot prices (published daily ~13:00 for next day)
 

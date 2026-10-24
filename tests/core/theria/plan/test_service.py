@@ -12,6 +12,7 @@ from core.theria.exceptions import (
 )
 from core.theria.plan.calibration import FittedModels, PumpFit, RoomFit
 from core.theria.plan.pump_model import PumpParams
+from core.theria.plan.prices import PricePeriod
 from core.theria.plan.room_model import PRIOR_ROOM_PARAMS, RoomParams
 from core.theria.plan.service import PlanService
 from core.theria.plan.state_store import PlanStateStore
@@ -23,36 +24,25 @@ NOW = datetime(2026, 10, 12, 12, 20, tzinfo=UTC)
 DAY_START = datetime(2026, 10, 12, 0, tzinfo=UTC)
 
 
-def price_attributes(days=2, base=1.0, evening=3.0):
-    values, raw = [], []
-    for q in range(96 * days):
-        start = DAY_START + timedelta(minutes=15 * q)
-        hour = start.hour
-        values.append(evening if 16 <= hour < 20 else base)
-        raw.append(
-            {
-                "start": start.isoformat(),
-                "end": (start + timedelta(minutes=15)).isoformat(),
-                "price": 1000.0,
-            }
+def feed_periods(days=2, base=1.0, evening=3.0) -> list[PricePeriod]:
+    """What the Nord Pool feed answers: 15-minute prices from the start of the day, dear in the evening."""
+    return [
+        PricePeriod(
+            DAY_START + timedelta(minutes=15 * q),
+            evening if 16 <= (DAY_START + timedelta(minutes=15 * q)).hour < 20 else base,
         )
-    return {
-        "today": values[:96],
-        "raw_today": raw[:96],
-        "tomorrow": values[96:],
-        "raw_tomorrow": raw[96:],
-    }
+        for q in range(96 * days)
+    ]
 
 
 class FakeHA:
-    def __init__(self, attrs):
-        self.attrs = attrs
+    def __init__(self, prices):
+        self.prices = prices  # the feed the service reads
         self.reads = []
 
     def get_state(self, entity_id):
         self.reads.append(entity_id)
         states = {
-            "sensor.price": {"state": "1.0", "attributes": self.attrs},
             "sensor.outdoor": {"state": "6.0", "attributes": {}},
             "sensor.lk_bibliotek_temperature": {"state": "19.8", "attributes": {}},
             "sensor.heating_setpoint": {"state": "36.0", "attributes": {}},
@@ -82,7 +72,7 @@ class FakeWeather:
 
 def make_service(
     settings,
-    attrs=None,
+    prices=None,
     weather=None,
     mode="shadow",
     clock=None,
@@ -94,10 +84,12 @@ def make_service(
 ):
     from dataclasses import replace
 
+    ha = FakeHA(prices or feed_periods())
     return PlanService(
-        FakeHA(attrs or price_attributes()),
+        ha,
         replace(settings, mode=mode),
         weather or FakeWeather(),
+        price_periods=lambda: ha.prices,
         now=clock or (lambda: NOW),
         calibrator=calibrator,
         state_store=state_store,
@@ -167,9 +159,7 @@ def test_set_mode_rejects_active_until_the_executor_exists(settings):
 
 
 def test_missing_tomorrow_prices_shortens_the_horizon(settings):
-    attrs = price_attributes(days=1)
-    attrs["tomorrow"], attrs["raw_tomorrow"] = [], []
-    snapshot = make_service(settings, attrs=attrs).run_once()
+    snapshot = make_service(settings, prices=feed_periods(days=1)).run_once()
     assert len(snapshot.plan.hours) == 12
 
 
@@ -179,11 +169,9 @@ def test_weather_gap_raises_instead_of_guessing(settings):
         make_service(settings, weather=weather).run_once()
 
 
-def test_malformed_price_data_raises(settings):
-    attrs = price_attributes()
-    attrs["raw_today"] = attrs["raw_today"][:-1]
+def test_a_feed_without_a_complete_hour_raises_instead_of_guessing(settings):
     with pytest.raises(PriceDataError):
-        make_service(settings, attrs=attrs).run_once()
+        make_service(settings, prices=feed_periods()[:3]).run_once()
 
 
 def test_history_returns_only_recent_snapshots(settings):

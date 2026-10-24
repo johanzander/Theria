@@ -5,7 +5,7 @@ from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.service import PlanService
 from core.theria.plan.state_store import PlanStateStore
 
-from .test_service import FakeWeather, price_attributes
+from .test_service import FakeWeather, feed_periods
 from .test_service_active import FakeNotifier, FakeSafety, WritableHA, run_cycle
 from .test_service_active import EVENING
 from .test_service_lk import LIMIT, NOW as CHEAP_BEFORE_PEAK
@@ -17,6 +17,7 @@ def build(settings, ha, path, at=CHEAP_BEFORE_PEAK):
         ha,
         replace(settings, mode="shadow"),
         FakeWeather(),
+        price_periods=lambda: ha.prices,
         now=now,
         executor=PlanExecutor(ha, settings, now=now),
         lk_executor=LKExecutor(ha, settings, now=now),
@@ -31,7 +32,7 @@ def test_a_hand_change_made_while_the_service_was_down_is_noticed_after_restart(
     settings, tmp_path
 ):
     path = str(tmp_path / "state.json")
-    ha = WritableHA(price_attributes(), 18.0)
+    ha = WritableHA(feed_periods(), 18.0)
     first = build(settings, ha, path)
     first.set_mode("active", confirm=True)
     run_cycle(first)
@@ -53,7 +54,7 @@ def test_the_base_that_stop_wrote_is_not_taken_for_a_hand_change_after_the_resta
     import asyncio
 
     path = str(tmp_path / "state.json")
-    ha = WritableHA(price_attributes(), 18.0)
+    ha = WritableHA(feed_periods(), 18.0)
     first = build(settings, ha, path, at=EVENING)  # the expensive hours: the plan cuts
     first.set_mode("active", confirm=True)
     run_cycle(first)
@@ -73,7 +74,7 @@ def test_the_state_is_saved_before_the_base_is_written_in_case_the_stop_is_cut_s
     import json
 
     path = str(tmp_path / "state.json")
-    ha = WritableHA(price_attributes(), 18.0)
+    ha = WritableHA(feed_periods(), 18.0)
     service = build(settings, ha, path, at=EVENING)
     service.set_mode("active", confirm=True)
     run_cycle(service)
@@ -100,7 +101,7 @@ def test_a_stop_that_was_cut_short_before_the_thermostats_changed_is_not_a_hand_
     import asyncio
 
     path = str(tmp_path / "state.json")
-    ha = WritableHA(price_attributes(), 18.0)
+    ha = WritableHA(feed_periods(), 18.0)
     first = build(settings, ha, path, at=EVENING)
     first.set_mode("active", confirm=True)
     run_cycle(first)

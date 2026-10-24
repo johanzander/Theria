@@ -174,59 +174,6 @@
             text-shadow: var(--glow);
         }
 
-        /* Price Banner */
-        .price-banner {
-            background: var(--terminal-dark);
-            border: 2px solid var(--phosphor-dim);
-            padding: 20px 25px;
-            margin-bottom: 30px;
-            display: none;
-            position: relative;
-        }
-
-        .price-banner::before {
-            content: '>> PRICE DATA';
-            position: absolute;
-            top: -12px;
-            left: 15px;
-            background: var(--terminal-bg);
-            padding: 0 8px;
-            color: var(--phosphor-dim);
-            font-size: 0.75rem;
-        }
-
-        .price-banner.visible {
-            display: block;
-        }
-
-        .price-banner-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .price-status-text {
-            font-size: 1.1rem;
-            color: var(--phosphor-green);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .price-value {
-            font-family: 'Orbitron', monospace;
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--phosphor-amber);
-            text-shadow: 0 0 10px rgba(255, 176, 0, 0.5);
-        }
-
-        .price-adjustment {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            margin-top: 5px;
-        }
-
         /* Main Display */
         .temp-hero {
             background: var(--terminal-dark);
@@ -732,19 +679,6 @@
             </div>
         </div>
 
-        <!-- Price Banner -->
-        <div id="priceBanner" class="price-banner">
-            <div class="price-banner-content">
-                <div class="price-status">
-                    <div class="price-status-text" id="priceStatusText">LOADING...</div>
-                </div>
-                <div class="price-value-container">
-                    <div class="price-value" id="priceValue">--</div>
-                    <div class="price-adjustment" id="priceAdjustment"></div>
-                </div>
-            </div>
-        </div>
-
         <div id="content">
             <div class="card">
                 <div class="loading">LOADING ZONE DATA</div>
@@ -761,7 +695,6 @@
         let eventsData = [];
         let chartVantsidan = null;
         let chartKlippsidan = null;
-        let priceData = null;
         let thermalData = null;
         let comparisonData = null;
 
@@ -784,7 +717,6 @@
 
                 loadHistory();
                 loadEvents();
-                loadPrice();
                 loadThermalCharacteristics();
 
                 requestAnimationFrame(() => {
@@ -830,19 +762,6 @@
                 renderEvents();
             } catch (error) {
                 console.error('Error loading events:', error);
-            }
-        }
-
-        async function loadPrice() {
-            try {
-                const response = await fetch('api/price/current');
-                if (!response.ok) return;
-
-                const data = await response.json();
-                priceData = data;
-                renderPrice();
-            } catch (error) {
-                console.error('Error loading price:', error);
             }
         }
 
@@ -975,34 +894,6 @@
             `;
 
             document.getElementById('content').innerHTML = html;
-        }
-
-        function renderPrice() {
-            const banner = document.getElementById('priceBanner');
-            if (!priceData || !priceData.enabled) {
-                banner.style.display = 'none';
-                return;
-            }
-
-            banner.classList.add('visible');
-
-            let statusText = 'NORMAL PRICING';
-            if (priceData.is_expensive_hour) {
-                statusText = 'EXPENSIVE HOUR - ENERGY SAVE MODE';
-            } else if (priceData.is_cheap_hour) {
-                statusText = 'CHEAP HOUR - PRE-HEATING ACTIVE';
-            }
-
-            document.getElementById('priceStatusText').textContent = statusText;
-            document.getElementById('priceValue').textContent =
-                priceData.current_price !== null ? priceData.current_price.toFixed(2) + ' ¢/kWh' : '--';
-
-            const adjEl = document.getElementById('priceAdjustment');
-            if (priceData.price_adjustment !== 0) {
-                adjEl.textContent = `TEMP ADJ: ${priceData.price_adjustment > 0 ? '+' : ''}${priceData.price_adjustment.toFixed(1)}°C`;
-            } else {
-                adjEl.textContent = '';
-            }
         }
 
         function renderThermalCharacteristics() {

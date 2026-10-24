@@ -39,13 +39,20 @@ from core.theria.plan.disturbance import DisturbanceEstimator, Sample
 from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
+from core.theria.plan.data_health import (
+    COUNTED_WINDOW_HOURS,
+    WINDOW_HOURS,
+    counted_hours_check,
+    history_checks,
+    live_h60_checks,
+    price_feed_check,
+)
 from core.theria.plan.preflight import Check, preflight_checks
 from core.theria.plan.prices import (
     PriceHistory,
     PricePeriod,
     extreme_threshold,
     hourly_prices,
-    parse_nordpool_attributes,
 )
 from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, PumpParams, flow_target
 from core.theria.plan.room_level import room_level_c
@@ -114,6 +121,7 @@ class PlanService:
         ha_client: HAClient,
         settings: PlanSettings,
         weather: OpenMeteoClient,
+        price_periods: Callable[[], list[PricePeriod]],
         pump_params: PumpParams = PRIOR_PUMP_PARAMS,
         room_params: RoomParams = PRIOR_ROOM_PARAMS,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -133,7 +141,7 @@ class PlanService:
         parameter_log: ParameterLog | None = None,
         event_log: EventLog | None = None,
         actuals_loader: ActualsLoader | None = None,
-        price_periods: Callable[[], list[PricePeriod]] | None = None,
+        price_history: Callable[[datetime, datetime], list[PricePeriod]] | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -171,7 +179,8 @@ class PlanService:
         self._safety = safety
         self._notifier = notifier
         self._outcome_loader = outcome_loader
-        self._price_periods = price_periods or self._periods_from_sensor
+        self._price_periods = price_periods
+        self._price_history = price_history or self._periods_between
         self._reviewed_on: date | None = None
         self._plan_error: str | None = None
         self._last_trouble: str | None = None
@@ -441,14 +450,37 @@ class PlanService:
     def preflight(self) -> list[Check]:
         """What to read before activating: the state of everything active mode depends on."""
         fitted = self._models
-        return preflight_checks(
-            self._ha,
-            self._settings,
-            self.latest(),
-            pump_fitted=fitted is not None,
-            room_fitted=fitted is not None and fitted.room is not None,
-            now=self._now(),
-        )
+        now = self._now()
+        return [
+            *preflight_checks(
+                self._ha,
+                self._settings,
+                self.latest(),
+                pump_fitted=fitted is not None,
+                room_fitted=fitted is not None and fitted.room is not None,
+                now=now,
+            ),
+            *self._data_checks(now),
+        ]
+
+    def _data_checks(self, now: datetime) -> list[Check]:
+        """Prices, stored history and the H60's live readings: see data_health."""
+        s = self._settings
+        try:
+            checks = [price_feed_check(self._price_periods(), now, s.timezone)]
+        except TheriaError as e:
+            checks = [Check("price feed", "fail", f"cannot read the prices: {e}")]
+        checks += live_h60_checks(self._ha, s)
+        if self._actuals_loader is None:
+            return checks
+        stop = _floor_hour(now)
+        try:
+            inputs = self._actuals_loader(
+                stop - timedelta(hours=max(WINDOW_HOURS, COUNTED_WINDOW_HOURS)), stop
+            )
+        except TheriaError as e:
+            return [*checks, Check("history", "warn", f"cannot read the stored history: {e}")]
+        return [*checks, *history_checks(inputs, s), counted_hours_check(inputs, s)]
 
     def _restore_all(self) -> str | None:
         """Pump setpoint and LK thermostats back to their base; a failure reason or None."""
@@ -770,17 +802,14 @@ class PlanService:
     def timezone(self) -> str:
         return self._settings.timezone
 
-    def _periods_from_sensor(self) -> list[PricePeriod]:
-        """Prices from the attributes of a HACS-style Nordpool sensor (today / tomorrow)."""
-        return parse_nordpool_attributes(
-            self._ha.get_state(self._settings.price_entity)["attributes"]
-        )
+    def _periods_between(self, start: datetime, stop: datetime) -> list[PricePeriod]:
+        """The feed's periods in [start, stop): today and tomorrow (a feed that keeps older days has its own history)."""
+        return [p for p in self._price_periods() if start <= p.start < stop]
 
     def day_view(self, day: date) -> dict[str, Any]:
         """A whole local day for the charts: measured so far, planned for the rest."""
         now = self._now()
         latest = self.latest()
-        periods = self._price_periods()
         measured = None
         first = day_hours(day, self._settings.timezone)[0]
         current = _floor_hour(now.astimezone(UTC))
@@ -791,6 +820,7 @@ class PlanService:
             except TheriaError:
                 logger.warning("could not read today's measurements", exc_info=True)
         hours = day_hours(day, self._settings.timezone)
+        periods = self._price_history(hours[0], hours[-1] + timedelta(hours=1))
         records = (
             {}
             if self._plan_record is None

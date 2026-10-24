@@ -48,7 +48,6 @@ from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.state_store import PlanStateStore
 from core.theria.plan.weather import OpenMeteoClient
-from core.theria.price_optimizer import PriceOptimizer
 from core.theria.sensor_guard import SensorGuard, load_guard_settings
 from core.theria.settings import HeatPumpSettings
 from core.theria.temperature_history_service import TemperatureHistoryService
@@ -67,50 +66,6 @@ async def lifespan(app: FastAPI):
         for route in app.routes
     ]
     logger.info(f"Registered routes: {routes}")
-
-    # Initialize price optimizer if enabled
-    # Note: Price optimizer is also initialized in api.py for endpoint access
-    if ha_client:
-        try:
-            # Load price config from options (in production) or config.yaml (dev)
-            import yaml
-
-            config_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-            if os.path.exists(config_path):
-                with open(config_path) as f:
-                    config = yaml.safe_load(f)
-                    options = config.get("options", {})
-                    sensors = options.get("sensors", {})
-                    price_config = options.get("price_optimization", {})
-
-                    if price_config.get("enabled"):
-                        # Resolve sensor key to entity ID (BESS pattern)
-                        sensor_key = price_config.get("price_sensor")
-                        if not sensor_key:
-                            raise ValueError(
-                                "price_sensor not configured in price_optimization"
-                            )
-
-                        price_entity = sensors.get(sensor_key)
-                        if not price_entity:
-                            raise ValueError(
-                                f"Sensor key '{sensor_key}' not found in sensors config"
-                            )
-
-                        PriceOptimizer(
-                            ha_client,
-                            price_entity=price_entity,
-                            expensive_hours=price_config.get("expensive_hours", 4),
-                            cheap_hours=price_config.get("cheap_hours", 4),
-                            adjustment_degrees=price_config.get(
-                                "adjustment_degrees", 0.5
-                            ),
-                        )
-                        logger.info(
-                            f"💰 Price optimization enabled (sensor: {sensor_key} -> {price_entity})"
-                        )
-        except Exception as e:
-            logger.warning(f"Failed to initialize price optimizer: {e}")
 
     # Start heat pump monitor if enabled
     heat_pump_service = None
@@ -260,18 +215,30 @@ async def lifespan(app: FastAPI):
                     []
                 )  # the loader reads the fitted pump from it
 
+                plan_record = PlanRecordStore(record_path)
+                prices = NordpoolFeed(
+                    ha_client,
+                    plan_settings.price_config_entry,
+                    plan_settings.price_area,
+                    plan_settings.timezone,
+                )
+
+                def actuals_loader(start: datetime, stop: datetime) -> OutcomeInputs:
+                    return load_outcome_inputs(
+                        history_source,
+                        plan_settings,
+                        start,
+                        stop,
+                        prices.history(start, stop),
+                    )
+
                 def outcome_loader(start: datetime, stop: datetime) -> list[DayOutcome]:
                     return day_outcomes(
-                        load_outcome_inputs(history_source, plan_settings, start, stop),
+                        actuals_loader(start, stop),
                         built[0].pump_params,
                         plan_settings.rts_base_c,
                         lambda moment: not plan_settings.in_night(moment),
                         plan_settings.comfort_starts_at,
-                    )
-
-                def actuals_loader(start: datetime, stop: datetime) -> OutcomeInputs:
-                    return load_outcome_inputs(
-                        history_source, plan_settings, start, stop
                     )
 
                 plan_service = PlanService(
@@ -290,19 +257,11 @@ async def lifespan(app: FastAPI):
                     outcome_loader=outcome_loader,
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
-                    plan_record=PlanRecordStore(record_path),
+                    plan_record=plan_record,
                     settings_manager=settings_manager,
                     actuals_loader=actuals_loader,
-                    price_periods=(
-                        NordpoolFeed(
-                            ha_client,
-                            plan_settings.price_config_entry,
-                            plan_settings.price_area,
-                            plan_settings.timezone,
-                        ).periods
-                        if plan_settings.price_config_entry
-                        else None
-                    ),
+                    price_periods=prices.periods,
+                    price_history=prices.history,
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service

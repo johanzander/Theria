@@ -13,7 +13,7 @@ from core.theria.plan.series import (
     Point,
     despike,
     hour_floor,
-    hourly_energy_from_counter,
+    hourly_counter_energy,
     hourly_grid,
     interpolate_gaps,
     step_fraction,
@@ -25,6 +25,9 @@ from core.theria.plan.weather import WeatherHour
 MAX_ENERGY_KWH_PER_HOUR = (
     5.0  # AirX 170 draws about 4.4-5.8 kW at full speed (capacity diagram); anything above is a counter spike
 )
+# what the H60 shows for a working pump; it answers 0 or nonsense when a register fails
+FLOW_PLAUSIBLE_C = (15.0, 65.0)
+MAX_AUX_KWH_PER_HOUR = 9.0  # the electric heater (AirBox E9) is at most 9 kW
 SETPOINT_FFILL_HOURS = 24 * 60  # setpoints are only logged when they change
 SMALL_GAP_HOURS = 3
 MIN_OVERLAP_HOURS = 168  # a week of both sensors to know their usual difference
@@ -180,8 +183,20 @@ def load_calibration_inputs(
         last(e, "temperature", SETPOINT_FFILL_HOURS)
         for e in settings.room_thermostat_entities
     ]
-    counter = last(settings.energy_counter_entity, None, SMALL_GAP_HOURS)
-    aux_counter = last(settings.aux_energy_entity, None, SMALL_GAP_HOURS)
+    energy_kwh = hourly_counter_energy(
+        source.series(settings.energy_counter_entity, start, end),
+        start,
+        n,
+        MAX_ENERGY_KWH_PER_HOUR,
+        SMALL_GAP_HOURS,
+    )
+    aux_kwh = hourly_counter_energy(
+        source.series(settings.aux_energy_entity, start, end),
+        start,
+        n,
+        MAX_AUX_KWH_PER_HOUR,
+        SMALL_GAP_HOURS,
+    )
     room_c = _mean_of(rooms)
     history = (
         _mean_of(
@@ -202,13 +217,23 @@ def load_calibration_inputs(
     return CalibrationInputs(
         hours=hours,
         t_out_c=t_out,
-        heating_setpoint_c=last(settings.flow_setpoint_entity, None, 48),
+        heating_setpoint_c=to_hourly(
+            [
+                p
+                for p in source.series(settings.flow_setpoint_entity, start, end)
+                if FLOW_PLAUSIBLE_C[0] <= p[1] <= FLOW_PLAUSIBLE_C[1]
+            ],
+            start,
+            n,
+            how="last",
+            ffill_hours=48,
+        ),
         rts_c=last(settings.room_setpoint_entity, "temperature", SETPOINT_FFILL_HOURS),
         hot_water=step_fraction(
             source.series(settings.heating_mode_entity, start, end), start, n
         ),
-        energy_kwh=hourly_energy_from_counter(counter, MAX_ENERGY_KWH_PER_HOUR),
-        aux_kwh=hourly_energy_from_counter(aux_counter, MAX_ENERGY_KWH_PER_HOUR),
+        energy_kwh=energy_kwh,
+        aux_kwh=aux_kwh,
         room_c=room_c,
         room_reference_c=_extended(room_c, history),
         flow_c=_cleaned(

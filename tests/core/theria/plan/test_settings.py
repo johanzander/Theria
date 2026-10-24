@@ -7,7 +7,7 @@ from core.theria.exceptions import ConfigurationError
 from core.theria.plan.settings import PlanSettings, load_plan_settings
 
 BASE = {
-    "price_entity": "sensor.price",
+    "price_config_entry": "entry",
     "outdoor_entity": "sensor.outdoor",
     "room_setpoint_entity": "climate.room_temp_setpoint",
     "flow_setpoint_entity": "sensor.heating_setpoint",
@@ -65,7 +65,7 @@ def test_invalid_settings_raise_configuration_error(override):
 
 def test_missing_required_setting_raises_configuration_error():
     data = dict(BASE)
-    del data["price_entity"]
+    del data["price_config_entry"]
     with pytest.raises(ConfigurationError):
         PlanSettings.from_dict(data)
 
@@ -87,7 +87,7 @@ def test_load_falls_back_to_config_yaml_in_development(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(yaml.safe_dump({"options": {"plan": BASE}}))
     settings = load_plan_settings(str(tmp_path / "missing.json"), str(config))
-    assert settings.price_entity == "sensor.price"
+    assert settings.price_config_entry == "entry"
 
 
 def test_load_returns_none_when_no_file_exists_as_in_the_container_image(tmp_path):

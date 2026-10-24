@@ -16,7 +16,7 @@ from core.theria.plan.room_model import (
 from .conftest import HORIZON
 
 BASE_SETTINGS = {
-    "price_entity": "sensor.price",
+    "price_config_entry": "entry",
     "outdoor_entity": "sensor.outdoor",
     "room_setpoint_entity": "climate.room_temp_setpoint",
     "flow_setpoint_entity": "sensor.heating_setpoint",

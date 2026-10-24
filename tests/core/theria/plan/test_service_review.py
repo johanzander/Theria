@@ -11,7 +11,7 @@ from core.theria.exceptions import ConfigurationError, SetpointRestoreError
 from core.theria.plan.executor import PlanExecutor
 from core.theria.plan.state_store import PlanStateStore
 
-from .test_service import price_attributes
+from .test_service import feed_periods
 from .test_service_active import (
     EVENING,
     WritableHA,
@@ -92,7 +92,7 @@ def test_stopping_the_service_in_active_mode_puts_the_base_back(settings):
 
 
 def test_a_hand_change_is_noticed_even_when_nothing_was_written_yet(settings):
-    ha = WritableHA(price_attributes(), 18.0)
+    ha = WritableHA(feed_periods(), 18.0)
     executor = PlanExecutor(ha, settings, now=lambda: EVENING)
     assert executor.execute(None).action == "kept"  # already at the base
     ha.setpoint = 19.0  # Johan turns it up

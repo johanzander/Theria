@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from core.theria.exceptions import PriceDataError
+from core.theria.plan.series import FloatArray
 
 QUARTERS_PER_HOUR = 4
 
@@ -18,35 +19,15 @@ class PricePeriod:
     price_sek_per_kwh: float
 
 
-def parse_nordpool_attributes(attrs: dict) -> list[PricePeriod]:
-    """Parse the Nordpool sensor attributes into 15-minute periods.
-
-    Uses `today`/`tomorrow` (SEK/kWh) for the values and `raw_today`/`raw_tomorrow`
-    only for the period start times. The `price` field inside the raw entries is in
-    SEK/MWh and must not be used. `tomorrow` is empty until prices are published.
-    """
-    periods: list[PricePeriod] = []
-    for day in ("today", "tomorrow"):
-        values = attrs.get(day)
-        if not values:
-            continue
-        raw = attrs.get(f"raw_{day}")
-        if raw is None or len(raw) != len(values):
-            raise PriceDataError(
-                f"{day}: expected raw_{day} with {len(values)} entries to match the values"
-            )
-        for entry, value in zip(raw, values, strict=True):
-            if not isinstance(value, int | float):
-                raise PriceDataError(f"{day}: non-numeric price {value!r}")
-            start = datetime.fromisoformat(entry["start"])
-            if start.tzinfo is None:
-                raise PriceDataError(f"{day}: period start without timezone")
-            periods.append(PricePeriod(start, float(value)))
-    periods.sort(key=lambda p: p.start)
-    starts = [p.start for p in periods]
-    if len(set(starts)) != len(starts):
-        raise PriceDataError("duplicate price period start times")
-    return periods
+def hourly_price_array(periods: list[PricePeriod], hours: list[datetime]) -> FloatArray:
+    """Mean price of each of the given hours; NaN for an hour without all four quarters."""
+    by_start = {p.start: p.price_sek_per_kwh for p in periods}
+    out = np.full(len(hours), np.nan)
+    for i, hour in enumerate(hours):
+        quarters = [hour + timedelta(minutes=15 * q) for q in range(QUARTERS_PER_HOUR)]
+        if all(q in by_start for q in quarters):
+            out[i] = float(np.mean([by_start[q] for q in quarters]))
+    return out
 
 
 def hourly_prices(

@@ -2,7 +2,7 @@
 Mock Home Assistant server for local Theria development.
 
 Serves synthetic states for every entity referenced in config.yaml (zones,
-heat pump, price sensor, outdoor temp) so Theria can run end-to-end without
+heat pump, outdoor temp, and the Nord Pool price service) so Theria can run end-to-end without
 a real Home Assistant instance. Mirrors the shape of bess-manager's mock_ha
 server, scoped down to what Theria actually needs (no scenario replay, no
 websocket, no faketime).
@@ -18,11 +18,11 @@ Usage:
 import asyncio
 import os
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import uvicorn
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
@@ -64,45 +64,30 @@ def _load_config() -> dict:
         return yaml.safe_load(f)
 
 
-def _generate_price_forecast() -> list[dict]:
-    """Generate a synthetic 24h Nordpool-style price forecast (SEK/kWh)."""
-    today = datetime.now().date()
-    forecast = []
-    for day_offset in (0, 1):
-        day = today + timedelta(days=day_offset)
-        for hour in range(24):
-            # Cheap at night, expensive morning/evening peaks.
-            base = 0.5
-            if 6 <= hour <= 9 or 17 <= hour <= 20:
-                base = 2.2
-            elif 0 <= hour <= 5:
-                base = 0.2
-            price = round(base + random.uniform(-0.15, 0.15), 3)
-            forecast.append(
-                {
-                    "start": datetime(
-                        day.year, day.month, day.day, hour, tzinfo=UTC
-                    ).isoformat(),
-                    "value": price,
-                }
-            )
-    return forecast
+def _nordpool_day(day: date, area: str) -> dict:
+    """What nordpool.get_prices_for_date answers: 15-minute prices in SEK/MWh for one local day."""
+    entries = []
+    start = datetime(day.year, day.month, day.day, tzinfo=UTC) - timedelta(hours=2)
+    for quarter in range(96):
+        hour = quarter // 4
+        # cheap at night, expensive morning and evening peaks
+        base = 2200.0 if 6 <= hour <= 9 or 17 <= hour <= 20 else 200.0 if hour <= 5 else 500.0
+        begin = start + timedelta(minutes=15 * quarter)
+        entries.append(
+            {
+                "start": begin.isoformat(),
+                "end": (begin + timedelta(minutes=15)).isoformat(),
+                "price": round(base + random.uniform(-150, 150), 2),
+            }
+        )
+    return {area: entries}
 
 
 def _seed_states(config: dict):
     options = config.get("options", {})
 
-    # Price + outdoor sensor
+    # Outdoor sensor
     sensors = options.get("sensors", {})
-    price_entity = sensors.get("nordpool_price")
-    if price_entity:
-        forecast = _generate_price_forecast()
-        _set_state(
-            price_entity,
-            forecast[0]["value"],
-            {"raw_today": forecast[:24], "raw_tomorrow": forecast[24:]},
-        )
-
     outdoor_entity = sensors.get("outdoor_temp")
     if outdoor_entity:
         _set_state(outdoor_entity, 4.5)
@@ -263,8 +248,12 @@ async def get_state(entity_id: str):
 
 
 @app.post("/api/services/{domain}/{service}")
-async def call_service(domain: str, service: str):
+async def call_service(domain: str, service: str, request: Request):
     print(f"[mock-ha] service call: {domain}.{service}")
+    if (domain, service) == ("nordpool", "get_prices_for_date"):
+        body = await request.json()
+        day = date.fromisoformat(body["date"])
+        return {"changed_states": [], "service_response": _nordpool_day(day, body["areas"])}
     return []
 
 

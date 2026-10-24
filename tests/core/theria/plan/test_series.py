@@ -3,7 +3,10 @@ from datetime import UTC, datetime, timedelta, timezone
 import numpy as np
 
 from core.theria.plan.series import (
+    clean_counter,
     despike,
+    fill_flat_gaps,
+    hourly_counter_energy,
     hourly_energy_from_counter,
     interpolate_gaps,
     step_fraction,
@@ -84,3 +87,33 @@ def test_step_fraction_is_unknown_before_the_first_event_and_after_the_carry_lim
     )  # unknown before the first event (01:30)
     assert out[2] == 1.0 and out[4] == 1.0
     assert np.isnan(out[5])  # carried more than 3 h without a new event
+
+
+def test_clean_counter_keeps_the_real_track_even_when_most_readings_are_garbage():
+    # a counter that really reads 938 and often answers 0-16 (the H60 gateway): more garbage than real readings
+    points = [at(m, v) for m, v in [(0, 938.0), (5, 3.0), (10, 16.0), (15, 0.0), (20, 938.0), (25, 7.0), (30, 12.0), (35, 938.0), (40, 938.0)]]
+    assert [v for _, v in clean_counter(points, 9.0)] == [938.0] * 4
+
+
+def test_clean_counter_drops_a_spike_up_and_keeps_the_readings_after_it():
+    points = [at(m, v) for m, v in [(0, 100.0), (10, 101.0), (20, 9000.0), (30, 102.0), (40, 103.0)]]
+    assert [v for _, v in clean_counter(points, 5.0)] == [100.0, 101.0, 102.0, 103.0]
+
+
+def test_clean_counter_works_on_each_two_weeks_so_a_reset_cannot_erase_the_newer_readings():
+    old = [(START + timedelta(days=d), 70000.0 + d) for d in range(3)]
+    new = [(START + timedelta(days=20 + d), 700.0 + d) for d in range(3)]
+    assert [v for _, v in clean_counter(old + new, 5.0)] == [70000.0, 70001.0, 70002.0, 700.0, 701.0, 702.0]
+
+
+def test_a_gap_between_equal_readings_is_filled_but_a_gap_between_different_readings_is_not():
+    out = fill_flat_gaps(np.array([5.0, np.nan, np.nan, 5.0, np.nan, 7.0, np.nan]))
+    assert out.tolist()[:4] == [5.0, 5.0, 5.0, 5.0]
+    assert np.isnan(out[4]) and np.isnan(out[6])
+
+
+def test_a_quiet_counter_with_garbage_readings_is_zero_consumption_not_missing_data():
+    # 938 all day with garbage zeros now and then: the heater did not run
+    points = [at(m, v) for m, v in [(0, 938.0), (70, 4.0), (130, 938.0), (400, 2.0), (500, 938.0)]]
+    out = hourly_counter_energy(points, START, 9, max_kwh_per_hour=9.0, hold_hours=3)
+    assert np.isfinite(out[1:9]).all() and (out[1:9] == 0.0).all()

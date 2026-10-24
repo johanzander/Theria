@@ -57,7 +57,7 @@
 - [ ] (minor, plan 4) `PlanSettings` rejects `mode: active` in the config on purpose; the persisted state file is what keeps active across restarts.
 - [x] LK lever (decided with Johan 2026-10-11): thermostats go to `lk_setpoint_c` (21 C) only while the pump setpoint is actually above its base, otherwise `lk_base_c` (19.5 C); never lowered below the base; hand changes pause it 1 h (was 6 h until 2026-10-13: Johan had not agreed to 6 h); thermostats set below the base by hand are left alone; restored with the pump setpoint. Lowering LK below 19.5 to coast is NOT done (needs the buffer-tank/defrost check first).
 - [ ] Re-check the 4 h sun lag with Open-Meteo's end-of-hour labels (may be about 3.5 h) and with stove evenings excluded.
-- [ ] Existing `PriceOptimizer` parses `raw_today[].price` (SEK/MWh); retire it or fix it to use the SEK/kWh lists.
+- [x] The old `PriceOptimizer`, its `/api/price/*` endpoints and the price banner of the old dashboard are removed (2026-10-25).
 - [ ] **Adjust the heat curve manually on the pump (Johan does this; do it when the weather turns, before the cold).**
       Finding (see `documentation/ivt-heat-pump.md`, "Where the floor reaches its limit"): the living room needs a flow
       temperature of `42.4 - 0.98 * T_out` C (20 C indoors), but the pump curve at room setpoint 18 C gives
@@ -194,7 +194,7 @@ Real data (4 years, 635 days, 84 with a setpoint change): warming scale 0.04 +- 
 - [ ] Watch the electric heater (`add_heat_status`, aux energy) now that nothing narrows the plan after trouble; if it
   runs when the plan raises, lower `rts_max_c` or `boost_flow_limit_c` (see the Tuning tab).
 - [x] `max_rts_step_per_hour_c` is 2 (was 1): the setpoint range 16-20 can be crossed in one step. It was an assumption, not a measurement; watch the electric heater when the plan ramps up.
-- [x] Prices come from HA's built-in Nord Pool integration (`nordpool.get_prices_for_date`, config entry in `plan.price_config_entry`, area `price_area`); the HACS template sensor `nordpool_kwh_se4_sek_2_10_025` is gone. `plan.price_entity` is now `sensor.nord_pool_se4_current_price` and is only used for the price history of measured days. Empty `price_config_entry` still reads `today`/`tomorrow` attributes from `price_entity`.
+- [x] Prices come from HA's built-in Nord Pool integration only (`nordpool.get_prices_for_date`; config entry in `plan.price_config_entry`, area `price_area`): the plan, the day charts and the measured days (the service answers for finished days too). There is no price sensor setting and no HACS sensor any more (removed 2026-10-25).
 
 
 ## Zone control v2 (2026-10-14)

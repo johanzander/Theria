@@ -90,3 +90,40 @@ def test_when_today_cannot_be_read_the_plan_gets_a_price_error():
 
     with pytest.raises(PriceDataError):
         feed(Down()).periods()
+
+
+class FakeWithHistory(FakeNordpool):
+    """Today and the days before it; 2026-10-10 and older are not answered for."""
+
+    def get_service_response(self, domain, service, data):
+        self.calls.append((domain, service, data))
+        day = datetime.fromisoformat(data["date"]).replace(tzinfo=UTC)
+        if day >= datetime(2026, 10, 11, tzinfo=UTC) and day <= datetime(2026, 10, 14, tzinfo=UTC):
+            return answer(day - timedelta(hours=2), price_per_mwh=100.0 * (day.day - 10))
+        raise RuntimeError("no prices for that date")
+
+
+def test_history_gives_the_prices_of_every_day_asked_for_finished_ones_included():
+    client = FakeWithHistory()
+    start = datetime(2026, 10, 11, 22, tzinfo=UTC)  # local midnight of the 12th
+    periods = feed(client).history(start, NOW)
+    assert len(periods) == 96 * 3  # the 12th, the 13th and today
+    assert periods == sorted(periods, key=lambda p: p.start)
+    assert periods[0].price_sek_per_kwh == pytest.approx(0.2)
+
+
+def test_a_finished_day_is_asked_for_once_and_kept():
+    client = FakeWithHistory()
+    prices = feed(client)
+    start = datetime(2026, 10, 11, 22, tzinfo=UTC)
+    prices.history(start, NOW)
+    asked = len(client.calls)
+    prices.history(start, NOW)
+    assert len(client.calls) == asked
+
+
+def test_a_day_the_integration_cannot_answer_for_is_left_out_not_filled_from_elsewhere():
+    client = FakeWithHistory()
+    start = datetime(2026, 10, 8, 22, tzinfo=UTC)  # the 9th and 10th are not answered
+    periods = feed(client).history(start, NOW)
+    assert len(periods) == 96 * 4  # the 11th, 12th, 13th and today

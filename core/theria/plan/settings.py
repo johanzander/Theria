@@ -24,7 +24,9 @@ class RoomControl:
 class PlanSettings:
     """Plan configuration. Defaults are the values agreed in the design spec."""
 
-    price_entity: str  # price history for the measured days (SEK/kWh)
+    # Home Assistant's built-in Nord Pool integration (nordpool.get_prices_for_date): the one source of prices,
+    # for the plan, the charts and the measured days.
+    price_config_entry: str
     outdoor_entity: str
     room_setpoint_entity: str
     flow_setpoint_entity: str
@@ -48,9 +50,6 @@ class PlanSettings:
     # Climate entities of radiators on the shared flow (guest house, salon). While one of them calls
     # for heat (hvac_action heating) the plan may not cut the pump setpoint below its base.
     radiator_entities: tuple[str, ...] = ()
-    # Home Assistant's built-in Nord Pool integration, read with nordpool.get_prices_for_date.
-    # Empty config entry = prices come from the attributes of `price_entity` (HACS Nordpool).
-    price_config_entry: str = ""
     price_area: str = "SE4"
     mode: str = "off"
     floor_c: float = 18.5  # savings study: a floor of 18.5 C costs nothing against 17-18 C and keeps the room above it

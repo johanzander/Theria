@@ -11,7 +11,7 @@ from core.theria.plan.service import PlanService
 from core.theria.plan.state_store import PlanState, PlanStateStore
 
 from .days import day
-from .test_service import FakeHA, FakeWeather, price_attributes
+from .test_service import FakeHA, FakeWeather, feed_periods
 
 EVENING = datetime(
     2026, 10, 12, 16, 20, tzinfo=UTC
@@ -19,8 +19,8 @@ EVENING = datetime(
 
 
 class WritableHA(FakeHA):
-    def __init__(self, attrs, setpoint=18.0):
-        super().__init__(attrs)
+    def __init__(self, prices, setpoint=18.0):
+        super().__init__(prices)
         self.setpoint = setpoint
         self.writes = []
         self.automation = "off"  # the old setpoint automation
@@ -96,7 +96,7 @@ def make(
     plan_record=None,
     settings_manager=None,
 ):
-    ha = WritableHA(price_attributes(evening=evening), setpoint)
+    ha = WritableHA(feed_periods(evening=evening), setpoint)
     current = [EVENING]
     now = clock or (lambda: current[0])
     notifier = FakeNotifier()
@@ -110,6 +110,7 @@ def make(
         ha,
         replace(settings, mode="shadow"),
         FakeWeather(),
+        price_periods=lambda: ha.prices,
         now=now,
         executor=PlanExecutor(ha, settings, now=now),
         lk_executor=LKExecutor(ha, settings, now=now),
@@ -251,20 +252,13 @@ def test_stopping_and_starting_active_mode_ends_a_pause_after_a_hand_change(sett
 
 def test_a_plan_that_cannot_be_computed_says_why(settings):
     service, ha, _, _, _ = make(settings)
-    original = ha.get_state
-
-    def price_sensor_down(entity_id):
-        state = original(entity_id)
-        if entity_id == settings.price_entity:
-            return {"state": "unavailable", "attributes": {}}
-        return state
-
-    ha.get_state = price_sensor_down
+    prices = ha.prices
+    ha.prices = []  # the feed has no prices
     run_cycle(service)
 
     assert service.latest() is None
     assert "PriceDataError" in service.execution_status()["plan_error"]
 
-    ha.get_state = original
+    ha.prices = prices
     run_cycle(service)
     assert service.execution_status()["plan_error"] is None

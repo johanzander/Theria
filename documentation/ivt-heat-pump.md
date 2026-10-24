@@ -407,7 +407,7 @@ The pump is an **AirX 170** (three-phase, 400 V 3N, fuse 13 A) with Airbox E9 13
 
 ## Measured electricity by outdoor temperature, heating vs hot water (2026-10-16)
 
-**[observed]** Hourly increments of `sensor.compr_cons_heating`, `sensor.compr_cons_hotwat` and `sensor.aux_cons_heating`
+**[observed, before the H60 counter filter: the heater column may include garbage readings]** Hourly increments of `sensor.compr_cons_heating`, `sensor.compr_cons_hotwat` and `sensor.aux_cons_heating`
 (InfluxDB, 2022-10 to 2026-10, spikes dropped above 5.0 kWh/h per counter). Mean kWh per hour with a bootstrap 95 % CI
 for the hot-water column; the counters add up exactly (`compr_consump_tot` = heating + hot water, mean difference 0.000).
 
@@ -459,6 +459,38 @@ has published), flow to the floor at most 40 C, compressor 5.0 kWh/h, comfort me
 - Caveats: setpoints below 16 C have never been run in this house, hot water lowers these by about 0.4-0.5 points, and the
   best range 12-22 is extrapolated.
 
+## H60 glitches and how Theria filters them (2026-10-25)
+
+The H60 gateway answers with garbage now and then. What was found in the stored history and what is done about it:
+
+- **[observed] Energy counters (`compr_cons_heating`, `aux_cons_heating`, `compr_cons_hotwat`):** in 14 days 154 of 541 readings
+  were low garbage (0-16) on all three at the same moments, for the heater counter more than half of all readings.
+  `aux_cons_heating` really reads **938 kWh and has not moved since at least 23 Sept**: the electric heater has not run. An
+  earlier note here called the counter "16 kWh"; that was a garbage reading.
+- **Filter (`series.clean_counter`, used for both counters in the plan's calibration and in the measured savings):** a cumulative
+  meter only goes up, so the real readings are the longest non-decreasing run, found per 14 days (a unit change in an old window
+  cannot erase a newer one), trimmed and extended by what a possible consumption can connect (`MAX_ENERGY_KWH_PER_HOUR` 5.0 for
+  the compressor, `MAX_AUX_KWH_PER_HOUR` 9.0 for the heater). A gap between two equal readings is zero consumption (Home
+  Assistant stores only changes), a gap between different readings stays unknown. Before this the garbage made whole hours
+  unknown: the heater counter had a value in 3-24 of 24 hours a day and the measured savings count needs every input.
+- **[observed] Flow target (`sensor.heating_setpoint`):** shows 0.0 now and then (range 0-44.5 over 90 days). Readings outside
+  15-65 C are dropped in the calibration (`FLOW_PLAUSIBLE_C`). The live read in the plan is not filtered.
+- **[observed] Measured flow (`sensor.radiator_forward`):** 37 isolated spikes over 5 C in 90 days; filtered in the calibration
+  only (median over 7 h), the live read is not. **Pump setpoint history:** 7 isolated one-hour deviations over 1.5 C, not
+  filtered (a one-hour plan setpoint looks the same). **Hot water valve:** 22 of 1204 hours with a flicker under 5 %, not filtered.
+- **Health check (`core/theria/plan/data_health.py`, shown on the Overview when something is off and in full on Control):** price
+  feed (hours ahead, tomorrow after 14:00 local), the live flow temperature and flow target against what a working pump gives,
+  the price per hour of the last day from the Nord Pool feed, the stored history of outdoor, pump setpoint, both energy counters
+  and the room sensors (share of the last 24 h with a value, **read as stored, not filled in**), and how many heating-only hours of the last 3 days count for the
+  measured savings and which input costs most.
+- **Prices have one source (2026-10-25):** HA's Nord Pool integration, read with `nordpool.get_prices_for_date` (`NordpoolFeed`). The
+  plan, the day charts and the measured days all use it; a finished day is asked for once and kept. Before this the measured
+  days read the stored history of a price sensor set in the add-on options (`price_entity`), which pointed to the removed HACS
+  sensor and stopped recording on 2026-10-13, so every measured day from the 14th had no price and counted 0 hours while the
+  plan itself, on the feed, had prices. The sensor setting, the HACS attribute reader, the old `PriceOptimizer` with its
+  `/api/price/*` endpoints and the price banner of the old dashboard are gone. A day the integration cannot answer for (about
+  a month back it still can) has no price rather than another source's.
+
 ## Heating vs hot water
 
 - **[manual]** By default hot water has higher priority and interrupts a heating demand. With
@@ -491,7 +523,7 @@ has published), flow to the floor at most 40 C, compressor 5.0 kWh/h, comfort me
   `external_control_2` exist in HA; not yet identified.
 - **[per Johan]** `sensor.limit_compressor` and `sensor.limit_auxiliary_heat` are external inputs to limit
   or disable compressor and electric heater. They are not wired up.
-- **[observed]** `sensor.add_heat_status` is 0 right now. `aux_cons_heating` (16 kWh) is small, so the
+- **[observed]** `sensor.add_heat_status` is 0 right now. `aux_cons_heating` reads 938 kWh (16 was a garbage reading, see "H60 glitches"), so the
   heater is not driving the heating bill.
 
 ## First floor control chain (LK)

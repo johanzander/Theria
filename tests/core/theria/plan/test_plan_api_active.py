@@ -9,17 +9,18 @@ from backend import plan_api
 from core.theria.plan.executor import PlanExecutor
 from core.theria.plan.service import PlanService
 
-from .test_service import NOW, FakeWeather, fitted_models, price_attributes
+from .test_service import NOW, FakeWeather, fitted_models, feed_periods
 from .test_service_active import FakeNotifier, FakeSafety, WritableHA, good_days
 
 
 @pytest.fixture
 def client(settings):
-    ha = WritableHA(price_attributes(), 17.0)
+    ha = WritableHA(feed_periods(), 17.0)
     service = PlanService(
         ha,
         replace(settings, mode="shadow"),
         FakeWeather(),
+        price_periods=lambda: ha.prices,
         now=lambda: NOW,
         executor=PlanExecutor(ha, settings, now=lambda: NOW),
         safety=FakeSafety(),

@@ -1,9 +1,9 @@
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useState } from 'react'
-import { fetchDay, fetchExecution, fetchPlan, fetchSavings, fetchSettings } from '../api'
+import { fetchDay, fetchExecution, fetchPlan, fetchPreflight, fetchSavings, fetchSettings } from '../api'
 import {
-  outlookText, savingsSummary, savingsTotals, timelineRows, tooltipFormatter, UNITS,
-  type Execution, type PlanResponse, type SavingsResponse, type SettingEntry,
+  outlookText, savingsSummary, savingsTotals, statusTone, timelineRows, tooltipFormatter, UNITS,
+  type Execution, type PlanResponse, type Preflight, type SavingsResponse, type SettingEntry,
 } from '../model'
 import { Card, DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
 import { DayCharts } from './DayCharts'
@@ -54,6 +54,29 @@ function Status({ plan, execution, totals, roomNow }: {
   )
 }
 
+/** The checks that are not fine: a silent sensor or a missing price is shown on the first page, not only on Control. */
+function Attention({ preflight }: { preflight: Preflight | null }) {
+  const problems = preflight?.checks.filter((c) => c.status !== 'ok') ?? []
+  if (problems.length === 0) return null
+  return (
+    <div className="panel">
+      <h2>{problems.length === 1 ? '1 check needs attention' : `${problems.length} checks need attention`}</h2>
+      <p className="note">Inputs the plan or the measured savings depend on. All checks are on the Control tab.</p>
+      <table>
+        <tbody>
+          {problems.map((c) => (
+            <tr key={c.name}>
+              <td className={statusTone(c.status)}><b>{c.status}</b></td>
+              <td>{c.name}</td>
+              <td>{c.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function SavingsChart({ savings }: { savings: SavingsResponse }) {
   return (
     <Panel
@@ -88,6 +111,7 @@ export function Overview() {
   const plan = useLoaded(fetchPlan)
   const execution = useLoaded(fetchExecution)
   const savings = useLoaded(() => fetchSavings(14))
+  const preflight = useLoaded(fetchPreflight)
   const settings = useLoaded(fetchSettings)
   const first = useLoaded(() => fetchDay(day), [day])
   const second = useLoaded(() => fetchDay(shiftDay(day, 1)), [day])
@@ -104,6 +128,7 @@ export function Overview() {
       </PageIntro>
       {error && <p className="bad">{error}</p>}
       {execution.data?.plan_error && <p className="bad">The last plan could not be computed: {execution.data.plan_error}</p>}
+      <Attention preflight={preflight.data} />
       <Status plan={plan.data} execution={execution.data} totals={savingsTotals(rows)} roomNow={roomNow} />
       <DayNav day={day} onChange={setDay} />
       {rows.length > 0 ? (

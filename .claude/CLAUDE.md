@@ -26,11 +26,8 @@ Theria is a Home Assistant add-on that optimizes heating costs using electricity
    - Cooling rate (°C/hour when heating off)
    - Runs every 15 minutes, tracks measurements
 
-2. **PriceOptimizer** - Simple price-based temperature adjustment:
-
-   - Fetches Nordpool 24h price forecast
-   - Classifies hours (VERY_CHEAP → EXTREME_EXPENSIVE)
-   - Returns temperature adjustment (-1°C to +0.75°C) based on current hour
+2. **Price plan** (`core/theria/plan/`) - the price feed is HA's Nord Pool integration (`nordpool.get_prices_for_date`),
+   the one price source for the plan, the charts and the measured days; the plan moves heating by changing the pump setpoint
 
 3. **Zone Configuration** - Multi-zone support:
 
@@ -93,17 +90,6 @@ zones:
     enabled: true
 ```
 
-### Price Optimization (config.yaml)
-
-```yaml
-price_optimization:
-  enabled: true
-  price_sensor: "nordpool_price"  # Key from sensors config
-  expensive_hours: 4
-  cheap_hours: 4
-  adjustment_degrees: 0.5
-```
-
 ## Important Files
 
 ### Core Application
@@ -115,7 +101,7 @@ price_optimization:
 
 ### Optimization & Learning
 
-- `core/theria/price_optimizer.py` - Price-based optimization
+- `core/theria/plan/price_feed.py` - Nord Pool prices from Home Assistant (plan, charts, measured days)
 - `core/theria/thermal_learning_service.py` - Background learning service
 - `core/theria/zone_thermal_learner.py` - Per-zone thermal learning
 - `core/theria/history.py` - Event history tracking

@@ -18,12 +18,18 @@ from datetime import date, datetime
 import numpy as np
 import numpy.typing as npt
 
-from core.theria.plan.calibration_data import MAX_ENERGY_KWH_PER_HOUR, HistorySource
+from core.theria.plan.calibration_data import (
+    MAX_AUX_KWH_PER_HOUR,
+    MAX_ENERGY_KWH_PER_HOUR,
+    SMALL_GAP_HOURS,
+    HistorySource,
+)
 from core.theria.plan.pump_model import PumpParams, energy_kwh_per_hour
+from core.theria.plan.prices import PricePeriod, hourly_price_array
 from core.theria.plan.series import (
     despike,
     hour_floor,
-    hourly_energy_from_counter,
+    hourly_counter_energy,
     hourly_grid,
     interpolate_gaps,
     step_fraction,
@@ -195,24 +201,30 @@ def thermostat_name(entity_id: str) -> str:
 
 
 def load_outcome_inputs(
-    source: HistorySource, settings: PlanSettings, start: datetime, stop: datetime
+    source: HistorySource,
+    settings: PlanSettings,
+    start: datetime,
+    stop: datetime,
+    prices: list[PricePeriod],
 ) -> OutcomeInputs:
-    """Aligned hourly series for [start, stop) (hours in UTC, timezone-aware inputs)."""
+    """Aligned hourly series for [start, stop) (hours in UTC, timezone-aware inputs).
+
+    `prices` are the Nord Pool feed's periods for those days, the same source the plan was made with.
+    """
     first = hour_floor(start)
     n = int((hour_floor(stop) - first).total_seconds() // 3600)
 
     def mean(entity: str) -> FloatArray:
         return to_hourly(source.series(entity, first, stop), first, n, how="mean")
 
-    def counter(entity: str) -> FloatArray:
-        last = to_hourly(
-            source.series(entity, first, stop), first, n, how="last", ffill_hours=3
+    def counter(entity: str, max_kwh_per_hour: float) -> FloatArray:
+        return hourly_counter_energy(
+            source.series(entity, first, stop), first, n, max_kwh_per_hour, SMALL_GAP_HOURS
         )
-        return hourly_energy_from_counter(last, MAX_ENERGY_KWH_PER_HOUR)
 
     return OutcomeInputs(
         hours=hourly_grid(first, n),
-        price_sek_per_kwh=mean(settings.price_entity),
+        price_sek_per_kwh=hourly_price_array(prices, hourly_grid(first, n)),
         rts_c=to_hourly(
             source.series(settings.room_setpoint_entity, first, stop, "temperature"),
             first,
@@ -221,8 +233,8 @@ def load_outcome_inputs(
             ffill_hours=SETPOINT_FFILL_HOURS,
         ),
         t_out_c=interpolate_gaps(despike(mean(settings.outdoor_entity), 7, 6.0), 3),
-        compressor_kwh=counter(settings.energy_counter_entity),
-        aux_kwh=counter(settings.aux_energy_entity),
+        compressor_kwh=counter(settings.energy_counter_entity, MAX_ENERGY_KWH_PER_HOUR),
+        aux_kwh=counter(settings.aux_energy_entity, MAX_AUX_KWH_PER_HOUR),
         hot_water=step_fraction(
             source.series(settings.heating_mode_entity, first, stop), first, n
         ),

@@ -23,7 +23,6 @@ auth_api: true
 
 options:
   sensors:
-    nordpool_price: "sensor.nord_pool_se4_current_price"
     outdoor_temp: "sensor.outdoor"  # H60 outdoor temperature sensor
 
   influxdb:
@@ -35,13 +34,6 @@ options:
     username: ""
     password: ""
     bucket: "home_assistant/autogen"  # database/retention policy, as in home-analytics
-
-  price_optimization:
-    enabled: true
-    price_sensor: "nordpool_price"
-    expensive_hours: 4  # Number of most expensive hours to avoid heating
-    cheap_hours: 4  # Number of cheapest hours to pre-heat
-    adjustment_degrees: 0.5  # Temperature adjustment in °C
 
   heat_pump:
     enabled: true
@@ -64,8 +56,8 @@ options:
 
   plan:
     mode: "shadow"  # off | shadow. Shadow computes and logs plans, never writes to HA.
-    price_entity: "sensor.nord_pool_se4_current_price"  # price history; SEK/kWh
-    price_config_entry: "01K3Y99FD3MDZYVFX2XSWR4888"  # HA Nord Pool integration (nordpool.get_prices_for_date)
+    # The only price source: the HA Nord Pool integration (nordpool.get_prices_for_date), for the plan and the measured days.
+    price_config_entry: "01K3Y99FD3MDZYVFX2XSWR4888"
     price_area: "SE4"
     outdoor_entity: "sensor.outdoor"
     room_setpoint_entity: "climate.room_temp_setpoint"
@@ -195,7 +187,6 @@ options:
 
 schema:
   sensors:
-    nordpool_price: str?
     outdoor_temp: str?
   influxdb:
     enabled: bool?
@@ -203,12 +194,6 @@ schema:
     username: str?
     password: str?
     bucket: str?
-  price_optimization:
-    enabled: bool?
-    price_sensor: str?
-    expensive_hours: int?
-    cheap_hours: int?
-    adjustment_degrees: float?
   heat_pump:
     enabled: bool?
     compressor_speed: str?
@@ -228,8 +213,7 @@ schema:
     hotwater_mid: str?
   plan:
     mode: list(off|shadow)
-    price_entity: str
-    price_config_entry: str?
+    price_config_entry: str
     price_area: str?
     outdoor_entity: str
     room_setpoint_entity: str

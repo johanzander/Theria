@@ -5,6 +5,7 @@ import pytest
 
 from core.theria.plan.outcomes import OutcomeInputs, day_outcomes, load_outcome_inputs
 from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, energy_kwh_per_hour
+from core.theria.plan.prices import PricePeriod
 
 START = datetime(2026, 1, 10, 0, tzinfo=UTC)
 PUMP = PRIOR_PUMP_PARAMS
@@ -105,6 +106,11 @@ def test_the_base_setpoint_may_differ_hour_by_hour():
     assert outcome.saving_sek == pytest.approx(0.0, abs=1e-9)
 
 
+def feed_prices(hours: int, price: float = 1.5) -> list[PricePeriod]:
+    """What the Nord Pool feed answers for the hours: four quarters each at one price."""
+    return [PricePeriod(START + timedelta(minutes=15 * q), price) for q in range(4 * hours)]
+
+
 class OutcomeSource:
     """History served from small arrays, one point per hour at :30."""
 
@@ -123,7 +129,6 @@ def test_inputs_are_assembled_from_counters_prices_setpoint_and_valve(settings):
     hours = 6
     counter = np.cumsum([0, 1.5, 2.0, 1.0, 0.5, 2.5]) + 1000.0
     series = {
-        (settings.price_entity, None): np.full(hours, 1.5),
         (settings.room_setpoint_entity, "temperature"): np.full(hours, 17.0),
         (settings.outdoor_entity, None): np.full(hours, 3.0),
         (settings.energy_counter_entity, None): counter,
@@ -136,7 +141,11 @@ def test_inputs_are_assembled_from_counters_prices_setpoint_and_valve(settings):
         (settings.room_thermostat_entities[0], "temperature"): np.full(hours, 19.5),
     }
     inputs = load_outcome_inputs(
-        OutcomeSource(series), settings, START, START + timedelta(hours=hours)
+        OutcomeSource(series),
+        settings,
+        START,
+        START + timedelta(hours=hours),
+        feed_prices(hours),
     )
     assert len(inputs.hours) == hours and inputs.hours[0] == START
     assert np.allclose(inputs.price_sek_per_kwh, 1.5) and np.allclose(
@@ -156,7 +165,6 @@ def test_open_floor_loops_are_counted_per_room(settings):
         room_actuators={"bib": ("binary_sensor.a", "binary_sensor.b")},
     )
     series = {
-        (settings.price_entity, None): np.full(hours, 1.5),
         (settings.room_setpoint_entity, "temperature"): np.full(hours, 17.0),
         (settings.outdoor_entity, None): np.full(hours, 3.0),
         (settings.energy_counter_entity, None): np.arange(hours) + 1000.0,
@@ -171,7 +179,11 @@ def test_open_floor_loops_are_counted_per_room(settings):
         ("binary_sensor.b", None): np.array([1, 0, 0, 1]),
     }
     inputs = load_outcome_inputs(
-        OutcomeSource(series), settings, START, START + timedelta(hours=hours)
+        OutcomeSource(series),
+        settings,
+        START,
+        START + timedelta(hours=hours),
+        feed_prices(hours),
     )
     name = (
         settings.room_thermostat_entities[0].split(".")[1].removesuffix("_thermostat")

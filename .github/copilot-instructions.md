@@ -32,7 +32,6 @@ Theria/
 ├── core/theria/
 │   ├── ha_client.py              # Home Assistant REST API client wrapper
 │   ├── ha_api_controller.py      # Legacy controller (battery manager pattern)
-│   ├── price_optimizer.py        # Nordpool price-based optimization
 │   ├── thermal_learning_service.py # Continuous thermal characteristic learning
 │   ├── temperature_history_service.py # Background temperature/power collection
 │   ├── zone_thermal_learner.py   # Per-zone thermal model learning
@@ -108,7 +107,6 @@ See [pyproject.toml](../pyproject.toml) for complete tool configuration.
 | [backend/api.py](../backend/api.py)                                                   | REST API endpoints (10+ endpoints for zones, price, thermal)     |
 | [backend/static/index.html](../backend/static/index.html)                             | Web UI dashboard for monitoring                                  |
 | [core/theria/ha_client.py](../core/theria/ha_client.py)                               | Home Assistant API client (get/set temperature, climate state)   |
-| [core/theria/price_optimizer.py](../core/theria/price_optimizer.py)                   | Nordpool price tracking and temperature adjustment logic         |
 | [core/theria/thermal_learning_service.py](../core/theria/thermal_learning_service.py) | Background service for continuous thermal learning               |
 | [core/theria/zone_thermal_learner.py](../core/theria/zone_thermal_learner.py)         | Per-zone thermal characteristic learning                         |
 | [core/theria/history.py](../core/theria/history.py)                                   | Temperature and control event tracking                           |
