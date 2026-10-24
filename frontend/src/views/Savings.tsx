@@ -192,7 +192,7 @@ function History({ days }: { days: DailyRow[] }) {
                 <td className={`num ${tone(d.cumulative) ?? ''}`}>{signed(d.cumulative, 1)}</td>
                 <td className="num">{d.compressor_kwh.toFixed(1)} kWh</td>
                 <td className="num">{d.aux_kwh.toFixed(1)} kWh</td>
-                <td className="num">{d.mean_rts_c.toFixed(1)} °C</td>
+                <td className="num">{fix(d.mean_rts_c, 1, ' °C')}</td>
                 <td className="num">{fix(d.room_min_c, 1, ' °C')}</td>
                 <td className="num">{Math.round(d.coverage * 100)} %</td>
               </tr>

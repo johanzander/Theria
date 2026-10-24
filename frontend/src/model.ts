@@ -52,7 +52,7 @@ export interface DayOutcome {
   actual_cost_sek: number
   baseline_cost_sek: number
   saving_sek: number
-  mean_rts_c: number
+  mean_rts_c: number | null // null (NaN in the backend) for a day without a setpoint reading
   room_min_c: number | null
 }
 
