@@ -12,7 +12,7 @@ LABEL \
     io.hass.description="Battery Energy Storage System optimization and management" \
     io.hass.version=${BUILD_VERSION} \
     io.hass.type="addon" \
-    io.hass.arch="aarch64,amd64,armhf,armv7,i386" \
+    io.hass.arch="aarch64,amd64" \
     maintainer="Johan Zander <johanzander@gmail.com>" \
     org.label-schema.build-date=${BUILD_DATE} \
     org.label-schema.description="Battery Energy Storage System optimization and management" \
