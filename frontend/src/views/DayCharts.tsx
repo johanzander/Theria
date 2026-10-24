@@ -14,7 +14,7 @@ const C = {
 const ROOM_COLOURS = ['#2f855a', '#b7791f', '#7b3fa0', '#c2410c']
 
 /** The x axis shared by the charts: every third hour, and the day named at midnight. */
-function axisFor(rows: { key: string }[], perHour: number) {
+export function axisFor(rows: { key: string }[], perHour: number) {
   const dayLabels: Record<string, string> = {}
   for (const r of rows as HourRow[]) if (r.dayStart) dayLabels[r.key.slice(0, 10)] = r.dayLabel
   const keys = rows.map((r) => r.key)
@@ -26,14 +26,14 @@ function axisFor(rows: { key: string }[], perHour: number) {
 }
 
 /** The day boundaries and the current hour; a plain function because Recharts only finds its own elements. */
-function guides(now: string | undefined, dayStarts: string[], yAxisId?: string) {
+export function guides(now: string | undefined, dayStarts: string[], yAxisId?: string) {
   return [
     ...dayStarts.map((k) => <ReferenceLine key={`day-${k}`} x={k} yAxisId={yAxisId} stroke="#b8c1cc" />),
     ...(now ? [<ReferenceLine key="now" x={now} yAxisId={yAxisId} stroke="#7b8794" strokeDasharray="2 2" label="now" />] : []),
   ]
 }
 
-function Chart({ rows, height, children, unitFor, minutes = 60, perHour = 1, axisRows }: {
+export function Chart({ rows, height, children, unitFor, minutes = 60, perHour = 1, axisRows }: {
   rows: object[]; height: number; children: React.ReactNode; unitFor: (name: string) => Unit; minutes?: number; perHour?: number
   axisRows: { key: string }[]
 }) {

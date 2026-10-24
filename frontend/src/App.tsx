@@ -4,6 +4,7 @@ import { Control } from './views/Control'
 import { Models } from './views/Models'
 import { Overview } from './views/Overview'
 import { PlanTable } from './views/PlanTable'
+import { Savings } from './views/Savings'
 import { Sensors } from './views/Sensors'
 import { Settings } from './views/Settings'
 
@@ -18,6 +19,7 @@ const OLD_PAGES = [
 const VIEWS = [
   { id: 'overview', label: 'Overview', view: <Overview /> },
   { id: 'plan', label: 'Plan', view: <PlanTable /> },
+  { id: 'savings', label: 'Savings', view: <Savings /> },
   { id: 'models', label: 'Models', view: <Models /> },
   { id: 'settings', label: 'Settings', view: <Settings /> },
   { id: 'sensors', label: 'Sensors', view: <Sensors /> },
