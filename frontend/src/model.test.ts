@@ -46,6 +46,7 @@ describe('describeReason', () => {
   it('explains known binding values and passes unknown ones through', () => {
     expect(describeReason('rts_min')).toMatch(/lowest allowed setpoint/i)
     expect(describeReason('flow_cap')).toMatch(/flow/i)
+    expect(describeReason('valves_closed')).toMatch(/loops closed/i)
     expect(describeReason('something_new')).toBe('something_new')
   })
 })

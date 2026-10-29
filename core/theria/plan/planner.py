@@ -66,6 +66,9 @@ class HourPlan:
     # What the sun adds on top of room_c_end (the slow level) at the end of the hour; the room the
     # sensors show, and the room comfort is judged on, is the level plus this.
     sun_swing_c: float = 0.0
+    # The plan holds the LK thermostats low this hour: the floor loops are closed, the room only
+    # loses heat and the pump runs for what is left (closed_energy_share of its energy).
+    valves_closed: bool = False
 
 
 @dataclass(frozen=True)
@@ -194,9 +197,15 @@ class _Problem:
         return min(pump_flow, self.settings.floor_mix_max_c)
 
     def transition(
-        self, t: int, a: int, room_c: FloatArray, slab_c: FloatArray
+        self,
+        t: int,
+        a: int,
+        room_c: FloatArray,
+        slab_c: FloatArray,
+        closed: bool = False,
     ) -> tuple[FloatArray, FloatArray]:
-        """Room and slab temperature at the end of hour t for action index a."""
+        """Room and slab temperature at the end of hour t for action index a; with the valves
+        closed the floor is cut off from the pump and the slab relaxes to the room."""
         flow = self.floor_flow(t, float(self.actions[a]))
         room_next, slab_next, _ = step(
             self.room,
@@ -207,6 +216,7 @@ class _Problem:
             self.inputs.t_out_c[t],
             self.inputs.sun_wm2[t],
             self.settings.lk_limit_c,
+            valve_scale=0.0 if closed else 1.0,
         )
         return (
             np.asarray(room_next, dtype=float) + self.extra_drift[t],
@@ -224,12 +234,15 @@ class _Problem:
             dtype=float,
         )
 
-    def energy_kwh(self, t: int, rts_c: float) -> float:
-        return float(total_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
+    def energy_kwh(self, t: int, rts_c: float, closed: bool = False) -> float:
+        kwh = float(total_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
+        return kwh * self.settings.closed_energy_share if closed else kwh
 
-    def stage_cost(self, t: int, a: int, room_next: FloatArray) -> FloatArray:
+    def stage_cost(
+        self, t: int, a: int, room_next: FloatArray, closed: bool = False
+    ) -> FloatArray:
         energy_cost = float(self.inputs.price_sek_per_kwh[t]) * self.energy_kwh(
-            t, float(self.actions[a])
+            t, float(self.actions[a]), closed
         )
         other_rooms = self.settings.setpoint_deviation_cost_sek_per_c_hour * abs(
             float(self.actions[a]) - self.settings.rts_base_c
@@ -249,15 +262,16 @@ class _Problem:
         room_c: FloatArray,
         slab_c: FloatArray,
         next_value: FloatGrid,
+        closed: bool = False,
     ) -> FloatArray:
         """Immediate cost plus interpolated cost-to-go for action a from the given states."""
-        room_next, slab_next = self.transition(t, a, room_c, slab_c)
+        room_next, slab_next = self.transition(t, a, room_c, slab_c, closed)
         future = _interp2(
             next_value[:, :, a],
             (room_next - self.room_grid[0]) / ROOM_BIN_C,
             (slab_next - self.slab_grid[0]) / SLAB_BIN_C,
         )
-        return self.stage_cost(t, a, room_next) + future
+        return self.stage_cost(t, a, room_next, closed) + future
 
     def end_terms(self) -> tuple[float, float]:
         """The level the horizon must end at and what each degree under it costs (SEK).
@@ -310,8 +324,11 @@ class _Problem:
         hours = min(MAX_TERMINAL_HOURS, 1.0 / rate)
         return float(np.mean(self.inputs.price_sek_per_kwh)) * kwh_per_c_hour * hours
 
-    def solve(self) -> tuple[FloatGrid, npt.NDArray[np.int8]]:
-        """Backward induction. Returns cost-to-go and policy, indexed by previous action."""
+    def solve(
+        self,
+    ) -> tuple[FloatGrid, npt.NDArray[np.int8], npt.NDArray[np.bool_]]:
+        """Backward induction. Returns cost-to-go, policy (indexed by previous action) and where the
+        lowest setpoint is better with the valves closed (a second way to hold that setpoint)."""
         s = self.settings
         n_actions = len(self.actions)
         max_move = round(s.max_rts_step_per_hour_c / s.rts_step_c)
@@ -321,12 +338,17 @@ class _Problem:
         terminal = self.end_charge(rr)
         value[self.horizon] = terminal[:, :, None]
         policy = np.empty((self.horizon, *shape), dtype=np.int8)
+        closed = np.zeros((self.horizon, *shape[:2]), dtype=bool)
         for t in range(self.horizon - 1, -1, -1):
             q = np.empty(shape)
             for a in range(n_actions):
                 q[:, :, a] = self.q_value(t, a, rr, ss, value[t + 1])
                 if not self.allowed[t, a]:
                     q[:, :, a] += FLOW_CAP_PENALTY_SEK
+            if s.plan_closes_valves:
+                q_closed = self.q_value(t, 0, rr, ss, value[t + 1], closed=True)
+                closed[t] = q_closed < q[:, :, 0]
+                q[:, :, 0] = np.where(closed[t], q_closed, q[:, :, 0])
             best = np.full(shape, np.inf)
             best_a = np.zeros(shape, dtype=np.int8)
             # raising the setpoint is limited to max_move steps per hour (the rebound is where
@@ -344,7 +366,7 @@ class _Problem:
                 ).astype(np.int8)
             value[t] = best
             policy[t] = best_a
-        return value, policy
+        return value, policy, closed
 
     def hour_plan(
         self,
@@ -354,8 +376,9 @@ class _Problem:
         slab_end: float,
         reason: dict[str, Any],
         tail: bool,
+        closed: bool = False,
     ) -> HourPlan:
-        energy = self.energy_kwh(t, rts_c)
+        energy = self.energy_kwh(t, rts_c, closed)
         price = float(self.inputs.price_sek_per_kwh[t])
         floor_c = float(self.floors[t])
         return HourPlan(
@@ -377,10 +400,14 @@ class _Problem:
             tail=tail,
             reason=reason,
             sun_swing_c=float(self.swing[t]),
+            valves_closed=closed,
         )
 
     def follow_policy(
-        self, value: FloatGrid, policy: npt.NDArray[np.int8]
+        self,
+        value: FloatGrid,
+        policy: npt.NDArray[np.int8],
+        valves_closed: npt.NDArray[np.bool_],
     ) -> list[HourPlan]:
         """Roll the optimal policy forward from the initial state, with explanations."""
         room_c, slab_c = self.inputs.initial.room_c, self.inputs.initial.slab_c
@@ -405,14 +432,15 @@ class _Problem:
                 )
             )
             a = int(policy[t, r_i, s_i, prev])
+            closed = a == 0 and bool(valves_closed[t, r_i, s_i])
             here = (np.array([[room_c]]), np.array([[slab_c]]))
-            chosen = float(self.q_value(t, a, *here, value[t + 1])[0, 0])
+            chosen = float(self.q_value(t, a, *here, value[t + 1], closed)[0, 0])
             marginal = {
                 label: float(self.q_value(t, b, *here, value[t + 1])[0, 0]) - chosen
                 for label, b in (("minus_step_sek", a - 1), ("plus_step_sek", a + 1))
                 if 0 <= b < len(self.actions) and self.allowed[t, b]
             }
-            room_next, slab_next = self.transition(t, a, *here)
+            room_next, slab_next = self.transition(t, a, *here, closed)
             room_end, slab_end = float(room_next[0, 0]), float(slab_next[0, 0])
             hours.append(
                 self.hour_plan(
@@ -420,8 +448,11 @@ class _Problem:
                     float(self.actions[a]),
                     room_end,
                     slab_end,
-                    self.reason(a, room_end + float(self.swing[t]), t, float(rank[t]), marginal),
+                    self.reason(
+                        a, room_end + float(self.swing[t]), t, float(rank[t]), marginal, closed
+                    ),
                     tail=t >= self.horizon - TAIL_HOURS,
+                    closed=closed,
                 )
             )
             room_c, slab_c, prev = room_end, slab_end, a
@@ -460,10 +491,13 @@ class _Problem:
         t: int,
         price_rank: float,
         marginal: dict[str, float],
+        closed: bool = False,
     ) -> dict[str, Any]:
         s = self.settings
         floor_c = float(self.floors[t])
-        if room_end <= floor_c + 0.05:
+        if closed:
+            binding = "valves_closed"
+        elif room_end <= floor_c + 0.05:
             binding = "floor"
         elif room_end >= s.ceiling_c - 0.05:
             binding = "ceiling"
@@ -496,8 +530,8 @@ def plan(
             "planner needs at least 2 hours and equally long inputs"
         )
     problem = _Problem(inputs, settings, pump, room)
-    value, policy = problem.solve()
-    hours = problem.follow_policy(value, policy)
+    value, policy, valves_closed = problem.solve()
+    hours = problem.follow_policy(value, policy, valves_closed)
     baseline = problem.flat_plan(settings.rts_base_c)
     reference_c, cost_per_c = problem.end_terms()
     # what the end state of each trajectory is worth later: the plan and the baseline alike

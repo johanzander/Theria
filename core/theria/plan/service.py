@@ -1080,23 +1080,22 @@ class PlanService:
                 self._log("regulator", action, f"{prefix}{status.room} {detail}")
 
     def _holds(self) -> dict[str, float] | None:
-        """Thermostat setpoints that close rooms: the regulator's (when it may act) and, in an
-        extreme-price hour of the plan, every thermostat at the extreme floor. The lower one wins."""
-        holds = self._extreme_price_holds()
+        """Thermostat setpoints that close rooms: the regulator's (when it may act) and, in an hour
+        where the plan closes the floor loops, every thermostat at the hour's floor. The lower wins."""
+        holds = self._plan_valve_holds()
         if self._regulator is not None and self._settings.regulator_active:
             for entity, target in self._regulator.holds(self._regulator_statuses).items():
                 holds[entity] = min(target, holds.get(entity, target))
         return holds or None
 
-    def _extreme_price_holds(self) -> dict[str, float]:
-        """The floor loops close while the plan's current hour is extreme-priced: the pump has no room
-        sensor and makes heat for whatever the open loops draw, so the setpoint cut alone does not stop it.
-        Held at the extreme floor, the valves reopen by themselves if a room falls that far."""
+    def _plan_valve_holds(self) -> dict[str, float]:
+        """The floor loops close while the plan's current hour has them closed. The thermostats are
+        held at the hour's floor, so the loops reopen by themselves if a room falls that far."""
         s = self._settings
         snapshot = self.latest()
         now = self._now()
         if (
-            not s.valves_closed_when_extreme
+            not s.plan_closes_valves
             or snapshot is None
             or now - snapshot.computed_at > MAX_PLAN_AGE
         ):
@@ -1105,9 +1104,9 @@ class PlanService:
             (h for h in snapshot.plan.hours if h.start <= now < h.start + timedelta(hours=1)),
             None,
         )
-        if hour is None or not hour.extreme:
+        if hour is None or not hour.valves_closed:
             return {}
-        return dict.fromkeys(s.room_thermostat_entities, s.extreme_floor_c)
+        return dict.fromkeys(s.room_thermostat_entities, hour.floor_c)
 
     def _control(self) -> None:
         """Active mode: review the last days once a day, watch for trouble, apply the plan."""

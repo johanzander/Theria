@@ -47,10 +47,14 @@ class PlanSettings:
     room_controls: tuple[RoomControl, ...] = ()
     # False: the regulator measures, decides and logs what it would do, but does not close valves.
     regulator_active: bool = False
-    # In an hour the plan marks extreme-priced the LK thermostats are held at the extreme floor:
-    # the floor loops close while the rooms are above it, so the house stops drawing heat from the
-    # pump (the pump only sees the load), and open again by themselves if a room falls to the floor.
-    valves_closed_when_extreme: bool = True
+    # The plan may close the floor loops for an hour (the LK thermostats held at the hour's floor)
+    # instead of only cutting the pump setpoint: the pump has no room sensor and makes heat for
+    # whatever the open loops draw, so closed loops are the way to stop the draw. The loops reopen by
+    # themselves if a room falls to the floor.
+    plan_closes_valves: bool = True
+    # What the pump still uses in an hour with the floor loops closed, as a share of its energy at the
+    # lowest setpoint (hot water, radiators, standby). A prior: lower it as measured closed hours show.
+    closed_energy_share: float = 0.15
     # Climate entities of radiators on the shared flow (guest house, salon). While one of them calls
     # for heat (hvac_action heating) the plan may not cut the pump setpoint below its base.
     radiator_entities: tuple[str, ...] = ()
@@ -155,6 +159,8 @@ class PlanSettings:
             raise ConfigurationError(
                 "the plan's ceiling must not be above lk_limit_c, where the valves close"
             )
+        if not 0 <= self.closed_energy_share <= 1:
+            raise ConfigurationError("closed_energy_share must be between 0 and 1")
         if self.floor_mix_max_c <= 0:
             raise ConfigurationError("floor_mix_max_c must be positive")
         if not self.rts_min_c <= self.rts_base_c <= self.rts_max_c:

@@ -33,7 +33,7 @@ def settings() -> PlanSettings:
         rts_min_c=16.0,  # the planner's mechanics are tested on the old +/- 2 C range, whatever the production defaults are
         rts_max_c=20.0,
         floor_c=18.0,
-        valves_closed_when_extreme=False,  # the thermostat limit and the regulator are tested on their own; the hold has its own tests
+        plan_closes_valves=False,  # the thermostat limit, the regulator and the pump setpoint are tested on their own; closing the loops has its own tests
     )
 
 

@@ -556,3 +556,20 @@ The pump does not stop in cold weather: with the setpoint at 14-15.5 C the share
 outdoors, 50 % at 5-8 C and 28-30 % at 8-12 C (setpoint 16-17). The lowest setpoint ever run is 13.0 C and there are only about 130 hours
 below 15.5 C, so cuts deeper than about 3 C are untested. The manuals in `private/IVT` do not describe the compressor control law.
 Planned next: controlled step tests (-4, -5, then deeper) on a cold and a mild day with flow, compressor and room logged.
+
+## Closing the floor loops (2026-10-29)
+
+The pump has no room sensor: it follows the heat curve and makes heat for whatever the open floor loops draw. The pump setpoint
+(lowest allowed 15) therefore cannot stop consumption by itself on an expensive day: with the LK valves open the compressor keeps
+running (observed 2026-10-29: room 22 C, setpoint at the minimum, still consuming). The lever that stops the draw is the LK thermostat:
+held below the room temperature the loops close and the compressor idles.
+
+- The planner has this as a second action (`plan_closes_valves`, default on): at the lowest setpoint an hour can be planned with the
+  loops closed. Room model: `valve_scale` 0 (the slab relaxes to the room, the room only loses heat). Energy: `closed_energy_share`
+  (prior 0.15) of the energy at the lowest setpoint, for hot water, radiators and standby. This share is a guess until closed hours
+  have been measured: check the compressor counter in the hours the plan closes (`valves_closed` in the plan) and tune it.
+- The service holds the LK thermostats at the hour's floor in those hours (`PlanService._plan_valve_holds`), so the loops reopen by
+  themselves if a room falls to the floor. The regulator's holds merge with it, the lower one wins.
+- The LK cloud is slow: a thermostat write is often not confirmed within the read-back time (Control tab: "failed ... read back 22.0,
+  wrote 19.5"); Theria keeps it as pending and the value usually arrives late.
+- Settings in the Theria UI only apply when the Save button under the table is pressed (orange = edited, not saved).

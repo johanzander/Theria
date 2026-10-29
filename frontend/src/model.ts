@@ -149,6 +149,7 @@ const REASONS: Record<string, string> = {
   floor: 'Held up by the comfort floor',
   ceiling: 'Held down by the comfort ceiling',
   flow_cap: 'Limited by the maximum flow temperature',
+  valves_closed: 'Floor loops closed: the lowest setpoint with the LK thermostats held down, so the house draws no heat',
   rts_min: 'At the lowest allowed setpoint (price high enough to cut as far as allowed)',
   rts_max: 'At the highest allowed setpoint (price low enough to heat as much as allowed)',
   price_trade_off: 'Price against comfort: neither limit binds',

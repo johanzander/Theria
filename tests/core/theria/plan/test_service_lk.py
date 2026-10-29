@@ -69,36 +69,36 @@ def test_the_execution_status_reports_the_thermostat_action(settings):
     assert service.execution_status()["last_lk"].action == "wrote"
 
 
-def extreme_hours_now(service):
+def closed_hours_now(service):
     snapshot = service.latest()
     return [
-        h.extreme
+        h.valves_closed
         for h in snapshot.plan.hours
         if h.start <= service._now() < h.start + timedelta(hours=1)
     ]
 
 
-def test_the_thermostats_are_held_at_the_extreme_floor_in_an_extreme_price_hour(settings):
-    service, ha, *_ = make(replace(settings, valves_closed_when_extreme=True), evening=9.0)  # now is in the dear evening hours
+def test_the_thermostats_are_held_at_the_floor_in_an_hour_the_plan_closes_the_loops(settings):
+    service, ha, *_ = make(replace(settings, plan_closes_valves=True), evening=9.0)
     service.set_mode("active", confirm=True)
     run_cycle(service)
-    assert extreme_hours_now(service) == [True], "precondition: this hour is extreme"
-    assert ha.lk[LK] == settings.extreme_floor_c
+    assert closed_hours_now(service) == [True], "precondition: the plan closes this hour"
+    assert ha.lk[LK] < LIMIT
 
 
-def test_the_thermostats_go_back_to_the_limit_when_the_extreme_hour_is_over(settings):
-    service, ha, _, _, clock = make(replace(settings, valves_closed_when_extreme=True), evening=9.0)
+def test_the_thermostats_go_back_to_the_limit_when_the_closed_hours_are_over(settings):
+    service, ha, _, _, clock = make(replace(settings, plan_closes_valves=True), evening=9.0)
     service.set_mode("active", confirm=True)
     run_cycle(service)
     clock[0] = datetime(2026, 10, 12, 21, 20, tzinfo=UTC)  # after the dear hours
     run_cycle(service)
-    assert extreme_hours_now(service) == [False], "precondition: this hour is not extreme"
+    assert closed_hours_now(service) == [False], "precondition: the plan keeps this hour open"
     assert ha.lk[LK] == LIMIT
 
 
-def test_the_valves_stay_open_in_an_extreme_hour_when_the_switch_is_off(settings):
+def test_the_plan_never_closes_the_loops_when_the_switch_is_off(settings):
     service, ha, *_ = make(settings, evening=9.0)
     service.set_mode("active", confirm=True)
     run_cycle(service)
-    assert extreme_hours_now(service) == [True], "precondition: this hour is extreme"
+    assert not any(h.valves_closed for h in service.latest().plan.hours)
     assert ha.lk[LK] == LIMIT

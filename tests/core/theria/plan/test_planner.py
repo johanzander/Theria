@@ -3,9 +3,10 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from core.theria.exceptions import OptimizationError
+from core.theria.exceptions import ConfigurationError, OptimizationError
 from core.theria.plan.planner import TAIL_HOURS, PlanInputs, plan
-from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, flow_target
+from core.theria.plan.settings import PlanSettings
+from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, flow_target, total_kwh_per_hour
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomState,
@@ -475,3 +476,54 @@ def test_the_plan_reports_the_price_of_a_degree_it_gives_up_at_the_end(settings,
     result = run(make_inputs(daily_prices(), room_c=19.5, slab_c=28.0), settings)
     assert result.end_cost_sek_per_c > 0
     assert result.end_reference_c == pytest.approx(result.baseline_hours[-1].room_c_end, abs=0.6)
+
+
+def closing(settings, **changes):
+    return replace(settings, plan_closes_valves=True, **changes)
+
+
+def test_the_plan_closes_the_loops_in_the_dear_hours(settings, make_inputs):
+    price = np.where(EVENING, 8.0, 0.8)
+    inputs = make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0)
+    result = run(inputs, closing(settings))
+    closed = np.array([h.valves_closed for h in result.hours])
+    assert closed.any() and not closed[~EVENING].all()
+    assert all(price[i] > 0.8 for i in np.flatnonzero(closed))
+
+
+def test_a_closed_hour_costs_only_the_share_of_the_lowest_setpoint_energy(settings, make_inputs):
+    price = np.where(EVENING, 8.0, 0.8)
+    inputs = make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0)
+    s = closing(settings, closed_energy_share=0.2)
+    result = run(inputs, s)
+    open_energy = float(total_kwh_per_hour(PRIOR_PUMP_PARAMS, 2.0, s.rts_min_c))
+    closed = [h for h in result.hours if h.valves_closed]
+    assert closed
+    for hour in closed:
+        assert hour.rts_c == s.rts_min_c
+        assert hour.energy_kwh == pytest.approx(0.2 * open_energy)
+
+
+def test_closing_the_loops_saves_more_than_cutting_the_setpoint_alone(settings, make_inputs):
+    price = np.where(EVENING, 8.0, 0.8)
+    inputs = make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0)
+    without = run(inputs, settings)
+    with_loops = run(inputs, closing(settings))
+    assert with_loops.objective_sek < without.objective_sek
+
+
+def test_closed_hours_do_not_take_the_room_under_the_floor(settings, make_inputs):
+    price = np.where(EVENING, 8.0, 0.8)
+    result = run(make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0), closing(settings))
+    assert result.floor_violation_hours == 0
+
+
+def test_the_plan_does_not_close_the_loops_when_it_may_not(settings, make_inputs):
+    price = np.where(EVENING, 8.0, 0.8)
+    result = run(make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0), settings)
+    assert not any(h.valves_closed for h in result.hours)
+
+
+def test_the_energy_share_must_be_a_share():
+    with pytest.raises(ConfigurationError):
+        PlanSettings(**BASE_SETTINGS, closed_energy_share=1.5)
