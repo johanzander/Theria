@@ -98,6 +98,7 @@ options:
       - "climate.kitchen"
       - "climate.tv_room_gh"
       - "climate.storage_room"
+    valves_closed_when_extreme: true  # true: in an extreme-price hour the LK thermostats are held at the extreme floor (valves close); false: they stay at the limit
     regulator_active: false  # true: the regulator closes a room's valves; false: it only logs
     room_history_entities:  # older sensors that extend the room history back before the LK sensors
       - "sensor.sonoff_a480045bf5_temperature"
@@ -235,6 +236,7 @@ schema:
           - str
     radiator_entities:
       - str
+    valves_closed_when_extreme: bool?
     regulator_active: bool?
     heating_mode_entity: str
     flow_measured_entity: str

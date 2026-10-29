@@ -47,6 +47,10 @@ class PlanSettings:
     room_controls: tuple[RoomControl, ...] = ()
     # False: the regulator measures, decides and logs what it would do, but does not close valves.
     regulator_active: bool = False
+    # In an hour the plan marks extreme-priced the LK thermostats are held at the extreme floor:
+    # the floor loops close while the rooms are above it, so the house stops drawing heat from the
+    # pump (the pump only sees the load), and open again by themselves if a room falls to the floor.
+    valves_closed_when_extreme: bool = True
     # Climate entities of radiators on the shared flow (guest house, salon). While one of them calls
     # for heat (hvac_action heating) the plan may not cut the pump setpoint below its base.
     radiator_entities: tuple[str, ...] = ()

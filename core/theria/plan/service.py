@@ -26,7 +26,7 @@ from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
 from core.theria.plan.day_view import build_day_view, day_hours
 from core.theria.plan.event_log import EventLog
-from core.theria.plan.executor import ExecutionResult, PlanExecutor
+from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
@@ -1080,10 +1080,34 @@ class PlanService:
                 self._log("regulator", action, f"{prefix}{status.room} {detail}")
 
     def _holds(self) -> dict[str, float] | None:
-        """Thermostat setpoints that close rooms, only when the regulator is allowed to act."""
-        if self._regulator is None or not self._settings.regulator_active:
-            return None
-        return self._regulator.holds(self._regulator_statuses)
+        """Thermostat setpoints that close rooms: the regulator's (when it may act) and, in an
+        extreme-price hour of the plan, every thermostat at the extreme floor. The lower one wins."""
+        holds = self._extreme_price_holds()
+        if self._regulator is not None and self._settings.regulator_active:
+            for entity, target in self._regulator.holds(self._regulator_statuses).items():
+                holds[entity] = min(target, holds.get(entity, target))
+        return holds or None
+
+    def _extreme_price_holds(self) -> dict[str, float]:
+        """The floor loops close while the plan's current hour is extreme-priced: the pump has no room
+        sensor and makes heat for whatever the open loops draw, so the setpoint cut alone does not stop it.
+        Held at the extreme floor, the valves reopen by themselves if a room falls that far."""
+        s = self._settings
+        snapshot = self.latest()
+        now = self._now()
+        if (
+            not s.valves_closed_when_extreme
+            or snapshot is None
+            or now - snapshot.computed_at > MAX_PLAN_AGE
+        ):
+            return {}
+        hour = next(
+            (h for h in snapshot.plan.hours if h.start <= now < h.start + timedelta(hours=1)),
+            None,
+        )
+        if hour is None or not hour.extreme:
+            return {}
+        return dict.fromkeys(s.room_thermostat_entities, s.extreme_floor_c)
 
     def _control(self) -> None:
         """Active mode: review the last days once a day, watch for trouble, apply the plan."""
