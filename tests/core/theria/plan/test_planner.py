@@ -233,12 +233,15 @@ def test_the_heat_is_never_off_for_long_stretches(settings, make_inputs):
     assert longest <= 6
 
 
-def test_the_room_ends_the_horizon_near_where_the_flat_setpoint_would_leave_it(
+def test_the_horizon_ends_at_the_comfort_target_not_at_the_rooms_current_level(
     settings, make_inputs
 ):
+    # A room above its target is not owed that heat back: the plan may let it settle towards the
+    # target, but never under it (the end of the horizon is charged against the target).
     result = run(make_inputs(daily_prices(), room_c=20.3, slab_c=33.0), settings)
     flat_end = result.baseline_hours[-1].room_c_end
-    assert result.hours[-1].room_c_end > flat_end - 0.15
+    assert result.end_reference_c == pytest.approx(settings.target_c)
+    assert settings.target_c - 0.15 < result.hours[-1].room_c_end < flat_end - 0.1
 
 
 def test_a_room_the_flat_setpoint_keeps_below_target_still_shifts_heat_to_the_cheap_hours(
@@ -487,8 +490,9 @@ def test_the_plan_closes_the_loops_in_the_dear_hours(settings, make_inputs):
     inputs = make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0)
     result = run(inputs, closing(settings))
     closed = np.array([h.valves_closed for h in result.hours])
-    assert closed.any() and not closed[~EVENING].all()
-    assert all(price[i] > 0.8 for i in np.flatnonzero(closed))
+    assert closed[EVENING].all()
+    assert not closed[:EVENING.argmax()].any(), "no closing before the dear hours"
+
 
 
 def test_a_closed_hour_costs_only_the_share_of_the_lowest_setpoint_energy(settings, make_inputs):

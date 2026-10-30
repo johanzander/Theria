@@ -128,11 +128,6 @@ class _Problem:
         self.pump = pump
         self.room = room
         self.horizon = len(inputs.hour_starts)
-        # The horizon must end where it started: a sag has to be paid back (like the battery's
-        # state of charge in the BESS planner), otherwise every replan would start a little
-        # lower than the last one. The room closes a gap in about its time constant, so the
-        # payback is that many hours of the energy that holds the room higher.
-        self.reference_room_c = max(inputs.initial.room_c, settings.target_c)
         self.terminal_hours = min(MAX_TERMINAL_HOURS, 1.0 / (room.k_slab + room.k_out))
         self.actions = np.arange(
             settings.rts_min_c, settings.rts_max_c + 1e-9, settings.rts_step_c
@@ -159,6 +154,14 @@ class _Problem:
             dtype=bool,
         )
         self.targets = np.where(night, settings.night_target_c, settings.target_c)
+        # A sag has to be paid back (like the battery's state of charge in the BESS planner), otherwise
+        # every replan would start a little lower than the last one: the horizon ends at the comfort
+        # target, the level the room is wanted at. Not at the room's current level: a room above its
+        # target (sun, stove, the plan's own pre-heat) is not owed that heat back, and buying it in the
+        # last hours of the horizon is buying it at whatever price those hours have. The room closes a
+        # gap in about its time constant, so the payback is that many hours of the energy that holds
+        # the room higher.
+        self.reference_room_c = float(self.targets[-1])
         self.floors = np.where(
             inputs.extreme,
             settings.extreme_floor_c,

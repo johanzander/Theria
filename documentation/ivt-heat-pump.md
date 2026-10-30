@@ -573,3 +573,17 @@ held below the room temperature the loops close and the compressor idles.
 - The LK cloud is slow: a thermostat write is often not confirmed within the read-back time (Control tab: "failed ... read back 22.0,
   wrote 19.5"); Theria keeps it as pending and the value usually arrives late.
 - Settings in the Theria UI only apply when the Save button under the table is pressed (orange = edited, not saved).
+
+### The end of the horizon is charged against the comfort target (2026-10-30)
+
+The planner charges the room for ending the horizon low ("a sag has to be paid back"). The reference used to be the room's *current*
+level (capped by where the flat setpoint ends). With closable floor loops this made the plan coast all day with the loops closed and
+then buy the heat back in the last hours of the horizon, which on 2026-10-30 were the dearest of the day (setpoint 20.5 at
+3.2 kr/kWh with the room at 19.2 and the comfort target 18.5). Found by replaying the live plan offline from the add-on's API
+(`tests/core/theria/plan/test_planner_live_day.py` rebuilds those inputs); the end reference was 19.20 and the charge 177.7 kr per C,
+because the charge is valued with the valve opening at the reference and the LK limit was 19.5 by hand.
+
+The reference is now the comfort target at the last hour of the horizon (the night target when it ends at night). A room above its
+target is not owed that heat back; a room under it still is. Lowering the comfort target now lowers where the plan lets the room settle.
+Setting the room limit and the LK limit by hand to 19.5 (a workaround) also distorts the plan: the sun swing puts the modelled room above
+the limit and the ceiling violation (100 kr per C and hour) dominates the objective; leave them at 22 and use the plan.
