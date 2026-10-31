@@ -110,9 +110,11 @@ def test_one_unreachable_thermostat_does_not_stop_the_other(lk_settings):
 
 
 def test_a_write_that_is_not_accepted_is_reported_not_assumed(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(19.5))
+    executor, ha, now = make(lk_settings, FakeLK(19.5))
     ha.ignore.add("climate.lk_b")
-    assert executor.execute().action == "failed"
+    assert executor.execute().action == "pending"  # the cloud may still deliver it
+    now[0] += timedelta(minutes=50)
+    assert executor.execute().action == "failed"  # it did not
 
 
 def test_restore_writes_the_base_everywhere_and_reports_failure(lk_settings):
@@ -157,19 +159,23 @@ def slow_cloud_failing_once(lk_settings):
     executor, ha, now = make(lk_settings, FakeLK(LIMIT))
     assert executor.execute().action == "kept"
     ha.lag = 1000
-    assert executor.execute({"climate.lk_a": 20.5}).action == "failed"
+    assert executor.execute({"climate.lk_a": 20.5}).action == "pending"
     ha.lag, ha._pending = 0, {}
     now[0] += timedelta(minutes=15)
     return executor, ha, now
 
 
-def test_a_thermostat_that_accepts_after_the_wait_is_not_taken_for_a_hand_change(lk_settings):
+def test_a_thermostat_that_accepts_after_the_wait_is_not_taken_for_a_hand_change(
+    lk_settings,
+):
     executor, ha, _ = slow_cloud_failing_once(lk_settings)
     ha.values["climate.lk_a"] = 20.5  # the cloud caught up
     assert executor.execute({"climate.lk_a": 20.5}).action == "kept"
 
 
-def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_a_hand_change(lk_settings):
+def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_a_hand_change(
+    lk_settings,
+):
     executor, ha, _ = slow_cloud_failing_once(lk_settings)
     ha.values["climate.lk_a"] = 19.0
     assert executor.execute({"climate.lk_a": 20.5}).action == "paused"
@@ -184,14 +190,131 @@ def test_what_was_still_pending_survives_a_restart_of_the_lk_executor(lk_setting
     assert again.execute({"climate.lk_a": 20.5}).action == "kept"
 
 
-def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_one_lagged(lk_settings):
+def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_one_lagged(
+    lk_settings,
+):
     ha = FakeLK(19.5)
     executor2, ha, now2 = make(lk_settings, ha)
     executor2.restore_base()  # both thermostats are known at the base
     ha.ignore.add("climate.lk_b")  # the cloud does not deliver this one in time
     result = executor2.execute()
-    assert result.action == "failed" and ha.values["climate.lk_a"] == LIMIT
+    assert result.action == "pending" and ha.values["climate.lk_a"] == LIMIT
     ha.ignore.discard("climate.lk_b")
     ha.values["climate.lk_b"] = LIMIT  # delivered late
     now2[0] += timedelta(minutes=15)
     assert executor2.execute().action == "kept"
+
+
+# ---- the LK cloud: a write shows up after minutes, may be rounded, and an old value can come back
+
+
+class CloudLK:
+    """Thermostats behind the LK cloud: a write is visible after `lag` minutes (the cloud polls
+    every 15-30 minutes), the value is rounded down to `resolution`, and until then reads show
+    the old value."""
+
+    def __init__(self, clock, value=LIMIT, lag=20, resolution=0.1):
+        self.clock = clock
+        self.lag = timedelta(minutes=lag)
+        self.resolution = resolution
+        self.shown = dict.fromkeys(THERMOSTATS, value)
+        self.writes = []
+        self._arriving: dict[str, tuple[float, datetime]] = {}
+
+    def _settle(self, entity_id):
+        arriving = self._arriving.get(entity_id)
+        if arriving and self.clock[0] >= arriving[1]:
+            self.shown[entity_id] = arriving[0]
+            del self._arriving[entity_id]
+
+    def get_climate_state(self, entity_id):
+        self._settle(entity_id)
+        return {"target_temperature": self.shown[entity_id]}
+
+    def set_temperature(self, entity_id, temperature):
+        self.writes.append((entity_id, temperature))
+        rounded = int(temperature / self.resolution + 1e-9) * self.resolution
+        self._arriving[entity_id] = (round(rounded, 2), self.clock[0] + self.lag)
+
+    def stale(self, entity_id, value):
+        """The cloud shows an old value again (it flaps), whatever was written."""
+        self._arriving.pop(entity_id, None)
+        self.shown[entity_id] = value
+
+
+def cloud(lk_settings, lag=20, resolution=0.1):
+    clock = [NOW]
+    ha = CloudLK(clock, lag=lag, resolution=resolution)
+    executor = LKExecutor(ha, lk_settings, now=lambda: clock[0], sleep=lambda _: None)
+    return executor, ha, clock
+
+
+HOLD = 17.85
+
+
+def test_a_thermostat_that_rounds_the_target_to_a_tenth_is_at_its_target(lk_settings):
+    executor, ha, clock = cloud(lk_settings, lag=0)
+    executor.execute({"climate.lk_a": HOLD})
+    assert ha.shown["climate.lk_a"] == 17.8  # the device rounds 17.85 down
+    writes = len(ha.writes)
+    clock[0] += timedelta(minutes=15)
+    assert executor.execute({"climate.lk_a": HOLD}).action == "kept"
+    assert len(ha.writes) == writes  # no rewrite of a value that is already there
+
+
+def test_a_write_the_cloud_has_not_shown_yet_is_pending_and_is_not_written_again(
+    lk_settings,
+):
+    executor, ha, clock = cloud(lk_settings, lag=20)
+    assert executor.execute({"climate.lk_a": HOLD}).action == "pending"
+    writes = len(ha.writes)
+    clock[0] += timedelta(minutes=15)  # still the old value in the cloud
+    assert executor.execute({"climate.lk_a": HOLD}).action == "pending"
+    assert len(ha.writes) == writes
+    clock[0] += timedelta(minutes=10)  # now it has arrived
+    assert executor.execute({"climate.lk_a": HOLD}).action == "kept"
+    assert len(ha.writes) == writes
+
+
+def test_a_write_that_never_arrives_is_a_failure_once_the_cloud_has_had_its_time(
+    lk_settings,
+):
+    executor, ha, clock = cloud(lk_settings, lag=10_000)
+    assert executor.execute({"climate.lk_a": HOLD}).action == "pending"
+    clock[0] += timedelta(minutes=50)
+    assert executor.execute({"climate.lk_a": HOLD}).action == "failed"
+
+
+def test_an_old_value_that_comes_back_from_the_cloud_is_not_a_hand_change(lk_settings):
+    executor, ha, clock = cloud(lk_settings, lag=0)
+    executor.execute({"climate.lk_a": HOLD})
+    assert ha.shown["climate.lk_a"] == 17.8
+    ha.stale(
+        "climate.lk_a", LIMIT
+    )  # the cloud flaps back to what was there before the write
+    clock[0] += timedelta(minutes=15)
+    result = executor.execute({"climate.lk_a": HOLD})
+    assert result.action != "paused"
+
+
+def test_an_old_value_that_stays_after_the_cloud_lag_is_written_again(lk_settings):
+    executor, ha, clock = cloud(lk_settings, lag=0)
+    executor.execute({"climate.lk_a": HOLD})
+    ha.stale("climate.lk_a", LIMIT)
+    clock[0] += timedelta(minutes=50)
+    writes = len(ha.writes)
+    executor.execute({"climate.lk_a": HOLD})
+    assert len(ha.writes) > writes
+
+
+def test_a_third_value_is_still_a_hand_change_while_the_cloud_is_slow(lk_settings):
+    executor, ha, clock = cloud(lk_settings, lag=20)
+    executor.execute({"climate.lk_a": HOLD})
+    ha.stale("climate.lk_a", 20.0)  # neither the old limit nor what was written
+    clock[0] += timedelta(minutes=15)
+    assert executor.execute({"climate.lk_a": HOLD}).action == "paused"
+
+
+def test_restore_does_not_hide_an_unconfirmed_write(lk_settings):
+    executor, ha, clock = cloud(lk_settings, lag=10_000)
+    assert executor.restore_base().action == "failed"
