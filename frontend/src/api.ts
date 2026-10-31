@@ -3,6 +3,9 @@ import type { Recommendation, DayView, Execution, ModelEntry, PlanResponse, Savi
 // Served at <ingress>/static/plan/, so the API is two levels up; the dev server proxies /api.
 const BASE = import.meta.env.DEV ? '/api/' : '../../api/'
 
+/** The debug export: a markdown file with everything needed to understand what Theria did. */
+export const debugExportUrl = BASE + 'export-debug-data'
+
 async function get<T>(path: string): Promise<T | null> {
   const response = await fetch(BASE + path)
   if (response.status === 404 || response.status === 409) return null

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fetchExecution, fetchLog, fetchPlan, fetchPreflight, refitModels, setMode } from '../api'
+import { debugExportUrl, fetchExecution, fetchLog, fetchPlan, fetchPreflight, refitModels, setMode } from '../api'
 import { roomRows, statusTone } from '../model'
 import { Card, PageIntro, useLoaded } from '../ui'
 
@@ -66,7 +66,7 @@ export function Control() {
             {execution.data.radiators
               ? execution.data.radiators.readable === 0
                 ? ' Radiators: no signal (none of them can be read), so they do not limit the plan.'
-                : ` Radiators: ${execution.data.radiators.calling ? 'calling for heat, no cuts' : 'satisfied'} (${execution.data.radiators.readable} readable).`
+                : ` Radiators: ${execution.data.radiators.calling ? 'calling for heat, the pump setpoint is held at the base or above' : 'satisfied'} (${execution.data.radiators.readable} readable).`
               : ''}
           </p>
           {execution.data.regulator && execution.data.regulator.length > 0 ? (
@@ -142,6 +142,18 @@ export function Control() {
           <button onClick={refit} disabled={refitting}>{refitting ? 'Refitting...' : 'Refit models now'}</button>
         </div>
         {refitMessage && <p className="note">{refitMessage}</p>}
+      </div>
+
+      <div className="panel">
+        <h2>Debug data</h2>
+        <p className="note">
+          Everything needed to understand what Theria did and to play a plan again: key findings, settings, the entities it reads and
+          writes, every plan run with its inputs, every control cycle with what the pump and the thermostats showed, the action log and
+          the log. Attach it to a problem report.
+        </p>
+        <div className="buttons">
+          <a href={debugExportUrl} download>Download debug data</a>
+        </div>
       </div>
 
       {execution.data && (

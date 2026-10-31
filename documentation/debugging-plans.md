@@ -1,5 +1,14 @@
 # Debugging a plan
 
+**Start with the debug export** (modelled on BESS Manager's): Control tab -> "Download debug data", or
+`GET /api/export-debug-data`. One markdown file with auto-generated key findings first (the first
+hour flipping between replans, a thermostat showing something else than was asked, failed or paused
+actions, preflight failures, log warnings), then system, preflight, settings, the entities Theria
+reads and writes as Home Assistant shows them, every plan run with its inputs, every control cycle
+(what the pump and the thermostats showed, what was asked, what came of it), the action log and
+today's and yesterday's log (`/data/logs/theria-YYYY-MM-DD.log`, a week kept). The raw pieces are
+also at `/api/plan/runs?hours=N` and `/api/plan/trace?hours=N`.
+
 The plan is a pure function of its inputs, the settings it ran on and the model parameters. The
 add-on therefore keeps **every plan computation** (every 15 minutes, 7 days) with all three in
 `/data/plan_runs.jsonl` (`.plan_runs.jsonl` locally), the way BESS Manager keeps a prediction

@@ -6,8 +6,6 @@ a strange hour ("why pre-heat at the dearest price?") can be reproduced, taken a
 another setting. One JSON line per run, kept for a few days.
 """
 
-import json
-import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -16,10 +14,9 @@ import numpy as np
 
 from core.theria.plan.planner import Plan, PlanInputs, plan
 from core.theria.plan.pump_model import PumpParams
+from core.theria.plan.recent_log import RecentLines
 from core.theria.plan.room_model import RoomParams, RoomState
 from core.theria.plan.settings import PlanSettings
-
-logger = logging.getLogger(__name__)
 
 KEEP = timedelta(days=7)
 
@@ -132,34 +129,9 @@ def replay(run: PlanRun, settings: PlanSettings | None = None) -> Plan:
     return plan(run.inputs, settings or run.settings, run.pump, run.room)
 
 
-class PlanRunStore:
+class PlanRunStore(RecentLines):
     def __init__(self, path: str, now: datetime):
-        self._path = path
-        self._lines = self._load(now)
+        super().__init__(path, now, KEEP, "computed_at")
 
-    def _load(self, now: datetime) -> list[tuple[datetime, str]]:
-        kept: list[tuple[datetime, str]] = []
-        try:
-            with open(self._path) as f:
-                for line in f:
-                    try:
-                        at = datetime.fromisoformat(json.loads(line)["computed_at"])
-                    except (ValueError, KeyError, TypeError):
-                        logger.warning("skipping damaged line in %s", self._path)
-                        continue
-                    if now - at <= KEEP:
-                        kept.append((at, line.rstrip("\n")))
-        except FileNotFoundError:
-            return kept
-        with open(self._path, "w") as f:
-            f.writelines(line + "\n" for _, line in kept)
-        return kept
-
-    def append(self, run: PlanRun) -> None:
-        line = json.dumps(run_to_dict(run))
-        self._lines.append((run.computed_at, line))
-        with open(self._path, "a") as f:
-            f.write(line + "\n")
-
-    def read(self, since: datetime) -> list[dict[str, Any]]:
-        return [json.loads(line) for at, line in self._lines if at >= since]
+    def append_run(self, run: PlanRun) -> None:
+        self.append(run_to_dict(run))

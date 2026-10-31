@@ -25,6 +25,18 @@ logger.add(
 )
 
 
+# A log file per day, kept for a week, that the debug export reads (/api/export-debug-data)
+if Path("/data").is_dir():
+    logger.add(
+        "/data/logs/theria-{time:YYYY-MM-DD}.log",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <5} | {extra[module_name]} - {message}",
+        level="INFO",
+        rotation="00:00",
+        retention="7 days",
+        filter=add_module_name,
+    )
+
+
 # Intercept standard logging
 class InterceptHandler(logging.Handler):
     def emit(self, record):

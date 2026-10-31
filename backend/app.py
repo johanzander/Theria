@@ -32,6 +32,7 @@ from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.event_log import EventLog
+from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import (
@@ -218,6 +219,13 @@ async def lifespan(app: FastAPI):
                         os.path.dirname(__file__), "..", ".plan_runs.jsonl"
                     )
                 )
+                trace_path = (
+                    "/data/exec_trace.jsonl"
+                    if os.path.isdir("/data")
+                    else os.path.join(
+                        os.path.dirname(__file__), "..", ".exec_trace.jsonl"
+                    )
+                )
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -267,6 +275,8 @@ async def lifespan(app: FastAPI):
                     event_log=EventLog(event_path),
                     plan_record=plan_record,
                     plan_runs=PlanRunStore(runs_path, datetime.now(UTC)),
+                    exec_trace=ExecTraceStore(trace_path, datetime.now(UTC)),
+                    log_dir="/data/logs" if os.path.isdir("/data") else None,
                     settings_manager=settings_manager,
                     actuals_loader=actuals_loader,
                     price_periods=prices.periods,

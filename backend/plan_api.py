@@ -1,12 +1,13 @@
 """REST endpoints for the price-driven heating plan (shadow and active mode)."""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from core.theria.exceptions import (
@@ -215,6 +216,32 @@ async def get_plan_runs(
     """Every recent plan computation with all its inputs, settings and parameters, for replay
     (`scripts/replay_plan.py`)."""
     return svc.plan_runs(svc.now() - timedelta(hours=hours))
+
+
+@router.get("/export-debug-data")
+async def export_debug_data(
+    svc: Annotated[PlanService, Depends(get_service)], compact: bool = True
+) -> PlainTextResponse:
+    """The debug export as a markdown download: key findings, settings, entities, plan runs with
+    their inputs, every control cycle, the action log and the log. Attach it to a bug report.
+    """
+    report = await asyncio.to_thread(svc.debug_report, compact)
+    name = f"theria-debug-{datetime.now(UTC):%Y-%m-%d-%H%M%S}.md"
+    return PlainTextResponse(
+        report,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@router.get("/plan/trace")
+async def get_exec_trace(
+    svc: Annotated[PlanService, Depends(get_service)],
+    hours: Annotated[int, Query(ge=1, le=168)] = 6,
+) -> Any:
+    """Every control cycle: what the pump and the thermostats showed, what was asked of them and
+    written, and the plan's hour. Only changes reach `/plan/log`."""
+    return svc.exec_trace(svc.now() - timedelta(hours=hours))
 
 
 @router.get("/plan/log")

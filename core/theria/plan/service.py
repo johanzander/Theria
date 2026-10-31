@@ -6,10 +6,12 @@ write the room setpoint and reports trouble (the electric heater running while i
 
 import asyncio
 import logging
+import os
+import re
 import threading
 from collections import deque
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -34,8 +36,14 @@ from core.theria.plan.data_health import (
     price_feed_check,
 )
 from core.theria.plan.day_view import build_day_view, day_hours
+from core.theria.plan.debug_export import (
+    build_report,
+    key_findings,
+    read_log_lines,
+)
 from core.theria.plan.disturbance import DisturbanceEstimator, Sample
 from core.theria.plan.event_log import EventLog
+from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
 from core.theria.plan.lk_executor import LKExecutor, LKResult, step_up
 from core.theria.plan.model_catalog import build_catalog
@@ -45,7 +53,13 @@ from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
 from core.theria.plan.plan_run import PlanRunStore, make_run
-from core.theria.plan.planner import Plan, PlanInputs, plan, sun_filtered_sequence
+from core.theria.plan.planner import (
+    HourPlan,
+    Plan,
+    PlanInputs,
+    plan,
+    sun_filtered_sequence,
+)
 from core.theria.plan.preflight import Check, preflight_checks
 from core.theria.plan.prices import (
     PriceHistory,
@@ -79,6 +93,7 @@ logger = logging.getLogger(__name__)
 SLAB_INIT_FRACTION = 0.5  # rough prior: slab sits half way between room and flow target
 SUN_WARMUP_HOURS = 24
 LOG_KEPT = 200
+ENTITY_ID = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 RADIATOR_HOLD = timedelta(hours=1)  # a radiator that called stays counted this long
 TUNING_DAYS = 14
 TUNING_CACHE = timedelta(
@@ -116,6 +131,17 @@ def _floor_hour(moment: datetime) -> datetime:
     return moment.replace(minute=0, second=0, microsecond=0)
 
 
+def _strings(value: Any) -> list[str]:
+    """Every string inside nested dicts, lists and tuples."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for v in [*value.keys(), *value.values()] for s in _strings(v)]
+    if isinstance(value, list | tuple):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
 class PlanService:
     """Computes the price-driven plan. Shadow mode: never writes to Home Assistant."""
 
@@ -138,6 +164,8 @@ class PlanService:
         lk_executor: LKExecutor | None = None,
         plan_record: PlanRecordStore | None = None,
         plan_runs: PlanRunStore | None = None,
+        exec_trace: ExecTraceStore | None = None,
+        log_dir: str | None = None,
         settings_manager: SettingsManager | None = None,
         safety: Safety | None = None,
         notifier: Notifier | None = None,
@@ -180,6 +208,8 @@ class PlanService:
         self._lk = lk_executor
         self._plan_record = plan_record
         self._plan_runs = plan_runs
+        self._exec_trace = exec_trace
+        self._log_dir = log_dir
         self._settings_manager = settings_manager
         self._safety = safety
         self._notifier = notifier
@@ -1035,7 +1065,7 @@ class PlanService:
         if self._plan_runs is None:
             return
         try:
-            self._plan_runs.append(
+            self._plan_runs.append_run(
                 make_run(now, self._mode, inputs, settings, self._pump, room, result)
             )
         except OSError:
@@ -1160,12 +1190,11 @@ class PlanService:
                 holds[entity] = min(target, holds.get(entity, target))
         return holds or None
 
-    def _closed_now(self, now: datetime) -> bool:
-        """Whether the plan last computed has the floor loops closed in the hour that is applied."""
+    def _plan_hour_now(self, now: datetime) -> HourPlan | None:
         snapshot = self.latest()
         if snapshot is None:
-            return False
-        hour = next(
+            return None
+        return next(
             (
                 h
                 for h in snapshot.plan.hours
@@ -1173,7 +1202,138 @@ class PlanService:
             ),
             None,
         )
+
+    def _closed_now(self, now: datetime) -> bool:
+        """Whether the plan last computed has the floor loops closed in the hour that is applied."""
+        hour = self._plan_hour_now(now)
         return hour is not None and hour.valves_closed
+
+    def _trace_cycle(
+        self,
+        pump: ExecutionResult,
+        lk: LKResult | None,
+        holds: dict[str, float] | None,
+    ) -> None:
+        """Keep what this cycle read, asked for and wrote (see exec_trace)."""
+        if self._exec_trace is None or self._executor is None:
+            return
+        now = self._now()
+        hour = self._plan_hour_now(now)
+        effective = self._effective_settings()
+        try:
+            self._exec_trace.append(
+                {
+                    "at": now.isoformat(),
+                    "mode": self._mode,
+                    "pump": {
+                        "read": self._executor.last_read,
+                        "result": {
+                            "action": pump.action,
+                            "target_c": pump.target_c,
+                            "written_c": pump.written_c,
+                            "reason": pump.reason,
+                        },
+                    },
+                    "lk": (
+                        None
+                        if lk is None or self._lk is None
+                        else {
+                            "read": self._lk.last_read,
+                            "holds": holds,
+                            "targets": self._lk.last_targets,
+                            "result": {
+                                "action": lk.action,
+                                "target_c": lk.target_c,
+                                "reason": lk.reason,
+                            },
+                        }
+                    ),
+                    "plan_hour": (
+                        None
+                        if hour is None
+                        else {
+                            "start": hour.start.isoformat(),
+                            "rts_c": hour.rts_c,
+                            "closed": hour.valves_closed,
+                            "floor_c": hour.floor_c,
+                            "price_sek_per_kwh": hour.price_sek_per_kwh,
+                            "binding": hour.reason.get("binding"),
+                        }
+                    ),
+                    "rts_range_c": [effective.rts_min_c, effective.rts_max_c],
+                    "radiators": self._radiators,
+                    "disturbance_c_per_h": self._disturbance.at(now),
+                    "regulator": [
+                        {
+                            "room": r.room,
+                            "temperature_c": r.temperature_c,
+                            "state": r.state,
+                            "valve_fraction": r.valve_fraction,
+                        }
+                        for r in self._regulator_statuses
+                    ],
+                }
+            )
+        except OSError:
+            logger.warning("could not write the execution trace", exc_info=True)
+
+    def _entity_snapshot(self) -> dict[str, Any]:
+        """What Home Assistant shows for every entity the settings name."""
+        ids = sorted(
+            {e for e in _strings(asdict(self._settings)) if ENTITY_ID.match(e)}
+        )
+        out: dict[str, Any] = {}
+        for entity in ids:
+            try:
+                state = self._ha.get_state(entity)
+                out[entity] = {
+                    "state": state["state"],
+                    "attributes": state["attributes"],
+                }
+            except (RuntimeError, ValueError, KeyError, TypeError) as e:
+                out[entity] = {"error": f"{type(e).__name__}: {e}"}
+        return out
+
+    def debug_report(self, compact: bool = True) -> str:
+        """Everything needed to understand what Theria did, as markdown (see debug_export)."""
+        now = self._now()
+        since = now - timedelta(hours=24 if compact else 168)
+        runs = self.plan_runs(since)
+        trace = self.exec_trace(since)
+        events = self.action_log()
+        preflight = [(c.name, c.status, c.detail) for c in self.preflight()]
+        local = datetime.now()
+        logs = read_log_lines(
+            self._log_dir,
+            [f"{local - timedelta(days=1):%Y-%m-%d}", f"{local:%Y-%m-%d}"],
+        )
+        return build_report(
+            now=now,
+            version=os.environ.get("BUILD_VERSION", "unknown"),
+            mode=self._mode,
+            findings=key_findings(
+                runs, trace, events, logs if isinstance(logs, list) else [], preflight
+            ),
+            preflight=preflight,
+            settings={
+                "plan": asdict(self._settings),
+                "effective_rts_range_c": [
+                    self._effective_settings().rts_min_c,
+                    self._effective_settings().rts_max_c,
+                ],
+                "catalog": self.settings_catalog(),
+            },
+            execution=self.execution_status(),
+            entities=self._entity_snapshot(),
+            runs=runs,
+            trace=trace,
+            events=events,
+            logs=logs,
+            compact=compact,
+        )
+
+    def exec_trace(self, since: datetime) -> list[dict[str, Any]]:
+        return [] if self._exec_trace is None else self._exec_trace.read(since)
 
     def _plan_valve_holds(self) -> dict[str, float]:
         """The floor loops close while the plan's current hour has them closed. The thermostats are
@@ -1230,10 +1390,14 @@ class PlanService:
             )
             if pump.action != "kept":
                 self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
+            holds = None
+            lk = None
             if self._lk is not None:
-                lk = self._lk.execute(self._holds())
+                holds = self._holds()
+                lk = self._lk.execute(holds)
                 if lk.action != "kept":
                     self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")
+            self._trace_cycle(pump, lk, holds)
             self._save_state()
 
     def _automation_conflict(self) -> bool:

@@ -74,6 +74,9 @@ class PlanExecutor:
         self._last_raise_at: datetime | None = None
         self._pause_until: datetime | None = None
         self.last_result: ExecutionResult | None = None
+        self.last_read: float | None = (
+            None  # the setpoint the pump showed before the last cycle
+        )
 
     def use_settings(self, settings: PlanSettings) -> None:
         self._s = settings
@@ -98,6 +101,7 @@ class PlanExecutor:
     ) -> ExecutionResult:
         """Apply the plan's hour; `floor_c` is the lowest setpoint to write (radiators call for heat)."""
         now = self._now()
+        self.last_read = None
         try:
             current = float(
                 self._ha.get_climate_state(self._s.room_setpoint_entity)[
@@ -108,6 +112,7 @@ class PlanExecutor:
             return self._record(
                 ExecutionResult("failed", None, None, f"cannot read setpoint: {e}", now)
             )
+        self.last_read = current
         if self._pause_until is not None and now < self._pause_until:
             return self._record(
                 ExecutionResult(

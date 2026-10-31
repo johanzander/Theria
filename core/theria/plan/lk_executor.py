@@ -68,6 +68,9 @@ class LKExecutor:
         self._pending: dict[str, float] = {}
         self._pause_until: datetime | None = None
         self.last_result: LKResult | None = None
+        # what each thermostat showed before the last cycle and what the cycle asked of it
+        self.last_read: dict[str, float] | None = None
+        self.last_targets: dict[str, float] | None = None
 
     def use_settings(self, settings: PlanSettings) -> None:
         self._s = settings
@@ -91,9 +94,11 @@ class LKExecutor:
 
     def execute(self, holds: dict[str, float] | None = None) -> LKResult:
         now = self._now()
+        self.last_read = self.last_targets = None
         current = self._read_all()
         if isinstance(current, LKResult):
             return self._record(current)
+        self.last_read = dict(current)
         if self._pause_until is not None and now < self._pause_until:
             return self._record(
                 LKResult(
@@ -123,6 +128,7 @@ class LKExecutor:
         targets = {
             entity: (holds or {}).get(entity, self._s.lk_limit_c) for entity in current
         }
+        self.last_targets = targets
         return self._apply(targets, current, "hold" if holds else "limit", now)
 
     def expect_base(self) -> None:

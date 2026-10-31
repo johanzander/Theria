@@ -57,4 +57,5 @@ frontend/dist/
 documentation/private/
 .plan_record.jsonl
 .plan_runs.jsonl
+.exec_trace.jsonl
 .plan_overrides.json
