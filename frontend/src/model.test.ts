@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, savingsSummary, tabHref,
-  timelineRows, quarterRows, hasData, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals,
+  timelineRows, quarterRows, hasData, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted,
   type PlanResponse, type DayHour, type DayView,
 } from './model'
 
@@ -278,5 +278,32 @@ describe('savingsTotals', () => {
 
   it('has no measured total when nothing was measured', () => {
     expect(savingsTotals(timelineRows([day('2026-10-14', '', [dayHour('2026-10-14T00:00:00+00:00')])])).measured).toBeNull()
+  })
+})
+
+describe('history and prediction', () => {
+  const rows = [
+    { key: 'a', past: true, plan: 16 },
+    { key: 'b', past: true, plan: 18 },
+    { key: 'c', past: false, plan: 20 },
+    { key: 'd', past: false, plan: 17 },
+  ]
+
+  it('keeps the hours that have passed under the key and the rest under its predicted twin', () => {
+    const split = splitPredicted(rows, ['plan'])
+    expect(split.map((r) => r.plan)).toEqual([16, 18, null, null])
+    expect(split.map((r) => r.planPredicted)).toEqual([null, 18, 20, 17])
+  })
+
+  it('has no prediction when everything is history and no history when nothing is', () => {
+    expect(splitPredicted(rows.slice(0, 2), ['plan']).map((r) => r.planPredicted)).toEqual([null, null])
+    const future = splitPredicted(rows.slice(2), ['plan'])
+    expect(future.map((r) => r.plan)).toEqual([null, null])
+    expect(future.map((r) => r.planPredicted)).toEqual([20, 17])
+  })
+
+  it('finds where the prediction starts', () => {
+    expect(firstPredicted(rows)).toBe('c')
+    expect(firstPredicted(rows.slice(0, 2))).toBeUndefined()
   })
 })

@@ -137,6 +137,7 @@ export interface QuarterRow {
   rtsPlanned: number | null
   rtsBaseline: number | null
   current: boolean
+  past: boolean
 }
 
 /** The price chart at the resolution of the market (15 minutes); an hour's setpoint holds for its quarters. */
@@ -153,6 +154,7 @@ export function quarterRows(views: (DayView | null)[]): QuarterRow[] {
           rtsPlanned: h.rts_planned,
           rtsBaseline: h.rts_baseline,
           current: h.start === view!.now && q === 0,
+          past: h.past,
         }),
       )
     }
@@ -191,4 +193,26 @@ export const MODE_LABEL: Record<Mode, string> = {
   preheat: 'Pre-heat',
   cut: 'Cut',
   hold: 'Hold',
+}
+
+/**
+ * History and prediction in separate series: for each key the value stays under `key` for hours that
+ * have passed and goes to `${key}Predicted` for the rest, so that a chart can draw the two differently.
+ * The last hour of the history is in both, so the lines meet.
+ */
+export function splitPredicted<T extends { past: boolean }>(rows: T[], keys: (keyof T & string)[]): (T & Record<string, unknown>)[] {
+  const firstFuture = rows.findIndex((r) => !r.past)
+  return rows.map((row, i) => {
+    const out: Record<string, unknown> = { ...row }
+    for (const key of keys) {
+      out[key] = firstFuture === -1 || i < firstFuture ? row[key] : null
+      out[`${key}Predicted`] = firstFuture !== -1 && i >= firstFuture - 1 ? row[key] : null
+    }
+    return out as T & Record<string, unknown>
+  })
+}
+
+/** The first row that is not history, for shading the prediction. */
+export function firstPredicted(rows: { key: string; past: boolean }[]): string | undefined {
+  return rows.find((r) => !r.past)?.key
 }
