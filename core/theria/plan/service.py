@@ -24,21 +24,6 @@ from core.theria.exceptions import (
 )
 from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
-from core.theria.plan.day_view import build_day_view, day_hours
-from core.theria.plan.event_log import EventLog
-from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
-from core.theria.plan.lk_executor import LKExecutor, LKResult
-from core.theria.plan.model_catalog import build_catalog
-from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
-from core.theria.plan.regulator import Regulator, RoomStatus
-from core.theria.plan.settings_manager import SettingsManager
-from core.theria.plan.skill import SkillTracker
-from core.theria.plan.morning import MorningRules, update_margin
-from core.theria.plan.night_drift import NightDrift, drift_pattern
-from core.theria.plan.disturbance import DisturbanceEstimator, Sample
-from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
-from core.theria.plan.parameter_log import ParameterLog
-from core.theria.plan.planner import PlanInputs, plan, sun_filtered_sequence
 from core.theria.plan.data_health import (
     COUNTED_WINDOW_HOURS,
     WINDOW_HOURS,
@@ -47,6 +32,19 @@ from core.theria.plan.data_health import (
     live_h60_checks,
     price_feed_check,
 )
+from core.theria.plan.day_view import build_day_view, day_hours
+from core.theria.plan.disturbance import DisturbanceEstimator, Sample
+from core.theria.plan.event_log import EventLog
+from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
+from core.theria.plan.lk_executor import LKExecutor, LKResult
+from core.theria.plan.model_catalog import build_catalog
+from core.theria.plan.morning import MorningRules, update_margin
+from core.theria.plan.night_drift import NightDrift, drift_pattern
+from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
+from core.theria.plan.parameter_log import ParameterLog
+from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
+from core.theria.plan.plan_run import PlanRunStore, make_run
+from core.theria.plan.planner import Plan, PlanInputs, plan, sun_filtered_sequence
 from core.theria.plan.preflight import Check, preflight_checks
 from core.theria.plan.prices import (
     PriceHistory,
@@ -55,6 +53,7 @@ from core.theria.plan.prices import (
     hourly_prices,
 )
 from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, PumpParams, flow_target
+from core.theria.plan.regulator import Regulator, RoomStatus
 from core.theria.plan.room_level import room_level_c
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
@@ -64,6 +63,8 @@ from core.theria.plan.room_model import (
 )
 from core.theria.plan.scoring import LeadScore, ScoreBoard
 from core.theria.plan.settings import SUPPORTED_MODES, PlanSettings
+from core.theria.plan.settings_manager import SettingsManager
+from core.theria.plan.skill import SkillTracker
 from core.theria.plan.snapshot import ComfortOutlook, PlanSnapshot
 from core.theria.plan.state_store import PlanState, PlanStateStore
 from core.theria.plan.trim import trim_night, trim_room, trim_warmup
@@ -134,6 +135,7 @@ class PlanService:
         executor: PlanExecutor | None = None,
         lk_executor: LKExecutor | None = None,
         plan_record: PlanRecordStore | None = None,
+        plan_runs: PlanRunStore | None = None,
         settings_manager: SettingsManager | None = None,
         safety: Safety | None = None,
         notifier: Notifier | None = None,
@@ -175,6 +177,7 @@ class PlanService:
         self._executor = executor
         self._lk = lk_executor
         self._plan_record = plan_record
+        self._plan_runs = plan_runs
         self._settings_manager = settings_manager
         self._safety = safety
         self._notifier = notifier
@@ -955,7 +958,9 @@ class PlanService:
             self._warmed_room(), level_c, t_out, baseline_flow, s.lk_limit_c
         )
         self._anchored_room = room_params
-        result = plan(inputs, self._effective_settings(), self._pump, room_params)
+        effective = self._effective_settings()
+        result = plan(inputs, effective, self._pump, room_params)
+        self._keep_run(now, inputs, effective, room_params, result)
         snapshot = PlanSnapshot(
             computed_at=now,
             mode=self._mode,
@@ -964,7 +969,7 @@ class PlanService:
             outdoor_bias_c=bias,
             initial=initial,
             comfort_outlook=self._comfort_outlook(
-                result, self._effective_settings(), room_params, baseline_flow
+                result, effective, room_params, baseline_flow
             ),
             model_status={
                 "pump": "prior" if self._models is None else "fitted",
@@ -974,6 +979,27 @@ class PlanService:
         self._snapshots.append(snapshot)
         self._record_plan(snapshot)
         return snapshot
+
+    def _keep_run(
+        self,
+        now: datetime,
+        inputs: PlanInputs,
+        settings: PlanSettings,
+        room: RoomParams,
+        result: Plan,
+    ) -> None:
+        """Keep what the plan was computed from, so that it can be replayed."""
+        if self._plan_runs is None:
+            return
+        try:
+            self._plan_runs.append(
+                make_run(now, self._mode, inputs, settings, self._pump, room, result)
+            )
+        except OSError:
+            logger.warning("could not write the plan run", exc_info=True)
+
+    def plan_runs(self, since: datetime) -> list[dict[str, Any]]:
+        return [] if self._plan_runs is None else self._plan_runs.read(since)
 
     def _record_plan(self, snapshot: PlanSnapshot) -> None:
         """Keep the first plan of each hour: the one that is applied for it."""

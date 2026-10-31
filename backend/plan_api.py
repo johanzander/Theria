@@ -1,7 +1,7 @@
 """REST endpoints for the price-driven heating plan (shadow and active mode)."""
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -203,6 +203,16 @@ async def get_preflight(svc: Annotated[PlanService, Depends(get_service)]) -> An
     return jsonable_encoder(
         {"ok": all(c.status != "fail" for c in checks), "checks": checks}
     )
+
+
+@router.get("/plan/runs")
+async def get_plan_runs(
+    svc: Annotated[PlanService, Depends(get_service)],
+    hours: Annotated[int, Query(ge=1, le=168)] = 6,
+) -> Any:
+    """Every recent plan computation with all its inputs, settings and parameters, for replay
+    (`scripts/replay_plan.py`)."""
+    return svc.plan_runs(svc.now() - timedelta(hours=hours))
 
 
 @router.get("/plan/log")

@@ -7,7 +7,7 @@ Minimal FastAPI application - will be expanded as features are added.
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 
 import log_config  # noqa: F401
 from fastapi import FastAPI, Request
@@ -32,8 +32,6 @@ from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.event_log import EventLog
-from core.theria.plan.plan_record import PlanRecordStore
-from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import (
@@ -43,9 +41,12 @@ from core.theria.plan.outcomes import (
     load_outcome_inputs,
 )
 from core.theria.plan.parameter_log import ParameterLog
+from core.theria.plan.plan_record import PlanRecordStore
+from core.theria.plan.plan_run import PlanRunStore
 from core.theria.plan.price_feed import NordpoolFeed
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
+from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.state_store import PlanStateStore
 from core.theria.plan.weather import OpenMeteoClient
 from core.theria.sensor_guard import SensorGuard, load_guard_settings
@@ -210,6 +211,13 @@ async def lifespan(app: FastAPI):
                         os.path.dirname(__file__), "..", ".plan_record.jsonl"
                     )
                 )
+                runs_path = (
+                    "/data/plan_runs.jsonl"
+                    if os.path.isdir("/data")
+                    else os.path.join(
+                        os.path.dirname(__file__), "..", ".plan_runs.jsonl"
+                    )
+                )
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -258,6 +266,7 @@ async def lifespan(app: FastAPI):
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
                     plan_record=plan_record,
+                    plan_runs=PlanRunStore(runs_path, datetime.now(UTC)),
                     settings_manager=settings_manager,
                     actuals_loader=actuals_loader,
                     price_periods=prices.periods,

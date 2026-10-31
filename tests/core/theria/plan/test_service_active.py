@@ -94,6 +94,7 @@ def make(
     actuals_loader=None,
     evening=3.0,
     plan_record=None,
+    plan_runs=None,
     settings_manager=None,
 ):
     ha = WritableHA(feed_periods(evening=evening), setpoint)
@@ -121,6 +122,7 @@ def make(
         event_log=event_log,
         actuals_loader=actuals_loader,
         plan_record=plan_record,
+        plan_runs=plan_runs,
         settings_manager=settings_manager,
     )
     return service, ha, notifier, calls, current
