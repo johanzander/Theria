@@ -7,6 +7,7 @@ times. The regulator may hold a single thermostat lower to close that room's val
 """
 
 import logging
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +22,17 @@ logger = logging.getLogger(__name__)
 MANUAL_PAUSE = timedelta(hours=1)
 MANUAL_CHANGE_C = 0.25
 CONFIRM_TOLERANCE_C = 0.25
+AT_TARGET_C = (
+    0.1  # the thermostats show their value to a tenth: a value that close is the target
+)
+LK_STEP_C = (
+    0.5  # the thermostats' target_temp_step: other values end up as 17.8 or 17.7
+)
+
+
+def step_up(value_c: float) -> float:
+    """The lowest valid thermostat setpoint that is not below `value_c`."""
+    return math.ceil(value_c / LK_STEP_C - 1e-9) * LK_STEP_C
 
 
 @dataclass(frozen=True)
@@ -156,7 +168,7 @@ class LKExecutor:
         )  # thermostats now at their target, whatever happened to the others
         for entity, value in current.items():
             target = targets[entity]
-            if abs(value - target) < 1e-9:
+            if abs(value - target) <= AT_TARGET_C:
                 done[entity] = target
                 continue
             try:

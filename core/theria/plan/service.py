@@ -37,7 +37,7 @@ from core.theria.plan.day_view import build_day_view, day_hours
 from core.theria.plan.disturbance import DisturbanceEstimator, Sample
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
-from core.theria.plan.lk_executor import LKExecutor, LKResult
+from core.theria.plan.lk_executor import LKExecutor, LKResult, step_up
 from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift, drift_pattern
@@ -1198,7 +1198,8 @@ class PlanService:
         )
         if hour is None or not hour.valves_closed:
             return {}
-        return dict.fromkeys(s.room_thermostat_entities, hour.floor_c)
+        # a valid thermostat step, rounded up: the loops reopen no later than the floor itself
+        return dict.fromkeys(s.room_thermostat_entities, step_up(hour.floor_c))
 
     def _control(self) -> None:
         """Active mode: review the last days once a day, watch for trouble, apply the plan."""

@@ -163,13 +163,17 @@ def slow_cloud_failing_once(lk_settings):
     return executor, ha, now
 
 
-def test_a_thermostat_that_accepts_after_the_wait_is_not_taken_for_a_hand_change(lk_settings):
+def test_a_thermostat_that_accepts_after_the_wait_is_not_taken_for_a_hand_change(
+    lk_settings,
+):
     executor, ha, _ = slow_cloud_failing_once(lk_settings)
     ha.values["climate.lk_a"] = 20.5  # the cloud caught up
     assert executor.execute({"climate.lk_a": 20.5}).action == "kept"
 
 
-def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_a_hand_change(lk_settings):
+def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_a_hand_change(
+    lk_settings,
+):
     executor, ha, _ = slow_cloud_failing_once(lk_settings)
     ha.values["climate.lk_a"] = 19.0
     assert executor.execute({"climate.lk_a": 20.5}).action == "paused"
@@ -184,7 +188,9 @@ def test_what_was_still_pending_survives_a_restart_of_the_lk_executor(lk_setting
     assert again.execute({"climate.lk_a": 20.5}).action == "kept"
 
 
-def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_one_lagged(lk_settings):
+def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_one_lagged(
+    lk_settings,
+):
     ha = FakeLK(19.5)
     executor2, ha, now2 = make(lk_settings, ha)
     executor2.restore_base()  # both thermostats are known at the base
@@ -195,3 +201,20 @@ def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_
     ha.values["climate.lk_b"] = LIMIT  # delivered late
     now2[0] += timedelta(minutes=15)
     assert executor2.execute().action == "kept"
+
+
+# ---- the thermostats show their value to a tenth, and a value that is there is not written again
+
+
+def test_a_thermostat_within_a_tenth_of_its_target_is_at_its_target(lk_settings):
+    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
+    ha.values["climate.lk_a"] = LIMIT - 0.05  # the device shows a rounded value
+    result = executor.execute()
+    assert result.action == "kept" and ha.writes == []
+
+
+def test_a_thermostat_a_quarter_degree_off_is_written(lk_settings):
+    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
+    ha.values["climate.lk_a"] = LIMIT - 0.25
+    executor.execute()
+    assert ("climate.lk_a", LIMIT) in ha.writes
