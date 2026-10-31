@@ -115,15 +115,14 @@ class PlanExecutor:
                     now,
                 )
             )
-        if (
-            self._pending is not None
-            and abs(current - self._pending) < MANUAL_CHANGE_C
-        ):
+        if self._pending is not None and abs(current - self._pending) < MANUAL_CHANGE_C:
             self._last_written, self._pending = self._pending, None  # it got there
         if (
             self._last_written is not None
             and abs(current - self._last_written) >= MANUAL_CHANGE_C
-            and (self._pending is None or abs(current - self._pending) >= MANUAL_CHANGE_C)
+            and (
+                self._pending is None or abs(current - self._pending) >= MANUAL_CHANGE_C
+            )
         ):
             self._pause_until = now + MANUAL_PAUSE
             self._last_written = None
@@ -171,7 +170,8 @@ class PlanExecutor:
 
     def expect_base(self) -> None:
         """The base may arrive on the pump from here on: a stop that is cut short must not leave the next
-        start to take either the base or the value it was written over for a hand change."""
+        start to take either the base or the value it was written over for a hand change.
+        """
         self._pending = self._s.rts_base_c
         self._pause_until = None
 

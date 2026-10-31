@@ -194,7 +194,9 @@ class PlanService:
         self._skill = SkillTracker()
         self._radiators: dict[str, Any] | None = None
         self._regulator = (
-            Regulator(settings.room_controls, settings.lk_limit_c, settings.room_actuators)
+            Regulator(
+                settings.room_controls, settings.lk_limit_c, settings.room_actuators
+            )
             if settings.room_controls
             else None
         )
@@ -291,7 +293,9 @@ class PlanService:
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
             "disturbance_c_per_h": self._disturbance.at(self._now()),
-            "authority": self._skill.authority(self._now(), self._settings.min_authority),
+            "authority": self._skill.authority(
+                self._now(), self._settings.min_authority
+            ),
             "sun_swing_c_per_wm2": self._room.sun_swing_c_per_wm2,
             "sun_lag_h": self._room.sun_lag_h,
         }
@@ -482,7 +486,10 @@ class PlanService:
                 stop - timedelta(hours=max(WINDOW_HOURS, COUNTED_WINDOW_HOURS)), stop
             )
         except TheriaError as e:
-            return [*checks, Check("history", "warn", f"cannot read the stored history: {e}")]
+            return [
+                *checks,
+                Check("history", "warn", f"cannot read the stored history: {e}"),
+            ]
         return [*checks, *history_checks(inputs, s), counted_hours_check(inputs, s)]
 
     def _restore_all(self) -> str | None:
@@ -530,7 +537,9 @@ class PlanService:
                     ),
                     lk=None if self._lk is None else self._lk.export_state(),
                     regulator=(
-                        None if self._regulator is None else self._regulator.export_state()
+                        None
+                        if self._regulator is None
+                        else self._regulator.export_state()
                     ),
                     skill=self._skill.export_state(),
                 )
@@ -563,7 +572,9 @@ class PlanService:
 
     def settings_catalog(self) -> list[dict[str, Any]]:
         """The settings that can be changed in the UI, with value, default and where the value comes from."""
-        return [] if self._settings_manager is None else self._settings_manager.catalog()
+        return (
+            [] if self._settings_manager is None else self._settings_manager.catalog()
+        )
 
     def update_settings(self, values: dict[str, Any]) -> list[dict[str, Any]]:
         """Check, save and apply a change at once; raises ConfigurationError and changes nothing if invalid."""
@@ -632,7 +643,9 @@ class PlanService:
             "last_execution": result,
             "last_lk": lk_result,
             "regulator": self._regulator_statuses,
-            "authority": self._skill.authority(self._now(), self._settings.min_authority),
+            "authority": self._skill.authority(
+                self._now(), self._settings.min_authority
+            ),
             "radiators": self._radiators,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
@@ -730,7 +743,9 @@ class PlanService:
                 sun_wm2=self._forecast_at(weather, _floor_hour(now)).shortwave_wm2,
             )
         except (RuntimeError, ValueError, KeyError, TypeError, WeatherDataError):
-            logger.debug("no complete sample for the disturbance estimator", exc_info=True)
+            logger.debug(
+                "no complete sample for the disturbance estimator", exc_info=True
+            )
             return
         innovation = self._disturbance.update(
             sample, self._anchored_room or self._warmed_room(), s.lk_limit_c
@@ -758,7 +773,9 @@ class PlanService:
 
     def _open_fraction(self) -> float | None:
         """Share of the floor loops that are open now; None when no actuators are configured."""
-        entities = [e for group in self._settings.room_actuators.values() for e in group]
+        entities = [
+            e for group in self._settings.room_actuators.values() for e in group
+        ]
         if not entities:
             return None
         states = [self._ha.get_state(e)["state"] for e in entities]
@@ -1107,16 +1124,20 @@ class PlanService:
 
     def _holds(self) -> dict[str, float] | None:
         """Thermostat setpoints that close rooms: the regulator's (when it may act) and, in an hour
-        where the plan closes the floor loops, every thermostat at the hour's floor. The lower wins."""
+        where the plan closes the floor loops, every thermostat at the hour's floor. The lower wins.
+        """
         holds = self._plan_valve_holds()
         if self._regulator is not None and self._settings.regulator_active:
-            for entity, target in self._regulator.holds(self._regulator_statuses).items():
+            for entity, target in self._regulator.holds(
+                self._regulator_statuses
+            ).items():
                 holds[entity] = min(target, holds.get(entity, target))
         return holds or None
 
     def _plan_valve_holds(self) -> dict[str, float]:
         """The floor loops close while the plan's current hour has them closed. The thermostats are
-        held at the hour's floor, so the loops reopen by themselves if a room falls that far."""
+        held at the hour's floor, so the loops reopen by themselves if a room falls that far.
+        """
         s = self._settings
         snapshot = self.latest()
         now = self._now()
@@ -1127,7 +1148,11 @@ class PlanService:
         ):
             return {}
         hour = next(
-            (h for h in snapshot.plan.hours if h.start <= now < h.start + timedelta(hours=1)),
+            (
+                h
+                for h in snapshot.plan.hours
+                if h.start <= now < h.start + timedelta(hours=1)
+            ),
             None,
         )
         if hour is None or not hour.valves_closed:

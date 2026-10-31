@@ -161,7 +161,9 @@ async def put_settings(
 ) -> Any:
     """Change settings; they are checked, saved and in use at once."""
     try:
-        return jsonable_encoder(await asyncio.to_thread(svc.update_settings, request.values))
+        return jsonable_encoder(
+            await asyncio.to_thread(svc.update_settings, request.values)
+        )
     except ConfigurationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

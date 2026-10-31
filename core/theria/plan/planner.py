@@ -23,7 +23,9 @@ ROOM_BIN_C = 0.1
 SLAB_BIN_C = 1.0
 VIOLATION_COST_SEK_PER_C_HOUR = 100.0  # floor / ceiling are effectively hard
 SWITCH_COST_SEK_PER_C = 0.02  # tie-breaker: prefer smooth plans, avoids pump jitter
-END_CREDIT_C = 0.5  # heat stored above the end level is credited up to this far (the model's
+END_CREDIT_C = (
+    0.5  # heat stored above the end level is credited up to this far (the model's
+)
 # picture of how much of it is still there later is the least certain part)
 MAX_TERMINAL_HOURS = 168.0  # cap on how long an end-of-horizon deficit is charged
 FLOW_CAP_PENALTY_SEK = (
@@ -284,7 +286,8 @@ class _Problem:
         and the plan would just heat whatever the price.
         """
         reference_c = min(
-            self.reference_room_c, self.flat_plan(self.settings.rts_base_c)[-1].room_c_end
+            self.reference_room_c,
+            self.flat_plan(self.settings.rts_base_c)[-1].room_c_end,
         )
         return reference_c, self.deficit_cost_sek_per_c(reference_c)
 
@@ -331,7 +334,8 @@ class _Problem:
         self,
     ) -> tuple[FloatGrid, npt.NDArray[np.int8], npt.NDArray[np.bool_]]:
         """Backward induction. Returns cost-to-go, policy (indexed by previous action) and where the
-        lowest setpoint is better with the valves closed (a second way to hold that setpoint)."""
+        lowest setpoint is better with the valves closed (a second way to hold that setpoint).
+        """
         s = self.settings
         n_actions = len(self.actions)
         max_move = round(s.max_rts_step_per_hour_c / s.rts_step_c)
@@ -397,7 +401,9 @@ class _Problem:
             energy_cost_sek=price * energy,
             comfort_cost_sek=float(
                 self.comfort_cost(
-                    np.array([room_end + self.swing[t]]), floor_c, float(self.targets[t])
+                    np.array([room_end + self.swing[t]]),
+                    floor_c,
+                    float(self.targets[t]),
                 )[0]
             ),
             tail=tail,
@@ -452,7 +458,12 @@ class _Problem:
                     room_end,
                     slab_end,
                     self.reason(
-                        a, room_end + float(self.swing[t]), t, float(rank[t]), marginal, closed
+                        a,
+                        room_end + float(self.swing[t]),
+                        t,
+                        float(rank[t]),
+                        marginal,
+                        closed,
                     ),
                     tail=t >= self.horizon - TAIL_HOURS,
                     closed=closed,

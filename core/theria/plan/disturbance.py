@@ -26,7 +26,9 @@ MAX_DRIFT_C_PER_H = 0.3  # sanity limit on what the plan may be told
 MAX_GAP = timedelta(hours=1)  # a longer silence is not judged
 MIN_STEP_H = 5 / 60  # shorter steps are too noisy to judge; they accumulate
 SUN_OFF_WM2 = 20.0
-SLAB_INIT_FRACTION = 0.5  # the slab sits half way between the room and the flow, as in the plan
+SLAB_INIT_FRACTION = (
+    0.5  # the slab sits half way between the room and the flow, as in the plan
+)
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,9 @@ class Sample:
     at: datetime
     room_c: float
     flow_c: float  # what reaches the floor (the pump's flow up to the shunts' cap)
-    valve: float | None  # measured share of open loops (0-1); None: use the model's valve
+    valve: (
+        float | None
+    )  # measured share of open loops (0-1); None: use the model's valve
     t_out_c: float
     sun_wm2: float
 

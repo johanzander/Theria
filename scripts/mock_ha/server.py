@@ -71,7 +71,11 @@ def _nordpool_day(day: date, area: str) -> dict:
     for quarter in range(96):
         hour = quarter // 4
         # cheap at night, expensive morning and evening peaks
-        base = 2200.0 if 6 <= hour <= 9 or 17 <= hour <= 20 else 200.0 if hour <= 5 else 500.0
+        base = (
+            2200.0
+            if 6 <= hour <= 9 or 17 <= hour <= 20
+            else 200.0 if hour <= 5 else 500.0
+        )
         begin = start + timedelta(minutes=15 * quarter)
         entries.append(
             {
@@ -253,7 +257,10 @@ async def call_service(domain: str, service: str, request: Request):
     if (domain, service) == ("nordpool", "get_prices_for_date"):
         body = await request.json()
         day = date.fromisoformat(body["date"])
-        return {"changed_states": [], "service_response": _nordpool_day(day, body["areas"])}
+        return {
+            "changed_states": [],
+            "service_response": _nordpool_day(day, body["areas"]),
+        }
     return []
 
 

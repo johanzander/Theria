@@ -24,8 +24,8 @@ from core.theria.plan.calibration_data import (
     SMALL_GAP_HOURS,
     HistorySource,
 )
-from core.theria.plan.pump_model import PumpParams, energy_kwh_per_hour
 from core.theria.plan.prices import PricePeriod, hourly_price_array
+from core.theria.plan.pump_model import PumpParams, energy_kwh_per_hour
 from core.theria.plan.series import (
     despike,
     hour_floor,
@@ -219,7 +219,11 @@ def load_outcome_inputs(
 
     def counter(entity: str, max_kwh_per_hour: float) -> FloatArray:
         return hourly_counter_energy(
-            source.series(entity, first, stop), first, n, max_kwh_per_hour, SMALL_GAP_HOURS
+            source.series(entity, first, stop),
+            first,
+            n,
+            max_kwh_per_hour,
+            SMALL_GAP_HOURS,
         )
 
     return OutcomeInputs(

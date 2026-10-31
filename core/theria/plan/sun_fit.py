@@ -21,7 +21,9 @@ from core.theria.exceptions import ModelFitError
 FloatArray = npt.NDArray[np.float64]
 
 LAGS_H = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-SUNNY_WM2 = 150.0  # irradiation that makes an hour a sunny one (counted on the raw values)
+SUNNY_WM2 = (
+    150.0  # irradiation that makes an hour a sunny one (counted on the raw values)
+)
 DARK_WM2 = 20.0  # at most this is a dark hour (the day's level is read from these)
 MIN_SUNNY_HOURS = 80
 MIN_DARK_HOURS_PER_DAY = 6
@@ -57,7 +59,9 @@ def fit_sun(
     by_day: dict[object, list[int]] = defaultdict(list)
     for i, moment in enumerate(hours):
         by_day[moment.date()].append(i)
-    best: tuple[float, float, float, FloatArray, int] | None = None  # error, swing, lag, residual, hours
+    best: tuple[float, float, float, FloatArray, int] | None = (
+        None  # error, swing, lag, residual, hours
+    )
     for lag in LAGS_H:
         filtered = _filtered(sun, lag)
         y = np.full(len(hours), np.nan)

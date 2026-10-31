@@ -88,6 +88,7 @@ def load_zones_from_config():
 # Load zones on module import
 load_zones_from_config()
 
+
 class SetTemperatureRequest(BaseModel):
     """Request body for setting temperature."""
 

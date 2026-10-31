@@ -201,10 +201,20 @@ def build_recommendations(
         _floor(settings, days),
         _floor_cap(settings, plan_hours),
         _limit_rec(
-            "rts_min_c", "Lowest setpoint", f"{settings.rts_min_c:.1f} °C", plan_hours, "rts_min", authority
+            "rts_min_c",
+            "Lowest setpoint",
+            f"{settings.rts_min_c:.1f} °C",
+            plan_hours,
+            "rts_min",
+            authority,
         ),
         _limit_rec(
-            "rts_max_c", "Highest setpoint", f"{settings.rts_max_c:.1f} °C", plan_hours, "rts_max", authority
+            "rts_max_c",
+            "Highest setpoint",
+            f"{settings.rts_max_c:.1f} °C",
+            plan_hours,
+            "rts_max",
+            authority,
         ),
         _night_model(night),
     ]

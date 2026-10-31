@@ -51,7 +51,9 @@ def history_checks(inputs: OutcomeInputs, s: PlanSettings) -> list[Check]:
         elif share > 0:
             checks.append(Check(name, "warn", detail))
         else:
-            checks.append(Check(name, "warn", f"{entity}: NO DATA in the last {WINDOW_HOURS} h"))
+            checks.append(
+                Check(name, "warn", f"{entity}: NO DATA in the last {WINDOW_HOURS} h")
+            )
     return checks
 
 
@@ -60,7 +62,9 @@ def counted_hours_check(inputs: OutcomeInputs, s: PlanSettings) -> Check:
     window = slice(-COUNTED_WINDOW_HOURS, None)
     heating = inputs.hot_water[window] == 0.0
     if not heating.any():
-        return Check("measured savings", "warn", "no heating-only hours in the last 3 days")
+        return Check(
+            "measured savings", "warn", "no heating-only hours in the last 3 days"
+        )
     series = {
         "price history": inputs.price_sek_per_kwh[window],
         "outdoor": inputs.t_out_c[window],
@@ -76,9 +80,14 @@ def counted_hours_check(inputs: OutcomeInputs, s: PlanSettings) -> Check:
     if share >= 0.8:
         return Check("measured savings", "ok", detail)
     worst_name, worst_share = min(
-        ((name, _share(values[heating])) for name, values in series.items()), key=lambda item: item[1]
+        ((name, _share(values[heating])) for name, values in series.items()),
+        key=lambda item: item[1],
     )
-    return Check("measured savings", "warn", f"{detail}; fewest values: {worst_name} ({worst_share:.0%})")
+    return Check(
+        "measured savings",
+        "warn",
+        f"{detail}; fewest values: {worst_name} ({worst_share:.0%})",
+    )
 
 
 def price_feed_check(periods: list[PricePeriod], now: datetime, timezone: str) -> Check:
@@ -90,12 +99,19 @@ def price_feed_check(periods: list[PricePeriod], now: datetime, timezone: str) -
     last_end = hours[-1][0] + timedelta(hours=1)
     ahead = len(hours)
     local = now.astimezone(ZoneInfo(timezone))
-    tomorrow_end = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=2))
+    tomorrow_end = local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
+        days=2
+    )
     detail = f"{ahead} h of prices ahead, to {last_end.astimezone(ZoneInfo(timezone)):%a %H:%M}"
     if ahead < MIN_PRICE_HOURS_AHEAD:
         return Check("price feed", "fail", f"only {detail}")
-    if local.hour >= TOMORROW_PUBLISHED_HOUR and last_end.astimezone(ZoneInfo(timezone)) < tomorrow_end:
-        return Check("price feed", "warn", f"{detail}; tomorrow's prices are not here yet")
+    if (
+        local.hour >= TOMORROW_PUBLISHED_HOUR
+        and last_end.astimezone(ZoneInfo(timezone)) < tomorrow_end
+    ):
+        return Check(
+            "price feed", "warn", f"{detail}; tomorrow's prices are not here yet"
+        )
     return Check("price feed", "ok", detail)
 
 
@@ -103,7 +119,10 @@ def live_h60_checks(ha: StateClient, s: PlanSettings) -> list[Check]:
     """The H60 answers 0 or nonsense now and then: a flow reading outside what a working pump gives is flagged."""
     low, high = FLOW_PLAUSIBLE_C
     checks = []
-    for name, entity in (("flow temperature", s.flow_measured_entity), ("flow target", s.flow_setpoint_entity)):
+    for name, entity in (
+        ("flow temperature", s.flow_measured_entity),
+        ("flow target", s.flow_setpoint_entity),
+    ):
         try:
             value = float(ha.get_state(entity)["state"])
         except READ_ERRORS as e:
@@ -112,5 +131,11 @@ def live_h60_checks(ha: StateClient, s: PlanSettings) -> list[Check]:
         if low <= value <= high:
             checks.append(Check(name, "ok", f"{entity}: {value:.1f} C"))
         else:
-            checks.append(Check(name, "warn", f"{entity}: {value:.1f} C is outside {low:.0f}-{high:.0f} C (an H60 glitch?)"))
+            checks.append(
+                Check(
+                    name,
+                    "warn",
+                    f"{entity}: {value:.1f} C is outside {low:.0f}-{high:.0f} C (an H60 glitch?)",
+                )
+            )
     return checks

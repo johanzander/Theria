@@ -22,9 +22,7 @@ from core.theria.plan.series import (
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.weather import WeatherHour
 
-MAX_ENERGY_KWH_PER_HOUR = (
-    5.0  # AirX 170 draws about 4.4-5.8 kW at full speed (capacity diagram); anything above is a counter spike
-)
+MAX_ENERGY_KWH_PER_HOUR = 5.0  # AirX 170 draws about 4.4-5.8 kW at full speed (capacity diagram); anything above is a counter spike
 # what the H60 shows for a working pump; it answers 0 or nonsense when a register fails
 FLOW_PLAUSIBLE_C = (15.0, 65.0)
 MAX_AUX_KWH_PER_HOUR = 9.0  # the electric heater (AirBox E9) is at most 9 kW

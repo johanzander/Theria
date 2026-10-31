@@ -22,7 +22,9 @@ MIN_MARGIN_C = 0.1  # the least it closes ahead of the limit
 RISING_C_PER_H = 0.02  # below this a room at the level is not climbing
 MAX_RISE_C = 2.0  # the most the learned rise may be
 RISE_MEMORY = 0.5  # weight of the earlier rise when a new one arrives
-NEAR_LIMIT_C = 0.7  # a closing counts as an event when the room is this close to the limit
+NEAR_LIMIT_C = (
+    0.7  # a closing counts as an event when the room is this close to the limit
+)
 FALLING_C = 0.1  # the event ends when the room is this far below its peak
 EVENT_TIMEOUT = timedelta(hours=3)
 RATE_WINDOW = (timedelta(minutes=5), timedelta(hours=1))
@@ -39,7 +41,9 @@ class RoomStatus:
     rise_c: float
     close_at_c: float
     valve_fraction: float | None
-    events: tuple[tuple[str, str], ...] = ()  # (action, detail) of what changed this cycle
+    events: tuple[
+        tuple[str, str], ...
+    ] = ()  # (action, detail) of what changed this cycle
 
 
 class RoomRegulator:
@@ -53,7 +57,9 @@ class RoomRegulator:
         self.closed = False
         self._previous: tuple[datetime, float] | None = None
         self._was_closed_by_valves = False
-        self._event: tuple[datetime, float, float] | None = None  # start, closed at, peak
+        self._event: tuple[datetime, float, float] | None = (
+            None  # start, closed at, peak
+        )
 
     def export_state(self) -> dict[str, Any]:
         return {"rise_c": self.rise_c, "events": self.events}
@@ -68,7 +74,13 @@ class RoomRegulator:
         close_at = self.limit_c - max(self.rise_c, MIN_MARGIN_C)
         if temperature_c is None:
             return RoomStatus(
-                self.room, None, None, "unknown", self.limit_c, self.rise_c, close_at,
+                self.room,
+                None,
+                None,
+                "unknown",
+                self.limit_c,
+                self.rise_c,
+                close_at,
                 valve_fraction,
             )
         rate = self._rate(now, temperature_c)
@@ -78,7 +90,9 @@ class RoomRegulator:
             climbing = rate is not None and rate > RISING_C_PER_H
             if temperature_c >= self.limit_c or (at_level and climbing):
                 self.closed = True
-                events.append(("closed", f"at {temperature_c:.1f} C (level {close_at:.1f} C)"))
+                events.append(
+                    ("closed", f"at {temperature_c:.1f} C (level {close_at:.1f} C)")
+                )
         elif temperature_c <= close_at - HYSTERESIS_C:
             self.closed = False
             events.append(("opened", f"at {temperature_c:.1f} C"))
@@ -151,17 +165,19 @@ class Regulator:
         actuators: Mapping[str, Sequence[str]],
     ) -> None:
         self._controls = tuple(controls)
-        self._actuators = {room: tuple(entities) for room, entities in actuators.items()}
+        self._actuators = {
+            room: tuple(entities) for room, entities in actuators.items()
+        }
         self._rooms = {c.room: RoomRegulator(c.room, limit_c) for c in self._controls}
 
-    def step(
-        self, now: datetime, read_state: Callable[[str], str]
-    ) -> list[RoomStatus]:
+    def step(self, now: datetime, read_state: Callable[[str], str]) -> list[RoomStatus]:
         statuses = []
         for control in self._controls:
             temperature = _mean_of_valid(control.temperature_entities, read_state)
             fraction = self._valve_fraction(control.room, read_state)
-            statuses.append(self._rooms[control.room].update(now, temperature, fraction))
+            statuses.append(
+                self._rooms[control.room].update(now, temperature, fraction)
+            )
         return statuses
 
     @property

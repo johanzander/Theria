@@ -151,7 +151,9 @@ class LKExecutor:
     ) -> LKResult:
         failures = []
         wrote = False
-        done: dict[str, float] = {}  # thermostats now at their target, whatever happened to the others
+        done: dict[str, float] = (
+            {}
+        )  # thermostats now at their target, whatever happened to the others
         for entity, value in current.items():
             target = targets[entity]
             if abs(value - target) < 1e-9:
@@ -169,7 +171,9 @@ class LKExecutor:
                 )
             except (RuntimeError, ValueError, KeyError, TypeError) as e:
                 failures.append(f"{entity}: {e}")
-                self._pending[entity] = target  # the call may have gone through all the same
+                self._pending[entity] = (
+                    target  # the call may have gone through all the same
+                )
                 continue
             if abs(confirmed - target) > CONFIRM_TOLERANCE_C:
                 failures.append(f"{entity}: read back {confirmed}, wrote {target}")
@@ -178,7 +182,11 @@ class LKExecutor:
             self._pending.pop(entity, None)
             done[entity] = target
             wrote = True
-        shown = self._s.lk_limit_c if len(set(targets.values())) != 1 else next(iter(targets.values()))
+        shown = (
+            self._s.lk_limit_c
+            if len(set(targets.values())) != 1
+            else next(iter(targets.values()))
+        )
         self._last_written = {**(self._last_written or {}), **done}
         if failures:
             logger.error("LK thermostat write failed: %s", "; ".join(failures))

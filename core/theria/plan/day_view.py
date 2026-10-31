@@ -51,7 +51,9 @@ def _known(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
 
-def _saving(price: float | None, baseline_kwh: float | None, kwh: float | None) -> float | None:
+def _saving(
+    price: float | None, baseline_kwh: float | None, kwh: float | None
+) -> float | None:
     """What the hour's energy was worth against the flat setpoint's, at the hour's price."""
     if price is None or baseline_kwh is None or kwh is None:
         return None
@@ -70,7 +72,8 @@ def build_day_view(
     """`measured` covers the hours before now; None when it could not be read.
 
     Every hour carries the plan, the flat baseline and what was measured side by side: for hours that
-    have passed the plan is the one that was applied (from `records`), for the rest the latest plan."""
+    have passed the plan is the one that was applied (from `records`), for the rest the latest plan.
+    """
     current = hour_floor(now)
     records = records or {}
     prices = {p.start: p.price_sek_per_kwh for p in periods}

@@ -26,7 +26,9 @@ MIN_AUTHORITY = 0.5
 
 class SkillTracker:
     def __init__(self) -> None:
-        self._samples: dict[int, list[float]] = defaultdict(list)  # block number -> rates
+        self._samples: dict[int, list[float]] = defaultdict(
+            list
+        )  # block number -> rates
 
     @staticmethod
     def _block(moment: datetime) -> int:
@@ -62,5 +64,6 @@ class SkillTracker:
 
     def load_state(self, state: dict[str, Any]) -> None:
         self._samples = defaultdict(
-            list, {int(block): [float(v) for v in values] for block, values in state.items()}
+            list,
+            {int(block): [float(v) for v in values] for block, values in state.items()},
         )

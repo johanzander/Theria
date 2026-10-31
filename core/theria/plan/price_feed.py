@@ -94,7 +94,9 @@ class NordpoolFeed:
         first = start.astimezone(self._zone).date()
         last = (stop - timedelta(seconds=1)).astimezone(self._zone).date()
         today = self._now().astimezone(self._zone).date()
-        out: list[PricePeriod] = [p for p in current if first <= p.start.astimezone(self._zone).date() <= last]
+        out: list[PricePeriod] = [
+            p for p in current if first <= p.start.astimezone(self._zone).date() <= last
+        ]
         day = first
         while day <= min(last, today - timedelta(days=1)):
             if day not in self._past:

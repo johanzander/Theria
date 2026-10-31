@@ -23,8 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.theria.plan.plan_run import PlanRun, replay, run_from_dict  # noqa: E402
-from core.theria.plan.settings import PlanSettings  # noqa: E402
+from core.theria.plan.plan_run import PlanRun, replay, run_from_dict
+from core.theria.plan.settings import PlanSettings
 
 
 def load(path: str) -> list[dict]:

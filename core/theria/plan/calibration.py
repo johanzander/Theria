@@ -69,7 +69,9 @@ class RoomFit:
 
     params: RoomParams
     response: DailyRoomFit
-    sun: SunFit | None = None  # the sun swing behind params; None when it was not fitted
+    sun: SunFit | None = (
+        None  # the sun swing behind params; None when it was not fitted
+    )
     sun_error: str | None = None
 
 
@@ -203,7 +205,9 @@ def fit_room(inputs: CalibrationInputs) -> RoomFit:
         )
     except ModelFitError as e:  # the room model is still useful without the sun
         return RoomFit(params, response, sun=None, sun_error=f"{type(e).__name__}: {e}")
-    params = replace(params, sun_swing_c_per_wm2=sun.swing_c_per_wm2, sun_lag_h=sun.lag_h)
+    params = replace(
+        params, sun_swing_c_per_wm2=sun.swing_c_per_wm2, sun_lag_h=sun.lag_h
+    )
     return RoomFit(params, response, sun=sun)
 
 
