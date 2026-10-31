@@ -267,6 +267,15 @@ EDITABLE: dict[str, SettingInfo] = {
         50,
         0.1,
     ),
+    "commit_margin_sek": _f(
+        "Weights",
+        "Commitment margin",
+        "The first hour keeps the setpoint and valve state that were applied last unless a change is better by more than this over the horizon (0 switches it off).",
+        "kr",
+        0,
+        5,
+        0.05,
+    ),
     "extreme_price_percentile": _f(
         "Prices",
         "Extreme price percentile",

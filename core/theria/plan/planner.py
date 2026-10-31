@@ -45,6 +45,8 @@ class PlanInputs:
     sun_wm2: FloatArray
     initial: RoomState
     previous_rts_c: float
+    # the floor loops were closed in the hour that is applied now (the plan's own valve state)
+    previous_closed: bool = False
     # What the room does on its own, per hour (the learned night cooling and the warming by day
     # that balances it); None when nothing is known and the anchored drift is all there is.
     extra_drift_c_per_h: FloatArray | None = None
@@ -443,6 +445,8 @@ class _Problem:
             a = int(policy[t, r_i, s_i, prev])
             closed = a == 0 and bool(valves_closed[t, r_i, s_i])
             here = (np.array([[room_c]]), np.array([[slab_c]]))
+            if t == 0:
+                a, closed = self.committed(a, closed, prev, here, value[t + 1])
             chosen = float(self.q_value(t, a, *here, value[t + 1], closed)[0, 0])
             marginal = {
                 label: float(self.q_value(t, b, *here, value[t + 1])[0, 0]) - chosen
@@ -471,6 +475,30 @@ class _Problem:
             )
             room_c, slab_c, prev = room_end, slab_end, a
         return hours
+
+    def committed(
+        self,
+        a: int,
+        closed: bool,
+        prev: int,
+        here: tuple[FloatArray, FloatArray],
+        next_value: FloatGrid,
+    ) -> tuple[int, bool]:
+        """The first hour keeps what is applied (the setpoint and the valve state) unless the best
+        choice is better by more than the commitment margin: the plan is recomputed every 15
+        minutes and a near tie must not flip the pump back and forth."""
+        held_closed = (
+            self.inputs.previous_closed
+            and prev == 0
+            and self.settings.plan_closes_valves
+        )
+        if (a, closed) == (prev, held_closed) or not self.allowed[0, prev]:
+            return a, closed
+        best = float(self.q_value(0, a, *here, next_value, closed)[0, 0])
+        held = float(self.q_value(0, prev, *here, next_value, held_closed)[0, 0])
+        if held - best < self.settings.commit_margin_sek:
+            return prev, held_closed
+        return a, closed
 
     def flat_plan(self, rts_c: float) -> list[HourPlan]:
         """The same models with a constant room setpoint: the comparison baseline."""

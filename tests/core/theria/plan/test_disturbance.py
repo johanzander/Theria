@@ -99,16 +99,35 @@ def test_while_the_sun_is_not_modelled_sunny_samples_do_not_teach_it():
     assert estimator.drift_c_per_h == 0.0
 
 
+def test_a_sensor_that_reads_in_tenths_does_not_look_like_a_drift():
+    """0.1 C of rounding over a quarter of an hour would be 0.4 C/h of imagined drift; the estimate
+    is judged over at least an hour, so it stays within the rounding."""
+    estimator = DisturbanceEstimator()
+    room, slab, sun_f = 19.0, 23.5, 0.0
+    estimator.update(Sample(NOW, room, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT)
+    worst = 0.0
+    for k in range(1, 49):
+        room, slab, sun_f = step(
+            PARAMS, room, slab, sun_f, 28.0, 5.0, 0.0, room + 10.0, dt_h=0.25, valve_scale=1.0
+        )
+        read = round(float(room), 1)
+        estimator.update(
+            Sample(NOW + timedelta(minutes=15 * k), read, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT
+        )
+        worst = max(worst, abs(estimator.drift_c_per_h))
+    assert worst <= 0.06
+
+
 def test_the_gain_is_a_share_of_the_new_error():
     estimator = DisturbanceEstimator()
     estimator.update(Sample(NOW, 19.0, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT)
     predicted, _, _ = step(
-        PARAMS, 19.0, 23.5, 0.0, 28.0, 5.0, 0.0, 29.0, dt_h=0.25, valve_scale=1.0
+        PARAMS, 19.0, 23.5, 0.0, 28.0, 5.0, 0.0, 29.0, dt_h=1.0, valve_scale=1.0
     )
     estimator.update(
-        Sample(NOW + timedelta(minutes=15), 19.025, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT
+        Sample(NOW + timedelta(hours=1), 19.05, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT
     )
-    assert estimator.drift_c_per_h == pytest.approx(GAIN * (19.025 - predicted) / 0.25)
+    assert estimator.drift_c_per_h == pytest.approx(GAIN * (19.05 - predicted))
 
 
 # ---- in the service
@@ -135,7 +154,7 @@ def test_a_room_that_cools_faster_than_the_model_expected_is_noticed(settings):
     run_cycle(service)
     assert service.parameters()["disturbance_c_per_h"] == 0.0  # nothing to compare yet
     sensor_reads(ha, 19.0)  # the model expected the room to stay near 19.8
-    clock[0] = EVENING + _td(minutes=15)
+    clock[0] = EVENING + _td(hours=1)
     run_cycle(service)
     assert service.parameters()["disturbance_c_per_h"] < 0
 

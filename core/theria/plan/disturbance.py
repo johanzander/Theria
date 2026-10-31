@@ -22,9 +22,11 @@ from core.theria.plan.room_model import RoomParams, step
 
 GAIN = 0.3  # share of a new error rate taken into the estimate per update
 HALF_LIFE_H = 4.0  # the estimate (and its reach into the future) halves in this time
-MAX_DRIFT_C_PER_H = 0.3  # sanity limit on what the plan may be told
-MAX_GAP = timedelta(hours=1)  # a longer silence is not judged
-MIN_STEP_H = 5 / 60  # shorter steps are too noisy to judge; they accumulate
+MAX_DRIFT_C_PER_H = 0.15  # sanity limit on what the plan may be told
+MAX_GAP = timedelta(hours=2)  # a longer silence is not judged
+# A step is judged over at least this long: the error of a sensor that reads in tenths of a degree
+# is divided by the step, so a quarter of an hour turns 0.1 C into 0.4 C/h of imagined drift.
+MIN_STEP_H = 1.0
 SUN_OFF_WM2 = 20.0
 SLAB_INIT_FRACTION = (
     0.5  # the slab sits half way between the room and the flow, as in the plan

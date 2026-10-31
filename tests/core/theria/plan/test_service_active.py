@@ -264,3 +264,12 @@ def test_a_plan_that_cannot_be_computed_says_why(settings):
     ha.prices = prices
     run_cycle(service)
     assert service.execution_status()["plan_error"] is None
+
+
+def test_the_authority_is_fixed_for_the_local_day(settings):
+    service, *_ = make(settings)
+    first = service._authority()
+    service._skill.authority = lambda now, minimum: 1.0
+    assert service._authority() == first  # the same day: unchanged
+    service._now = lambda: EVENING + timedelta(days=1)
+    assert service._authority() == 1.0  # the next day: read again

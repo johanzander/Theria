@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
@@ -78,6 +79,7 @@ logger = logging.getLogger(__name__)
 SLAB_INIT_FRACTION = 0.5  # rough prior: slab sits half way between room and flow target
 SUN_WARMUP_HOURS = 24
 LOG_KEPT = 200
+RADIATOR_HOLD = timedelta(hours=1)  # a radiator that called stays counted this long
 TUNING_DAYS = 14
 TUNING_CACHE = timedelta(
     hours=1
@@ -193,6 +195,8 @@ class PlanService:
         self._disturbance = DisturbanceEstimator()
         self._skill = SkillTracker()
         self._radiators: dict[str, Any] | None = None
+        self._radiator_called_at: datetime | None = None
+        self._authority_day: tuple[date, float] | None = None
         self._regulator = (
             Regulator(
                 settings.room_controls, settings.lk_limit_c, settings.room_actuators
@@ -293,9 +297,7 @@ class PlanService:
             "aux_per_flow_c": pump.aux_per_flow_c,
             "morning_margin_c": self._morning_margin_c,
             "disturbance_c_per_h": self._disturbance.at(self._now()),
-            "authority": self._skill.authority(
-                self._now(), self._settings.min_authority
-            ),
+            "authority": self._authority(),
             "sun_swing_c_per_wm2": self._room.sun_swing_c_per_wm2,
             "sun_lag_h": self._room.sun_lag_h,
         }
@@ -399,18 +401,30 @@ class PlanService:
             self._room, k_slab=self._room.k_slab * self._warmup.applied_scale
         )
 
+    def _authority(self) -> float:
+        """The share of the setpoint range the plan may use, fixed for the local day: it changes the
+        action set, and a range that moved between replans would move the plan with it.
+        """
+        day = self._now().astimezone(ZoneInfo(self._settings.timezone)).date()
+        if self._authority_day is None or self._authority_day[0] != day:
+            self._authority_day = (
+                day,
+                self._skill.authority(self._now(), self._settings.min_authority),
+            )
+        return self._authority_day[1]
+
     def _effective_settings(self) -> PlanSettings:
         """The settings the plan runs on: the night kept warmer by the learned margin, and the
-        ceiling lowered by the rise the floor adds after the valves close."""
+        ceiling lowered by the rise the floor adds after the valves close. (A radiator calling for
+        heat is not in here: it raises the pump setpoint at execution, not the plan's choices.)
+        """
         s = self._settings
         # the swing of the setpoint around its base grows with the model's measured skill
-        authority = self._skill.authority(self._now(), self._settings.min_authority)
+        authority = self._authority()
         step = s.rts_step_c
         down = round((s.rts_base_c - s.rts_min_c) * authority / step) * step
         up = round((s.rts_max_c - s.rts_base_c) * authority / step) * step
         s = replace(s, rts_min_c=s.rts_base_c - down, rts_max_c=s.rts_base_c + up)
-        if self._radiators is not None and self._radiators["calling"]:
-            s = replace(s, rts_min_c=s.rts_base_c)
         if self._regulator is not None:
             rise = max((r.rise_c for r in self._regulator.rooms), default=0.0)
             ceiling = max(s.ceiling_c - rise, s.target_c + 0.5)
@@ -621,7 +635,7 @@ class PlanService:
             warmup=self._warmup,
             morning_margin_c=self._morning_margin_c,
             disturbance_c_per_h=self._disturbance.at(now),
-            authority=self._skill.authority(now, self._settings.min_authority),
+            authority=self._authority(),
             skill_error_c_per_h=self._skill.error(now),
             regulator_rise_c=(
                 {}
@@ -643,9 +657,7 @@ class PlanService:
             "last_execution": result,
             "last_lk": lk_result,
             "regulator": self._regulator_statuses,
-            "authority": self._skill.authority(
-                self._now(), self._settings.min_authority
-            ),
+            "authority": self._authority(),
             "radiators": self._radiators,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
@@ -769,7 +781,20 @@ class PlanService:
                 continue
             readable += 1
             calling = calling or state["attributes"].get("hvac_action") == "heating"
-        self._radiators = {"calling": calling, "readable": readable}
+        now = self._now()
+        if calling:
+            self._radiator_called_at = now
+        held = (
+            self._radiator_called_at is not None
+            and now - self._radiator_called_at < RADIATOR_HOLD
+        )
+        # `calling` stays on for an hour after the last call: radiator thermostats cycle, and the
+        # pump setpoint must not follow them
+        self._radiators = {
+            "calling": held,
+            "calling_now": calling,
+            "readable": readable,
+        }
 
     def _open_fraction(self) -> float | None:
         """Share of the floor loops that are open now; None when no actuators are configured."""
@@ -815,7 +840,7 @@ class PlanService:
             days,
             [] if latest is None else latest.plan.hours,
             self._night,
-            authority=self._skill.authority(now, self._settings.min_authority),
+            authority=self._authority(),
         )
 
     @property
@@ -965,6 +990,7 @@ class PlanService:
             sun_wm2=sun,
             initial=initial,
             previous_rts_c=previous_rts,
+            previous_closed=self._closed_now(now),
             extra_drift_c_per_h=self._extra_drift(starts, t_out, level_c, now),
         )
         baseline_flow = np.minimum(
@@ -1134,6 +1160,21 @@ class PlanService:
                 holds[entity] = min(target, holds.get(entity, target))
         return holds or None
 
+    def _closed_now(self, now: datetime) -> bool:
+        """Whether the plan last computed has the floor loops closed in the hour that is applied."""
+        snapshot = self.latest()
+        if snapshot is None:
+            return False
+        hour = next(
+            (
+                h
+                for h in snapshot.plan.hours
+                if h.start <= now < h.start + timedelta(hours=1)
+            ),
+            None,
+        )
+        return hour is not None and hour.valves_closed
+
     def _plan_valve_holds(self) -> dict[str, float]:
         """The floor loops close while the plan's current hour has them closed. The thermostats are
         held at the hour's floor, so the loops reopen by themselves if a room falls that far.
@@ -1182,7 +1223,10 @@ class PlanService:
                 self._last_trouble = trouble
                 self._log("trouble", "reported", trouble)
                 self._notify(TROUBLE_NOTIFICATION, "Theria: heater running", trouble)
-            pump = self._executor.execute(self.latest())
+            radiators = self._radiators is not None and self._radiators["calling"]
+            pump = self._executor.execute(
+                self.latest(), floor_c=base if radiators else None
+            )
             if pump.action != "kept":
                 self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
             if self._lk is not None:

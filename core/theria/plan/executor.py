@@ -93,7 +93,10 @@ class PlanExecutor:
         self._last_raise_at = _moment(state["last_raise_at"])
         self._pause_until = _moment(state["pause_until"])
 
-    def execute(self, snapshot: PlanSnapshot | None) -> ExecutionResult:
+    def execute(
+        self, snapshot: PlanSnapshot | None, floor_c: float | None = None
+    ) -> ExecutionResult:
+        """Apply the plan's hour; `floor_c` is the lowest setpoint to write (radiators call for heat)."""
         now = self._now()
         try:
             current = float(
@@ -148,6 +151,8 @@ class PlanExecutor:
         )
         desired = min(max(hour.rts_c, self._s.rts_min_c), self._s.rts_max_c)
         desired = round(desired / self._s.rts_step_c) * self._s.rts_step_c
+        if floor_c is not None:
+            desired = max(desired, floor_c)
         if desired > current + 1e-9:
             if (
                 self._last_raise_at is not None

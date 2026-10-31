@@ -6,7 +6,11 @@ import pytest
 from core.theria.exceptions import ConfigurationError, OptimizationError
 from core.theria.plan.planner import TAIL_HOURS, PlanInputs, plan
 from core.theria.plan.settings import PlanSettings
-from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, flow_target, total_kwh_per_hour
+from core.theria.plan.pump_model import (
+    PRIOR_PUMP_PARAMS,
+    flow_target,
+    total_kwh_per_hour,
+)
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomState,
@@ -213,7 +217,9 @@ def daily_prices(cheap_night=0.9):
 def test_the_setpoint_varies_over_the_day_and_the_average_stays_near_the_base(
     settings, make_inputs
 ):
-    result = run(make_inputs(daily_prices(cheap_night=0.3), room_c=20.0, slab_c=33.0), settings)
+    result = run(
+        make_inputs(daily_prices(cheap_night=0.3), room_c=20.0, slab_c=33.0), settings
+    )
     rts = np.array([h.rts_c for h in result.hours])
     assert rts.min() < settings.rts_base_c - 0.5  # lower in the expensive hours
     assert rts.max() >= settings.rts_base_c + 0.5  # higher in the cheap hours
@@ -299,7 +305,9 @@ def test_the_objective_credits_heat_left_in_the_room_beyond_the_flat_setpoints_e
     result = run(make_inputs(price, room_c=19.0, slab_c=28.0), settings)
     assert result.hours[-1].room_c_end > result.baseline_hours[-1].room_c_end
     hours_cost = sum(h.energy_cost_sek + h.comfort_cost_sek for h in result.hours)
-    assert result.objective_sek < hours_cost  # the heat that is left does not have to be bought
+    assert (
+        result.objective_sek < hours_cost
+    )  # the heat that is left does not have to be bought
 
 
 def test_the_credit_for_stored_heat_stops_half_a_degree_above_the_flat_setpoints_end(
@@ -349,7 +357,9 @@ def run_with_sun(inputs, settings, swing):
 
 
 def test_the_suns_swing_warms_the_room_the_plan_is_judged_on(settings, make_inputs):
-    inputs = _with_midday_sun(make_inputs(np.full(HORIZON, 1.0), room_c=18.6, slab_c=27.0))
+    inputs = _with_midday_sun(
+        make_inputs(np.full(HORIZON, 1.0), room_c=18.6, slab_c=27.0)
+    )
     without = run_with_sun(inputs, settings, 0.0)
     with_sun = run_with_sun(inputs, settings, 0.006)
     sunny = slice(4, 10)
@@ -366,13 +376,17 @@ def test_the_suns_swing_warms_the_room_the_plan_is_judged_on(settings, make_inpu
 def test_a_room_the_sun_pushes_over_the_ceiling_is_not_heated_further(
     settings, make_inputs
 ):
-    inputs = _with_midday_sun(make_inputs(np.full(HORIZON, 1.0), room_c=20.8, slab_c=30.0))
+    inputs = _with_midday_sun(
+        make_inputs(np.full(HORIZON, 1.0), room_c=20.8, slab_c=30.0)
+    )
     with_sun = run_with_sun(inputs, settings, 0.01)  # level 20.8 + a swing of about 3 C
     sunny = slice(4, 10)
     assert max(h.rts_c for h in with_sun.hours[sunny]) <= settings.rts_base_c
 
 
-def test_a_setpoint_range_narrower_than_the_rise_limit_still_plans(settings, make_inputs):
+def test_a_setpoint_range_narrower_than_the_rise_limit_still_plans(
+    settings, make_inputs
+):
     narrow = replace(settings, rts_min_c=18.0, rts_max_c=19.0)
     result = run(make_inputs(daily_prices()), narrow)
     assert all(18.0 <= h.rts_c <= 19.0 for h in result.hours)
@@ -423,7 +437,9 @@ def test_the_default_setpoint_range_is_the_one_the_savings_study_found():
 
     s = Settings.from_dict(BASE_SETTINGS)
     assert (s.rts_min_c, s.rts_base_c, s.rts_max_c) == (15.0, 18.0, 22.0)
-    assert s.max_rts_step_per_hour_c == 2.0  # the study's practical optimum with a 2 C/h ramp
+    assert (
+        s.max_rts_step_per_hour_c == 2.0
+    )  # the study's practical optimum with a 2 C/h ramp
     assert s.boost_flow_limit_c == 42.0
 
 
@@ -475,10 +491,14 @@ def test_a_plan_that_saves_more_than_the_threshold_is_kept(settings, make_inputs
     assert len({h.rts_c for h in result.hours}) > 1
 
 
-def test_the_plan_reports_the_price_of_a_degree_it_gives_up_at_the_end(settings, make_inputs):
+def test_the_plan_reports_the_price_of_a_degree_it_gives_up_at_the_end(
+    settings, make_inputs
+):
     result = run(make_inputs(daily_prices(), room_c=19.5, slab_c=28.0), settings)
     assert result.end_cost_sek_per_c > 0
-    assert result.end_reference_c == pytest.approx(result.baseline_hours[-1].room_c_end, abs=0.6)
+    assert result.end_reference_c == pytest.approx(
+        result.baseline_hours[-1].room_c_end, abs=0.6
+    )
 
 
 def closing(settings, **changes):
@@ -491,11 +511,12 @@ def test_the_plan_closes_the_loops_in_the_dear_hours(settings, make_inputs):
     result = run(inputs, closing(settings))
     closed = np.array([h.valves_closed for h in result.hours])
     assert closed[EVENING].all()
-    assert not closed[:EVENING.argmax()].any(), "no closing before the dear hours"
+    assert not closed[: EVENING.argmax()].any(), "no closing before the dear hours"
 
 
-
-def test_a_closed_hour_costs_only_the_share_of_the_lowest_setpoint_energy(settings, make_inputs):
+def test_a_closed_hour_costs_only_the_share_of_the_lowest_setpoint_energy(
+    settings, make_inputs
+):
     price = np.where(EVENING, 8.0, 0.8)
     inputs = make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0)
     s = closing(settings, closed_energy_share=0.2)
@@ -508,7 +529,9 @@ def test_a_closed_hour_costs_only_the_share_of_the_lowest_setpoint_energy(settin
         assert hour.energy_kwh == pytest.approx(0.2 * open_energy)
 
 
-def test_closing_the_loops_saves_more_than_cutting_the_setpoint_alone(settings, make_inputs):
+def test_closing_the_loops_saves_more_than_cutting_the_setpoint_alone(
+    settings, make_inputs
+):
     price = np.where(EVENING, 8.0, 0.8)
     inputs = make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0)
     without = run(inputs, settings)
@@ -518,7 +541,9 @@ def test_closing_the_loops_saves_more_than_cutting_the_setpoint_alone(settings, 
 
 def test_closed_hours_do_not_take_the_room_under_the_floor(settings, make_inputs):
     price = np.where(EVENING, 8.0, 0.8)
-    result = run(make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0), closing(settings))
+    result = run(
+        make_inputs(price, t_out=2.0, room_c=20.5, slab_c=25.0), closing(settings)
+    )
     assert result.floor_violation_hours == 0
 
 
@@ -531,3 +556,45 @@ def test_the_plan_does_not_close_the_loops_when_it_may_not(settings, make_inputs
 def test_the_energy_share_must_be_a_share():
     with pytest.raises(ConfigurationError):
         PlanSettings(**BASE_SETTINGS, closed_energy_share=1.5)
+
+
+# ---- the first hour keeps what is applied unless a change is clearly better
+
+
+def test_the_first_hour_keeps_the_applied_setpoint_when_a_change_gains_little(
+    settings, make_inputs
+):
+    flat = np.full(HORIZON, 1.0)
+    free = run(make_inputs(flat, previous_rts_c=17.0), settings)
+    assert free.hours[0].rts_c != 17.0  # without the commitment it moves
+    held = run(
+        make_inputs(flat, previous_rts_c=17.0),
+        replace(settings, commit_margin_sek=50.0),
+    )
+    assert held.hours[0].rts_c == 17.0
+
+
+def test_a_change_that_is_clearly_better_is_made_in_spite_of_the_commitment(
+    settings, make_inputs
+):
+    price = np.where(np.arange(HORIZON) < 6, 9.0, 0.8)  # the first hours are very dear
+    result = run(
+        make_inputs(price, previous_rts_c=20.0),
+        replace(settings, commit_margin_sek=0.3),
+    )
+    assert result.hours[0].rts_c < 20.0
+
+
+def test_the_first_hour_keeps_the_floor_loops_closed_when_they_were(
+    settings, make_inputs
+):
+    closes = replace(settings, plan_closes_valves=True)
+    price = np.concatenate([[0.5], np.full(HORIZON - 1, 3.0)])  # cheap now, dear after
+    held = run(
+        replace(
+            make_inputs(price, previous_rts_c=settings.rts_min_c, room_c=21.0),
+            previous_closed=True,
+        ),
+        replace(closes, commit_margin_sek=50.0),
+    )
+    assert held.hours[0].valves_closed and held.hours[0].rts_c == settings.rts_min_c
