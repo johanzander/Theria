@@ -2,7 +2,7 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, T
 import { useState } from 'react'
 import { fetchDay, fetchExecution, fetchPlan, fetchPreflight, fetchSavings, fetchSettings } from '../api'
 import {
-  outlookText, savingsSummary, savingsTotals, statusTone, timelineRows, tooltipFormatter, UNITS,
+  outlookText, planSaving, savingsTotals, statusTone, timelineRows, tooltipFormatter, UNITS,
   type Execution, type PlanResponse, type Preflight, type SavingsResponse, type SettingEntry,
 } from '../model'
 import { Card, DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
@@ -14,7 +14,7 @@ function Status({ plan, execution, totals, roomNow }: {
   totals: ReturnType<typeof savingsTotals>
   roomNow: number | null
 }) {
-  const saving = plan ? savingsSummary(plan) : null
+  const saving = plan ? planSaving(plan) : null
   return (
     <div className="cards">
       <Card label="Mode" value={execution?.mode ?? plan?.mode ?? '-'} note={plan ? `plan ${Math.round(plan.age_seconds / 60)} min old` : 'no plan yet'} />
@@ -32,9 +32,12 @@ function Status({ plan, execution, totals, roomNow }: {
       />
       <Card
         label="Plan vs flat, coming hours"
-        value={saving ? `${saving.savingSek.toFixed(1)} kr` : '-'}
-        note={saving ? `${saving.percent.toFixed(1)} % of the model cost, comfort and payback included` : undefined}
-        tone={saving && saving.savingSek >= 0 ? 'good' : undefined}
+        value={saving ? `${saving.netSek.toFixed(1)} kr` : '-'}
+        note={saving
+          ? `${saving.kwhSaved.toFixed(1)} kWh less: ${saving.volumeSek.toFixed(1)} kr from using less, ${saving.timingSek.toFixed(1)} kr from timing; `
+            + `${saving.endHeatSek.toFixed(1)} kr for ending the room ${Math.abs(saving.endDiffC).toFixed(1)} °C ${saving.endDiffC < 0 ? 'colder' : 'warmer'}`
+          : undefined}
+        tone={saving ? (saving.netSek >= 0 ? 'good' : 'bad') : undefined}
       />
       {plan?.comfort_outlook && (
         <Card

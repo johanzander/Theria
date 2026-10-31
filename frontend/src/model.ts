@@ -41,6 +41,8 @@ export interface PlanResponse {
     objective_sek: number
     baseline_objective_sek: number
     floor_violation_hours: number
+    /** what a degree of room at the end of the horizon is worth (SEK) */
+    end_cost_sek_per_c: number
   }
 }
 
@@ -137,10 +139,26 @@ export function planRows(response: PlanResponse): PlanRow[] {
   }))
 }
 
-export function savingsSummary(response: PlanResponse): { savingSek: number; percent: number } {
-  const { objective_sek, baseline_objective_sek } = response.plan
-  const savingSek = baseline_objective_sek - objective_sek
-  return { savingSek, percent: baseline_objective_sek > 0 ? (savingSek / baseline_objective_sek) * 100 : 0 }
+/**
+ * What the plan saves against the flat setpoint, in kronor and split by where it comes from.
+ * The planner's objective is not used for this: it caps the credit for heat left in the room, so a
+ * plan that only runs the stored heat down looks like a saving of its own.
+ *   volume: the energy the plan does not use, at the horizon's average price
+ *   timing: using it in cheaper hours than the flat setpoint would have
+ *   end heat: the plan's room at the end of the horizon against the flat one's, at the end cost
+ *             per degree (negative when the plan leaves the room colder)
+ */
+export function planSaving(response: PlanResponse): {
+  netSek: number; volumeSek: number; timingSek: number; endHeatSek: number; kwhSaved: number; endDiffC: number
+} {
+  const { hours, baseline_hours, end_cost_sek_per_c } = response.plan
+  const kwhSaved = baseline_hours.reduce((sum, h) => sum + h.energy_kwh, 0) - hours.reduce((sum, h) => sum + h.energy_kwh, 0)
+  const energySek = baseline_hours.reduce((sum, h) => sum + h.energy_cost_sek, 0) - hours.reduce((sum, h) => sum + h.energy_cost_sek, 0)
+  const meanPrice = hours.length === 0 ? 0 : hours.reduce((sum, h) => sum + h.price_sek_per_kwh, 0) / hours.length
+  const volumeSek = kwhSaved * meanPrice
+  const endDiffC = hours.length === 0 ? 0 : hours[hours.length - 1].room_c_end - baseline_hours[baseline_hours.length - 1].room_c_end
+  const endHeatSek = endDiffC * end_cost_sek_per_c
+  return { netSek: energySek + endHeatSek, volumeSek, timingSek: energySek - volumeSek, endHeatSek, kwhSaved, endDiffC }
 }
 
 const REASONS: Record<string, string> = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, savingsSummary, tabHref,
+  planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, planSaving, tabHref,
   timelineRows, quarterRows, hasData, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted,
   type PlanResponse, type DayHour, type DayView,
 } from './model'
@@ -17,7 +17,7 @@ const plan: PlanResponse = {
   plan: {
     hours: [hour(0, 17, 19.6, 1), hour(1, 18.5, 19.7, 3)],
     baseline_hours: [hour(0, 18, 19.8, 1), hour(1, 18, 19.8, 3)],
-    objective_sek: 10, baseline_objective_sek: 12, floor_violation_hours: 0,
+    objective_sek: 10, baseline_objective_sek: 12, floor_violation_hours: 0, end_cost_sek_per_c: 100,
   },
 }
 
@@ -30,13 +30,39 @@ describe('planRows', () => {
   })
 })
 
-describe('savingsSummary', () => {
-  it('reports the plan advantage as a percentage of the baseline', () => {
-    expect(savingsSummary(plan)).toEqual({ savingSek: 2, percent: (2 / 12) * 100 })
+describe('planSaving', () => {
+  const withHours = (planHours: ReturnType<typeof hour>[], flatHours: ReturnType<typeof hour>[], endCost = 100): PlanResponse => ({
+    ...plan, plan: { ...plan.plan, hours: planHours, baseline_hours: flatHours, end_cost_sek_per_c: endCost },
   })
-  it('is zero when the baseline cost is zero', () => {
-    const p = { ...plan, plan: { ...plan.plan, baseline_objective_sek: 0, objective_sek: 0 } }
-    expect(savingsSummary(p).percent).toBe(0)
+  const at = (h: number, price: number, kwh: number, room: number) => ({ ...hour(h, 17, room, price), energy_kwh: kwh, energy_cost_sek: kwh * price })
+
+  it('splits the saving into using less and using it at a better time', () => {
+    // flat: 2 kWh in each hour; plan: 1 kWh in the dear hour, 3 in the cheap one; same end room
+    const flat = [at(0, 1, 2, 19), at(1, 3, 2, 19)]
+    const planned = [at(0, 1, 3, 19), at(1, 3, 1, 19)]
+    const s = planSaving(withHours(planned, flat))
+    expect(s.kwhSaved).toBe(0)
+    expect(s.volumeSek).toBeCloseTo(0)
+    expect(s.timingSek).toBeCloseTo(2) // 1 kWh moved from a 3 kr hour to a 1 kr hour
+    expect(s.netSek).toBeCloseTo(2)
+  })
+
+  it('does not count heat taken out of the room as a saving', () => {
+    // the plan uses less energy but ends the room 0.5 degrees colder, at 100 kr per degree
+    const flat = [at(0, 2, 2, 19.5), at(1, 2, 2, 19.5)]
+    const planned = [at(0, 2, 1, 19.2), at(1, 2, 1, 19.0)]
+    const s = planSaving(withHours(planned, flat))
+    expect(s.volumeSek).toBeCloseTo(4)
+    expect(s.endDiffC).toBeCloseTo(-0.5)
+    expect(s.endHeatSek).toBeCloseTo(-50)
+    expect(s.netSek).toBeCloseTo(-46)
+  })
+
+  it('is zero for a plan equal to the flat setpoint', () => {
+    const same = [at(0, 1, 2, 19), at(1, 3, 2, 19)]
+    const s = planSaving(withHours(same, same))
+    expect(s.netSek).toBeCloseTo(0)
+    expect(s.volumeSek).toBeCloseTo(0)
   })
 })
 
