@@ -587,3 +587,27 @@ The reference is now the comfort target at the last hour of the horizon (the nig
 target is not owed that heat back; a room under it still is. Lowering the comfort target now lowers where the plan lets the room settle.
 Setting the room limit and the LK limit by hand to 19.5 (a workaround) also distorts the plan: the sun swing puts the modelled room above
 the limit and the ceiling violation (100 kr per C and hour) dominates the objective; leave them at 22 and use the plan.
+
+## Room cooling and the floor response from hourly data (2026-11-01)
+
+All values **[observed]** unless noted; scripts were run in a scratchpad, nothing in the planner changed.
+
+- **Do not use the pump's energy counter for this.** It has 1 kWh resolution, so "0.00" means "under 1 kWh", and in the
+  hours that look like pump-off the flow still runs at 25-33 C with the LK thermostats at 22 C: the loops are open and
+  the floor keeps giving heat. Pump-off hours with a real free-cooling fall do not exist in the cold season.
+- **Use the flow temperature as the driver.** Per dark hour with no hot water: `dR = a (F - R) + k (T - R) + c`. On
+  hours 00-06 local (no sun, no stove, nobody up) over 400 days: a = 0.0117/h, k = 0.0140/h (time constant about 70 h),
+  c = -0.095 C/h; for nights under 8 C outside k = 0.020, under 4 C k = 0.030 (about 33 h). Since 8 Oct, when the plan has moved
+  the setpoint and flow no longer follows the weather, flow and outdoor temperature are almost uncorrelated (-0.14)
+  and the fit gives a = 0.0095, k = 0.0110. The gain a / (a + k) is about 0.45, as the daily model.
+- **Free cooling with the loops closed** (19 C inside): about 0.13 C/h at 10 C outside, 0.20 at 5 C, 0.27-0.5 at 0 C. That
+  is 1.5-3 C in 6 hours at 0 C outside. The daily model's `k_out` (0.00435/h) is 3-7 times lower than this.
+- **Heat demand analysis (ground floor only):** 7889 W at -9.6 C outside and 20 C inside, about 266 W/K. With k above
+  that gives a heat capacity of roughly 9-19 kWh/K (32-68 MJ/K), the lower part matching the brick walls alone (about
+  35 MJ/K) **[estimated]**. The floor is timber joists with floor heating in the boards, not a concrete slab.
+- **Backtest (85 nights, 6 h free-run from the measured room, 14-day blocks left out):** the current room parameters
+  with a constant drift fitted on the training nights give 0.18 C mean error after 6 h; the hourly model above gives
+  0.20 C. Most of the gain over the current model without drift came from the constant, not from `k_out`, so `k_out` is not
+  changed. The planner anchors the drift to the room's current temperature, which absorbs the `k_out` error.
+- **What is still open:** `k_slab` (0.00355/h) looks about 3 times too low against a = 0.010/h, which would mean that
+  closed loops sag the room about 0.1 C/h and not 0.04. Not tested on closed loops. A step test decides it.
