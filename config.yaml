@@ -156,6 +156,47 @@ options:
         silent_warn_minutes: 360
         silent_fault_minutes: 720
 
+  radiators:
+    # Salon (Netatmo) and guest house (Tado) radiator control. Shadow only: it computes and logs what it
+    # would write to the thermostats and never writes.
+    salon_thermostats:
+      - "climate.vantsidan"
+      - "climate.klippsidan"
+    salon_sensors:  # the Verisure points: water alarm on the floor, smoke detector in the ceiling
+      - "sensor.schamponeringstolen_temperature"
+      - "sensor.butik_temperature_2"  # probably the smoke detector (ceiling); to be confirmed
+    outdoor_entity: "sensor.outdoor"
+    salon_sensor_guard:  # a guard of its own: the plan's guard corrects sensors to a reference and averages rooms
+      notify: false
+      sensors:
+        - name: "Vantsidan"
+          room: "salon"
+          temperature_entity: "sensor.vantsidan_temperature"
+          reference: true
+        - name: "Klippsidan"
+          room: "salon"
+          temperature_entity: "sensor.klippsidan_temperature"
+        - name: "Vattenlarm (golv)"
+          room: "salon"
+          temperature_entity: "sensor.schamponeringstolen_temperature"
+        - name: "Brandvarnare (tak)"
+          room: "salon"
+          temperature_entity: "sensor.butik_temperature_2"
+    defaults:  # what the UI starts from; changes made there are saved separately
+      mode: "shadow"
+      guest_band_c: 1.5
+      guest_rooms:
+        - entity: "climate.bedroom"
+          t_room_c: 18.0
+        - entity: "climate.hallway"
+          t_room_c: 19.5
+        - entity: "climate.kitchen"
+          t_room_c: 20.0
+        - entity: "climate.tv_room_gh"
+          t_room_c: 19.5
+        - entity: "climate.storage_room"
+          t_room_c: 17.0
+
   zones:
     - id: "butik"
       name: "Butik"
@@ -269,6 +310,36 @@ schema:
         reference: bool?
         silent_warn_minutes: int?
         silent_fault_minutes: int?
+  radiators:
+    salon_thermostats:
+      - str
+    salon_sensors:
+      - str
+    outdoor_entity: str
+    salon_sensor_guard:
+      notify: bool?
+      sensors:
+        - name: str
+          room: str
+          temperature_entity: str
+          battery_entity: str?
+          signal_entity: str?
+          reference: bool?
+          silent_warn_minutes: int?
+          silent_fault_minutes: int?
+    defaults:
+      mode: list(off|shadow)
+      guest_band_c: float?
+      guest_rooms:
+        - entity: str
+          t_room_c: float
+          band_c: float?
+    timezone: str?
+    salon_c_j_per_k: float?
+    salon_u_w_per_k: float?
+    salon_heat_power_w: float?
+    salon_baseline_c: float?
+    guest_loss_w_per_k: float?
   zones:
     - id: str
       name: str

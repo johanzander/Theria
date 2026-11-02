@@ -217,6 +217,10 @@ Sources: `documentation/private/Reviderad beräkning 3 LK023393.pdf` (LK calcula
   below about +1 C outdoors at room setpoint 18 (about +6 C at setpoint 20). The zone-control design carries it
   as the setting `floor_mix_max_c` (40). The radiators in the guest house and the boutique/salon take the pump's
   full flow.
+  While any of those radiators calls for heat the pump plan may not cut below its base setpoint, so on
+  2026-11-01 (both salon thermostats at 100 % power request) they blocked every cut. The salon's thermal
+  numbers (Dec 2025: C 2.33 MJ/K, U 51.7 W/K, tau about 12.5 h, cooling 0.65-0.70 C/h, heating net 0.25-0.30 C/h)
+  drive the shadow radiator plan.
 - **[external estimate, pasted by Johan 2026-10-14, conflicts with LK] Surface limit and flow.** Resistance above
   the loops: 16 mm oak about 0.11, 10 mm ROT board about 0.07, underlay about 0.04 = about 0.22 m2K/W (trade
   guidance: at most 0.15, so the floor is slow; LK's own figure for system G16 is Mtot 0.200). The estimate

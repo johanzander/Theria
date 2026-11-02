@@ -61,3 +61,20 @@ export const saveSettings = (values: Record<string, number | boolean>) =>
   change('plan/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) })
 
 export const resetSetting = (key: string) => change(`plan/settings/${key}`, { method: 'DELETE' })
+
+import type { PrefsResponse, RadiatorPrefs, RadiatorSnapshot } from './radiators'
+
+export const fetchRadiators = () => get<RadiatorSnapshot>('radiators/status')
+export const fetchRadiatorPrefs = () => get<PrefsResponse>('radiators/prefs')
+
+async function changePrefs(init: RequestInit): Promise<{ prefs: PrefsResponse | null; error: string | null }> {
+  const response = await fetch(BASE + 'radiators/prefs', init)
+  if (response.ok) return { prefs: (await response.json()) as PrefsResponse, error: null }
+  const body = (await response.json()) as { detail?: string }
+  return { prefs: null, error: body.detail ?? `HTTP ${response.status}` }
+}
+
+export const saveRadiatorPrefs = (values: Partial<RadiatorPrefs>) =>
+  changePrefs({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) })
+
+export const resetRadiatorPrefs = () => changePrefs({ method: 'DELETE' })

@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Import API router
 import plan_api
+import radiator_api
 import sensor_api
 from api import ZONES, ha_client
 from api import router as api_router
@@ -50,6 +51,9 @@ from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.state_store import PlanStateStore
 from core.theria.plan.weather import OpenMeteoClient
+from core.theria.radiators.service import RadiatorService
+from core.theria.radiators.settings import load_radiator_settings
+from core.theria.radiators.store import PrefsStore
 from core.theria.sensor_guard import SensorGuard, load_guard_settings
 from core.theria.settings import HeatPumpSettings
 from core.theria.temperature_history_service import TemperatureHistoryService
@@ -165,6 +169,7 @@ async def lifespan(app: FastAPI):
     # Start the price-driven plan service (writes to HA only in active mode, which needs
     # explicit confirmation through the API)
     plan_service = None
+    radiator_service = None
     if ha_client:
         try:
             plan_settings = load_plan_settings(
@@ -288,6 +293,35 @@ async def lifespan(app: FastAPI):
                 logger.info(
                     f"📈 Price plan service started (mode: {plan_settings.mode})"
                 )
+
+                # Salon and guest house radiators: shadow only, shares the plan's price feed
+                radiator_settings = load_radiator_settings(
+                    "/data/options.json",
+                    os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
+                )
+                if radiator_settings:
+                    here = os.path.dirname(__file__)
+                    radiator_prefs_path = (
+                        "/data/radiator_prefs.json"
+                        if os.path.isdir("/data")
+                        else os.path.join(here, "..", ".radiator_prefs.json")
+                    )
+                    radiator_events_path = (
+                        "/data/radiator_events.jsonl"
+                        if os.path.isdir("/data")
+                        else os.path.join(here, "..", ".radiator_events.jsonl")
+                    )
+                    radiator_service = RadiatorService(
+                        ha_client,
+                        radiator_settings,
+                        PrefsStore(radiator_settings.defaults, radiator_prefs_path),
+                        SensorGuard(ha_client, radiator_settings.salon_sensor_guard),
+                        prices.periods,
+                        event_log=EventLog(radiator_events_path),
+                    )
+                    radiator_api.service = radiator_service
+                    await radiator_service.start()
+                    logger.info("🔥 Radiator plan service started (shadow)")
         except TheriaError as e:
             logger.error(f"Price plan service not started: {e}")
 
@@ -295,6 +329,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Theria shutting down")
+    if radiator_service:
+        await radiator_service.stop()
     if plan_service:
         await plan_service.stop()
     if sensor_guard:
@@ -352,6 +388,7 @@ app.add_middleware(
 # Include API router
 app.include_router(api_router)
 app.include_router(plan_api.router)
+app.include_router(radiator_api.router)
 app.include_router(sensor_api.router)
 
 # Mount static files

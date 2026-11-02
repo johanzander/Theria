@@ -59,3 +59,5 @@ documentation/private/
 .plan_runs.jsonl
 .exec_trace.jsonl
 .plan_overrides.json
+.radiator_prefs.json
+.radiator_events.jsonl

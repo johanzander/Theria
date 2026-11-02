@@ -4,6 +4,7 @@ import { Control } from './views/Control'
 import { Models } from './views/Models'
 import { Overview } from './views/Overview'
 import { PlanTable } from './views/PlanTable'
+import { Radiators } from './views/Radiators'
 import { Savings } from './views/Savings'
 import { Sensors } from './views/Sensors'
 import { Settings } from './views/Settings'
@@ -24,6 +25,7 @@ const VIEWS = [
   { id: 'settings', label: 'Settings', view: <Settings /> },
   { id: 'sensors', label: 'Sensors', view: <Sensors /> },
   { id: 'control', label: 'Control', view: <Control /> },
+  { id: 'radiators', label: 'Radiators', view: <Radiators /> },
 ]
 
 function currentId(): string {

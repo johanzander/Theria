@@ -102,6 +102,7 @@ zones:
 ### Optimization & Learning
 
 - `core/theria/plan/price_feed.py` - Nord Pool prices from Home Assistant (plan, charts, measured days)
+- `core/theria/radiators/` - salon (Netatmo) and guest house (Tado) radiator plan, shadow mode only (design: `docs/superpowers/specs/2026-11-01-radiator-zones-design.md`)
 - `core/theria/thermal_learning_service.py` - Background learning service
 - `core/theria/zone_thermal_learner.py` - Per-zone thermal learning
 - `core/theria/history.py` - Event history tracking
@@ -179,5 +180,5 @@ Key highlights:
 1. **comfort_target and allowed_deviation** - Configured but not yet used in optimization logic
 2. **Thermal characteristics** - Being learned continuously but not yet used for predictions
 3. **Port 8081** - Consistent across all configs (Dockerfile, config.yaml, docker-compose)
-4. **No frontend** - Backend-only API, no UI yet
+4. **Frontend** - React/Vite UI in `frontend/` (tabs: Overview, Plan, Savings, Models, Settings, Sensors, Control, Radiators)
 5. **Observation mode** - System is learning, not actively controlling thermostats yet

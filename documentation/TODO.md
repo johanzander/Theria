@@ -210,3 +210,25 @@ Built per `docs/superpowers/specs/2026-10-14-zone-control-design.md` (section 14
 - [ ] Read the mixing valve and confirm the 40 C cap, and ask the parquet supplier for the surface limit (26 or 27 C).
 - [ ] Verify against history that the room's response to flow stops growing above the cap.
 - [ ] The kitchen cannot be measured today and is out of scope.
+
+## Radiator zones: salon and guest house (2026-11-01)
+
+Shadow release built per `docs/superpowers/specs/2026-11-01-radiator-zones-design.md` and
+`docs/superpowers/plans/2026-11-01-radiator-zones.md`. It computes and logs; nothing is written.
+
+- [ ] Read the Radiators tab and `/data/radiator_events.jsonl` for a few days: are the would-be setpoints sensible?
+- [ ] Confirm that `sensor.butik_temperature_2` is the smoke detector in the ceiling.
+- [ ] Write test (needs Johan's go): does a written Netatmo setpoint hold in `auto` or fall back to the schedule
+      ("Mitt schema")? How fast do Netatmo and Tado take a write, and how many Tado calls per day are allowed?
+- [ ] Check `salon_heat_power_w` (1200 W) and `salon_baseline_c` (20 C) against the logged salon temperatures; both are estimates.
+- [ ] Salon saving is measured against a flat hold all hours, so it mostly shows the night setback; add the
+      price-driven part alone (flat-price plan against plan).
+- [ ] Active mode: a radiator executor like `LKExecutor` (read back, pause one hour on a hand change, restore base),
+      and let the pump plan lift the radiator block while controlled rooms are above their bounds.
+- [ ] Guest house thermal model per room from InfluxDB history, to tune the band and the indicative saving.
+- [ ] Not built yet (spec S5 and 13.4): no cut when the salon's prediction error has recently been large (as `skill.py`
+      does for the pump plan), and the recorded base setpoint per thermostat (`radiator_base_c`) for restore.
+- [ ] Use the weather forecast for the outdoor temperature over the horizon (now the measured value held flat), and
+      plan the first hour from the minutes left in it.
+- [ ] `NordpoolFeed.periods()` has no lock and is now called by the pump plan and the radiator service in the same minute;
+      add one. The radiator event log grows without limit; rotate it.

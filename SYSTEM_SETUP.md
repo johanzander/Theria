@@ -92,6 +92,20 @@ counters directly.
 
 ## Zone Configurations
 
+**Salon temperature points (measured 2026-11-01):** the two thermostats' sensors
+(`sensor.vantsidan_temperature`, `sensor.klippsidan_temperature`), the Verisure water alarm on the floor
+(`sensor.schamponeringstolen_temperature`) and the Verisure smoke detector in the ceiling
+(`sensor.butik_temperature_2`, probably - to be confirmed). They report every few minutes to a few hours. The
+Netatmo thermostats stand in `auto` with a schedule (`select.salong` = "Mitt schema"); `switch.vattenavstangning_salongen`
+is the salon's water shut-off and is never touched. Wanted: the mean of all points about 19 C weekdays 09-19 and
+weekends 10-16, cooler outside those hours; a schedule editable in Theria.
+
+**Guest house (Tado):** `climate.bedroom`, `hallway`, `kitchen`, `tv_room_gh`, `storage_room`: modes off/auto/heat,
+step 0.5, range 5-25 C, `hvac_action` available; setpoints 2026-11-01: 18.0 / 19.5 / 20.0 / 19.5 / 17.0. Wanted: a
+temperature per room that may vary about +/-1.5 C with the price.
+
+Radiator control is in shadow mode (`core/theria/radiators/`): it logs what it would set, it writes nothing.
+
 ### Zone 1: Boutique (35 sqm)
 
 **Heating Type:** 2× water radiators (Netatmo)
