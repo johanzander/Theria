@@ -13,14 +13,12 @@ const C = {
 }
 const ROOM_COLOURS = ['#2f855a', '#b7791f', '#7b3fa0', '#c2410c']
 
-/** The x axis shared by the charts: every third hour, and the day named at midnight. */
+/** The x axis shared by the charts: every hour as 00, 01, 02, with a line at each midnight. */
 export function axisFor(rows: { key: string }[], perHour: number) {
-  const dayLabels: Record<string, string> = {}
-  for (const r of rows as HourRow[]) if (r.dayStart) dayLabels[r.key.slice(0, 10)] = r.dayLabel
   const keys = rows.map((r) => r.key)
   return {
-    ticks: axisTicks(keys, 3 * perHour),
-    tickFormatter: (key: string) => axisLabel(key, dayLabels),
+    ticks: axisTicks(keys, perHour),
+    tickFormatter: axisLabel,
     dayStarts: keys.filter((k) => k.slice(11, 16) === '00:00'),
   }
 }

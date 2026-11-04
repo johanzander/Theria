@@ -167,10 +167,9 @@ export function axisTicks(keys: string[], every: number): string[] {
   return keys.filter((_, i) => i % every === 0)
 }
 
-/** 'HH:00' on the axis; at midnight the day's name stands in for the time. */
-export function axisLabel(key: string, dayLabels: Record<string, string>): string {
-  const time = key.slice(11, 16)
-  return time === '00:00' ? (dayLabels[key.slice(0, 10)] ?? time) : time
+/** The hour as 'HH' on the axis (00, 01, 02), like BESS Manager; the day lines mark the midnights. */
+export function axisLabel(key: string): string {
+  return key.slice(11, 13)
 }
 
 /** For the tooltip header: the hour or quarter a point stands for. */

@@ -278,10 +278,10 @@ describe('axis helpers', () => {
     expect(axisTicks(keys, 3)).toEqual([keys[0], keys[3], keys[6], keys[9]])
   })
 
-  it('names the day in place of the time at midnight', () => {
-    expect(axisLabel('2026-10-14 00:00', { '2026-10-14': 'ons 14' })).toBe('ons 14')
-    expect(axisLabel('2026-10-14 00:00', {})).toBe('00:00')
-    expect(axisLabel('2026-10-14 06:00', {})).toBe('06:00')
+  it('labels the hours 00, 01, 02 like BESS Manager', () => {
+    expect(axisLabel('2026-10-14 00:00')).toBe('00')
+    expect(axisLabel('2026-10-14 06:00')).toBe('06')
+    expect(axisLabel('2026-10-14 23:15')).toBe('23')
   })
 
   it('gives the tooltip the span an hour or a quarter covers', () => {

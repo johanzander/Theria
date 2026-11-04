@@ -7,13 +7,11 @@ import { DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
 const fix = (v: number | null, digits: number, suffix = '') => (v === null ? '-' : `${v.toFixed(digits)}${suffix}`)
 
 function FlowChart({ rows, cap }: { rows: HourRow[]; cap: number | null }) {
-  const dayLabels: Record<string, string> = {}
-  for (const r of rows) if (r.dayStart) dayLabels[r.key.slice(0, 10)] = r.dayLabel
   return (
     <ResponsiveContainer width="100%" height={240}>
       <ComposedChart data={rows}>
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="key" ticks={axisTicks(rows.map((r) => r.key), 3)} tickFormatter={(k: string) => axisLabel(k, dayLabels)} interval={0} />
+        <XAxis dataKey="key" ticks={axisTicks(rows.map((r) => r.key), 1)} tickFormatter={axisLabel} interval={0} />
         <YAxis unit="°" domain={[(min: number) => Math.floor(min) - 2, (max: number) => Math.ceil(max) + 2]} />
         <Tooltip labelFormatter={(k) => rangeLabel(String(k))} formatter={tooltipFormatter(() => UNITS.temp)} />
         <Legend />
