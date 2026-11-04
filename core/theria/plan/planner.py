@@ -21,7 +21,9 @@ ROOM_MARGIN_C = (
 SLAB_MARGIN_C = 2.0
 ROOM_BIN_C = 0.1
 SLAB_BIN_C = 1.0
-VIOLATION_COST_SEK_PER_C_HOUR = 100.0  # floor / ceiling are effectively hard
+CEILING_VIOLATION_COST_SEK_PER_C_HOUR = (
+    100.0  # the ceiling is effectively hard: the valves close
+)
 SWITCH_COST_SEK_PER_C = 0.02  # tie-breaker: prefer smooth plans, avoids pump jitter
 END_CREDIT_C = (
     0.5  # heat stored above the end level is credited up to this far (the model's
@@ -236,8 +238,9 @@ class _Problem:
         s = self.settings
         return np.asarray(
             s.comfort_cost_sek_per_c_hour * np.maximum(0.0, target_c - room_c)
-            + VIOLATION_COST_SEK_PER_C_HOUR * np.maximum(0.0, floor_c - room_c)
-            + VIOLATION_COST_SEK_PER_C_HOUR * np.maximum(0.0, room_c - s.ceiling_c),
+            + s.floor_violation_cost_sek_per_c_hour * np.maximum(0.0, floor_c - room_c)
+            + CEILING_VIOLATION_COST_SEK_PER_C_HOUR
+            * np.maximum(0.0, room_c - s.ceiling_c),
             dtype=float,
         )
 

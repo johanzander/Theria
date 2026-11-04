@@ -50,7 +50,7 @@ def test_the_pump_room_sun_weights_and_limits_are_all_listed(settings):
         "k_slab", "k_out", "tau_slab_h", "sun_swing_c_per_wm2", "sun_lag_h", "room_gain_c_per_c",
         "room_time_constant_days", "disturbance_c_per_h", "authority", "morning_margin_c",
         "comfort_cost_sek_per_c_hour", "setpoint_deviation_cost_sek_per_c_hour",
-        "violation_cost_sek_per_c_hour", "switch_cost_sek_per_c", "end_credit_c",
+        "floor_violation_cost_sek_per_c_hour", "ceiling_violation_cost_sek_per_c_hour", "switch_cost_sek_per_c", "end_credit_c",
         "min_saving_sek", "floor_mix_max_c", "lk_limit_c",
     ):
         assert wanted in keys, wanted

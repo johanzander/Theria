@@ -249,6 +249,15 @@ EDITABLE: dict[str, SettingInfo] = {
         20,
         0.1,
     ),
+    "floor_violation_cost_sek_per_c_hour": _f(
+        "Weights",
+        "Floor violation cost",
+        "What an hour one degree under the comfort floor costs. Higher: the plan heats harder to hold the floor, even when power is dear.",
+        "kr per °C·h",
+        0,
+        100,
+        1,
+    ),
     "setpoint_deviation_cost_sek_per_c_hour": _f(
         "Weights",
         "Cost of moving the setpoint",

@@ -179,7 +179,9 @@ def warm(scale, applied=None):
 
 
 def test_the_planner_warms_the_room_at_the_measured_speed(night_settings):
-    slow, fast = make_active(night_settings)[0], make_active(night_settings)[0]
+    # a floor held at any price: the warm-up speed is then the only thing that sets the rate
+    held = replace(night_settings, floor_violation_cost_sek_per_c_hour=100.0)
+    slow, fast = make_active(held)[0], make_active(held)[0]
     slow._apply_models(
         replace(fitted_models(), night_drift=COLD_NIGHTS, warmup=warm(0.5))
     )

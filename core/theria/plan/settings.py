@@ -81,6 +81,10 @@ class PlanSettings:
     # What the mixing valves (shunts) allow the floor loops to receive, whatever the pump sends.
     floor_mix_max_c: float = 40.0
     comfort_cost_sek_per_c_hour: float = 1.0
+    # What an hour one degree under the floor costs. Finite on purpose: a hard floor (100) made the
+    # plan heat at any price whenever the forecast missed the floor, as on 2026-11-04 at 4 kr/kWh,
+    # when raising 20 instead of 15 gained 0.02 C. At this value the price always counts.
+    floor_violation_cost_sek_per_c_hour: float = 5.0
     # Stands in for the rooms that react faster than the ground floor (salon, guest house):
     # every degree-hour the setpoint is away from the base setpoint costs this much.
     setpoint_deviation_cost_sek_per_c_hour: float = 0.1
@@ -192,6 +196,10 @@ class PlanSettings:
             )
         if self.comfort_cost_sek_per_c_hour < 0:
             raise ConfigurationError("comfort_cost_sek_per_c_hour must not be negative")
+        if self.floor_violation_cost_sek_per_c_hour < 0:
+            raise ConfigurationError(
+                "floor_violation_cost_sek_per_c_hour must not be negative"
+            )
         if self.min_saving_sek < 0:
             raise ConfigurationError("min_saving_sek must not be negative")
         if self.commit_margin_sek < 0:

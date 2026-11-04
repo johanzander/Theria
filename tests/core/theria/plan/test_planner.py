@@ -464,6 +464,21 @@ def test_a_cooling_that_would_break_the_night_floor_makes_the_plan_push_as_hard_
     assert sum(h.rts_c for h in cold.hours[:4]) > sum(h.rts_c for h in plain.hours[:4])
 
 
+def test_a_floor_that_cannot_be_held_does_not_make_the_plan_heat_at_any_price(
+    settings, make_inputs
+):
+    from dataclasses import replace
+
+    night = replace(settings, night_start_hour=0, night_end_hour=6)
+    index = np.arange(HORIZON)
+    pattern = np.where(index < 4, -0.6, 2.4 / (HORIZON - 4))
+    prices = np.where(index < 4, 8.0, 1.0)
+    inputs = replace(make_inputs(prices, room_c=19.5), extra_drift_c_per_h=pattern)
+    hard = run(inputs, replace(night, floor_violation_cost_sek_per_c_hour=100.0))
+    soft = run(inputs, night)
+    assert sum(h.rts_c for h in soft.hours[:4]) < sum(h.rts_c for h in hard.hours[:4])
+
+
 def test_a_plan_that_saves_less_than_the_threshold_stays_at_the_flat_setpoint(
     settings, make_inputs
 ):
