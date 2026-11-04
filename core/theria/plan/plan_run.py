@@ -29,7 +29,7 @@ class PlanRun:
     settings: PlanSettings
     pump: PumpParams
     room: RoomParams
-    # what the plan decided then, per hour: start, rts_c, valves_closed, energy_kwh, binding
+    # what the plan decided then, per hour: start, rts_c, valves_closed, energy_kwh, binding and the options it weighed
     decided: list[dict[str, Any]]
     objective_sek: float
 
@@ -60,6 +60,7 @@ def run_to_dict(run: PlanRun) -> dict[str, Any]:
             "sun_wm2": _array(i.sun_wm2),
             "initial": asdict(i.initial),
             "previous_rts_c": i.previous_rts_c,
+            "previous_closed": i.previous_closed,
             "extra_drift_c_per_h": _array(i.extra_drift_c_per_h),
         },
         "settings": _settings_to_dict(run.settings),
@@ -84,6 +85,7 @@ def run_from_dict(body: dict[str, Any]) -> PlanRun:
             sun_wm2=np.array(i["sun_wm2"]),
             initial=RoomState(**i["initial"]),
             previous_rts_c=i["previous_rts_c"],
+            previous_closed=i.get("previous_closed", False),  # absent in runs kept before 2026-11-04
             extra_drift_c_per_h=None if drift is None else np.array(drift),
         ),
         settings=PlanSettings.from_dict(body["settings"]),
@@ -117,6 +119,8 @@ def make_run(
                 "valves_closed": h.valves_closed,
                 "energy_kwh": h.energy_kwh,
                 "binding": h.reason.get("binding"),
+                "alternatives": h.reason.get("alternatives"),
+                "held_by_commitment": h.reason.get("held_by_commitment"),
             }
             for h in result.hours
         ],

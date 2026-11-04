@@ -61,9 +61,7 @@ class PlanSettings:
     radiator_entities: tuple[str, ...] = ()
     price_area: str = "SE4"
     mode: str = "off"
-    floor_c: float = (
-        18.5  # savings study: a floor of 18.5 C costs nothing against 17-18 C and keeps the room above it
-    )
+    floor_c: float = 18.5  # savings study: a floor of 18.5 C costs nothing against 17-18 C and keeps the room above it
     extreme_floor_c: float = 17.0
     target_c: float = 19.5
     ceiling_c: float = 22.0  # the room limit U: the plan may store heat up to it

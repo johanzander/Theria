@@ -28,6 +28,9 @@ class PlanRecord:
     flow_c: float | None = None
     baseline_flow_c: float | None = None
     binding: str | None = None
+    # what the plan weighed for the hour (see planner.alternatives)
+    alternatives: list[dict[str, Any]] | None = None
+    held_by_commitment: dict[str, float] | None = None
 
 
 def _to_dict(record: PlanRecord) -> dict[str, Any]:

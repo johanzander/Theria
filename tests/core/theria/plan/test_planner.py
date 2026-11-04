@@ -225,9 +225,9 @@ def test_the_setpoint_varies_over_the_day_and_the_average_stays_near_the_base(
     assert rts.max() >= settings.rts_base_c + 0.5  # higher in the cheap hours
     for first in range(0, 12):
         window = rts[first : first + 24]
-        assert (
-            abs(window.mean() - settings.rts_base_c) < 1.0
-        ), "a day must be energy neutral"
+        assert abs(window.mean() - settings.rts_base_c) < 1.0, (
+            "a day must be energy neutral"
+        )
 
 
 def test_the_heat_is_never_off_for_long_stretches(settings, make_inputs):
@@ -458,9 +458,9 @@ def test_a_cooling_that_would_break_the_night_floor_makes_the_plan_push_as_hard_
     plain = run(plain_inputs, night)
     cold = run(replace(plain_inputs, extra_drift_c_per_h=pattern), night)
     assert cold.baseline_hours[3].room_c_end < plain.baseline_hours[3].room_c_end - 2.0
-    assert (
-        cold.floor_violation_hours >= 1
-    ), "the night floor cannot be held in this case"
+    assert cold.floor_violation_hours >= 1, (
+        "the night floor cannot be held in this case"
+    )
     assert sum(h.rts_c for h in cold.hours[:4]) > sum(h.rts_c for h in plain.hours[:4])
 
 
@@ -598,3 +598,43 @@ def test_the_first_hour_keeps_the_floor_loops_closed_when_they_were(
         replace(closes, commit_margin_sek=50.0),
     )
     assert held.hours[0].valves_closed and held.hours[0].rts_c == settings.rts_min_c
+
+
+def test_every_hour_lists_what_each_setpoint_would_have_cost_and_why_one_was_excluded(
+    settings, make_inputs
+):
+    prices = np.where(EVENING, 4.0, 1.0)
+    result = run(make_inputs(prices, previous_rts_c=settings.rts_base_c), settings)
+    steps = round((settings.rts_max_c - settings.rts_min_c) / settings.rts_step_c) + 1
+    for hour in result.hours:
+        options = hour.reason["alternatives"]
+        assert len(options) == steps
+        assert [o["rts_c"] for o in options] == sorted(o["rts_c"] for o in options)
+        [chosen] = [o for o in options if o["rts_c"] == hour.rts_c]
+        assert chosen["extra_objective_sek"] == 0.0 and chosen["excluded"] is None
+        for o in options:
+            assert (o["excluded"] is None) == (o["extra_objective_sek"] is not None)
+    # the first hour cannot rise more than the ramp limit above what is applied now
+    first = {o["rts_c"]: o for o in result.hours[0].reason["alternatives"]}
+    limit = settings.rts_base_c + settings.max_rts_step_per_hour_c
+    assert all(
+        o["excluded"] == "ramp_limit" for r, o in first.items() if r > limit + 1e-9
+    )
+    assert all(o["excluded"] != "ramp_limit" for r, o in first.items() if r <= limit)
+
+
+def test_a_first_hour_kept_by_the_commitment_margin_says_what_the_better_choice_was_worth(
+    settings, make_inputs
+):
+    prices = np.where(np.arange(HORIZON) < 6, 6.0, 1.0)
+    held = replace(settings, commit_margin_sek=1000.0)
+    result = run(make_inputs(prices, previous_rts_c=settings.rts_base_c), held)
+    first = result.hours[0]
+    assert first.rts_c == settings.rts_base_c
+    kept = first.reason["held_by_commitment"]
+    assert kept["best_rts_c"] < kept["held_rts_c"] == first.rts_c
+    assert 0.0 < kept["gain_sek"] < kept["margin_sek"] == 1000.0
+    assert all(
+        "held_by_commitment" not in h.reason or h.reason["held_by_commitment"] is None
+        for h in result.hours[1:]
+    )

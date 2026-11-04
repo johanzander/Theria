@@ -72,3 +72,17 @@ def test_the_replay_script_matches_the_stored_decision_and_takes_a_setting(
     ).stdout
     assert "replay matches the stored decision: True" in out
     assert "with comfort_cost_sek_per_c_hour=3" in out
+
+
+def test_a_run_keeps_the_options_of_every_decided_hour_and_the_valve_state_it_started_from(
+    settings, tmp_path
+):
+    service, store = kept_run(settings, tmp_path)
+    [body] = store.read(PLAN_START - timedelta(hours=1))
+    first = body["decided"][0]
+    assert (
+        first["alternatives"] == service.latest().plan.hours[0].reason["alternatives"]
+    )
+    assert "held_by_commitment" in first
+    assert body["inputs"]["previous_closed"] is False
+    assert run_from_dict(body).inputs.previous_closed is False

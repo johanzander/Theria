@@ -112,6 +112,7 @@ def build_day_view(
             "flow_planned_c": None,
             "flow_baseline_c": None,
             "reason": None,
+            "decision": None,
             "loops_open": {},
             "thermostats": {},
         }
@@ -146,6 +147,12 @@ def build_day_view(
                 flow_planned_c=record.flow_c,
                 flow_baseline_c=record.baseline_flow_c,
                 reason=record.binding,
+                decision=None
+                if record.alternatives is None
+                else {
+                    "alternatives": record.alternatives,
+                    "held_by_commitment": record.held_by_commitment,
+                },
             )
         elif not past and hour in planned:
             hour_plan, baseline = planned[hour]
@@ -163,6 +170,10 @@ def build_day_view(
                 flow_planned_c=hour_plan.flow_target_c,
                 flow_baseline_c=baseline.flow_target_c,
                 reason=hour_plan.reason.get("binding"),
+                decision={
+                    "alternatives": hour_plan.reason["alternatives"],
+                    "held_by_commitment": hour_plan.reason["held_by_commitment"],
+                },
             )
         row["saving_planned_sek"] = _saving(
             price, row["energy_baseline_kwh"], row["energy_planned_kwh"]

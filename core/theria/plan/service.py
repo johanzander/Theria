@@ -1057,6 +1057,8 @@ class PlanService:
                     flow_c=hour.flow_target_c,
                     baseline_flow_c=flat.flow_target_c,
                     binding=hour.reason.get("binding"),
+                    alternatives=hour.reason["alternatives"],
+                    held_by_commitment=hour.reason["held_by_commitment"],
                 )
             )
         except OSError:
@@ -1224,7 +1226,7 @@ class PlanService:
                         }
                     ),
                     "rts_range_c": [effective.rts_min_c, effective.rts_max_c],
-                            "disturbance_c_per_h": self._disturbance.at(now),
+                    "disturbance_c_per_h": self._disturbance.at(now),
                     "regulator": [
                         {
                             "room": r.room,

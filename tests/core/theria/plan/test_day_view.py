@@ -46,12 +46,17 @@ def test_hours_already_passed_show_what_was_measured_and_the_rest_the_plan(setti
     service = started(settings)
     rows = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}
     past = rows[PLAN_START - timedelta(hours=1)]
-    assert past["past"] and past["rts_measured"] == 18.0 and past["room_measured"] == 20.0
+    assert (
+        past["past"] and past["rts_measured"] == 18.0 and past["room_measured"] == 20.0
+    )
     assert past["rts_baseline"] is None  # no plan was recorded for this hour
     planned = rows[PLAN_START]
     first = service.latest().plan.hours[0]
     assert not planned["past"] and planned["rts_planned"] == first.rts_c
-    assert planned["room_planned"] == first.room_c_end and planned["rts_baseline"] is not None
+    assert (
+        planned["room_planned"] == first.room_c_end
+        and planned["rts_baseline"] is not None
+    )
     assert planned["rts_measured"] is None
 
 
@@ -130,22 +135,38 @@ def test_every_hour_carries_its_four_quarter_prices_and_the_hour_price_is_their_
             assert None in row["price_quarters"]
 
 
-def test_a_past_hour_shows_the_feeds_price_and_the_saving_is_worth_the_energy_at_the_recorded_price(settings):
+def test_a_past_hour_shows_the_feeds_price_and_the_saving_is_worth_the_energy_at_the_recorded_price(
+    settings,
+):
     from core.theria.plan.day_view import build_day_view
     from core.theria.plan.plan_record import PlanRecord
     from core.theria.plan.prices import PricePeriod
 
     hour = FIRST_HOUR + timedelta(hours=10)
     record = PlanRecord(
-        hour=hour, computed_at=hour, rts_c=17.0, room_c=19.8, energy_kwh=2.0, baseline_rts_c=18.0,
-        baseline_room_c=19.9, baseline_energy_kwh=2.5, price_sek_per_kwh=1.7,
+        hour=hour,
+        computed_at=hour,
+        rts_c=17.0,
+        room_c=19.8,
+        energy_kwh=2.0,
+        baseline_rts_c=18.0,
+        baseline_room_c=19.9,
+        baseline_energy_kwh=2.5,
+        price_sek_per_kwh=1.7,
     )
     feed = [PricePeriod(hour + timedelta(minutes=15 * q), 1.7) for q in range(4)]
     now = FIRST_HOUR + timedelta(days=3)
-    rows = {r["start"]: r for r in build_day_view(LOCAL_DAY, now, settings, feed, None, None, {hour: record})["hours"]}
+    rows = {
+        r["start"]: r
+        for r in build_day_view(
+            LOCAL_DAY, now, settings, feed, None, None, {hour: record}
+        )["hours"]
+    }
     assert rows[hour]["price_sek_per_kwh"] == 1.7
     assert rows[hour]["saving_planned_sek"] == (2.5 - 2.0) * 1.7
-    assert rows[hour + timedelta(hours=1)]["price_sek_per_kwh"] is None  # the feed has nothing for the next hour
+    assert (
+        rows[hour + timedelta(hours=1)]["price_sek_per_kwh"] is None
+    )  # the feed has nothing for the next hour
 
 
 def test_the_checks_include_the_price_feed_and_the_stored_history(settings):
@@ -153,4 +174,21 @@ def test_the_checks_include_the_price_feed_and_the_stored_history(settings):
     run_cycle(service)
     names = {c.name: c.status for c in service.preflight()}
     assert names["price feed"] == "ok"
-    assert {"price history", "compressor counter", "electric heater counter", "measured savings"} <= set(names)
+    assert {
+        "price history",
+        "compressor counter",
+        "electric heater counter",
+        "measured savings",
+    } <= set(names)
+
+
+def test_a_planned_hour_carries_the_options_the_plan_weighed(settings):
+    service = started(settings)
+    rows = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}
+    first = service.latest().plan.hours[0]
+    decision = rows[PLAN_START]["decision"]
+    assert decision["alternatives"] == first.reason["alternatives"]
+    assert decision["held_by_commitment"] == first.reason["held_by_commitment"]
+    assert (
+        rows[PLAN_START - timedelta(hours=1)]["decision"] is None
+    )  # nothing was recorded

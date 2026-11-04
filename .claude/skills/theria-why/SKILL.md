@@ -65,10 +65,14 @@ Never ship an explanation that the system cannot reproduce.
 
 Known gaps (update this list when one is closed):
 
-- **Why the planner chose an action:** the stored plan has the chosen setpoint and a reason code, not
-  the cost of the alternatives or which constraint bound. Needed per plan run and hour: cost of every
-  allowed action, the allowed set and what removed each excluded action (ramp, authority, floor,
-  ceiling), and the binding limit. Until it exists, a replay from "Plan runs" inputs is the only proof.
+- **Why the planner chose an action - closed 2026-11-04 for plans computed after that deploy.** Each hour
+  carries `alternatives`: every setpoint the plan could pick, with `extra_objective_sek` (what it would
+  have cost over the whole horizon against the chosen one; positive = worse) or `excluded` (`flow_cap`,
+  `ramp_limit`), and for the first hour `held_by_commitment` (the applied value was kept against a better
+  one: held, best, gain, margin). Read it from `GET api/plan/day` (`hours[].decision`) or from the debug
+  export's "Plan runs" (`decided[].alternatives`). Runs and hours from before the deploy have none: replay
+  the stored run (`scripts/replay_plan.py`, `core/theria/plan/plan_run.replay`) and read the alternatives
+  from the replay. A winner whose neighbours are within a few öre is a near tie, and the answer says so.
 - **Which input made the applied value differ from the plan:** the trace has the asked and the result,
   but not the constraint that changed the ask (pause, trouble, executor limit). Record the reason for
   every deviation next to the ask.

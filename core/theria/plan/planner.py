@@ -445,8 +445,9 @@ class _Problem:
             a = int(policy[t, r_i, s_i, prev])
             closed = a == 0 and bool(valves_closed[t, r_i, s_i])
             here = (np.array([[room_c]]), np.array([[slab_c]]))
+            held = None
             if t == 0:
-                a, closed = self.committed(a, closed, prev, here, value[t + 1])
+                a, closed, held = self.committed(a, closed, prev, here, value[t + 1])
             chosen = float(self.q_value(t, a, *here, value[t + 1], closed)[0, 0])
             marginal = {
                 label: float(self.q_value(t, b, *here, value[t + 1])[0, 0]) - chosen
@@ -468,6 +469,8 @@ class _Problem:
                         float(rank[t]),
                         marginal,
                         closed,
+                        self.alternatives(t, a, prev, chosen, here, value[t + 1]),
+                        held,
                     ),
                     tail=t >= self.horizon - TAIL_HOURS,
                     closed=closed,
@@ -483,22 +486,72 @@ class _Problem:
         prev: int,
         here: tuple[FloatArray, FloatArray],
         next_value: FloatGrid,
-    ) -> tuple[int, bool]:
+    ) -> tuple[int, bool, dict[str, float] | None]:
         """The first hour keeps what is applied (the setpoint and the valve state) unless the best
         choice is better by more than the commitment margin: the plan is recomputed every 15
-        minutes and a near tie must not flip the pump back and forth."""
+        minutes and a near tie must not flip the pump back and forth. The third value says what
+        the kept choice gave up, or None when the best choice was taken."""
         held_closed = (
             self.inputs.previous_closed
             and prev == 0
             and self.settings.plan_closes_valves
         )
         if (a, closed) == (prev, held_closed) or not self.allowed[0, prev]:
-            return a, closed
+            return a, closed, None
         best = float(self.q_value(0, a, *here, next_value, closed)[0, 0])
         held = float(self.q_value(0, prev, *here, next_value, held_closed)[0, 0])
-        if held - best < self.settings.commit_margin_sek:
-            return prev, held_closed
-        return a, closed
+        margin = self.settings.commit_margin_sek
+        if held - best < margin:
+            return (
+                prev,
+                held_closed,
+                {
+                    "held_rts_c": float(self.actions[prev]),
+                    "best_rts_c": float(self.actions[a]),
+                    "gain_sek": round(held - best, 4),
+                    "margin_sek": margin,
+                },
+            )
+        return a, closed, None
+
+    def alternatives(
+        self,
+        t: int,
+        a: int,
+        prev: int,
+        chosen: float,
+        here: tuple[FloatArray, FloatArray],
+        next_value: FloatGrid,
+    ) -> list[dict[str, Any]]:
+        """Every setpoint the plan could have picked this hour: what it would have cost over the
+        whole horizon relative to the chosen one (positive = worse), or what ruled it out."""
+        max_move = round(
+            self.settings.max_rts_step_per_hour_c / self.settings.rts_step_c
+        )
+        options: list[dict[str, Any]] = []
+        for b in range(len(self.actions)):
+            excluded = None
+            if not self.allowed[t, b]:
+                excluded = "flow_cap"
+            elif b > prev + max_move:
+                excluded = "ramp_limit"
+            extra = None
+            if excluded is None:
+                extra = (
+                    0.0
+                    if b == a
+                    else round(
+                        float(self.q_value(t, b, *here, next_value)[0, 0]) - chosen, 4
+                    )
+                )
+            options.append(
+                {
+                    "rts_c": float(self.actions[b]),
+                    "excluded": excluded,
+                    "extra_objective_sek": extra,
+                }
+            )
+        return options
 
     def flat_plan(self, rts_c: float) -> list[HourPlan]:
         """The same models with a constant room setpoint: the comparison baseline."""
@@ -516,8 +569,9 @@ class _Problem:
                 self.inputs.sun_wm2[t],
                 self.settings.lk_limit_c,
             )
-            room_c, slab_c = float(room_next) + float(self.extra_drift[t]), float(
-                slab_next
+            room_c, slab_c = (
+                float(room_next) + float(self.extra_drift[t]),
+                float(slab_next),
             )
             hours.append(
                 self.hour_plan(
@@ -534,6 +588,8 @@ class _Problem:
         price_rank: float,
         marginal: dict[str, float],
         closed: bool = False,
+        alternatives: list[dict[str, Any]] | None = None,
+        held_by_commitment: dict[str, float] | None = None,
     ) -> dict[str, Any]:
         s = self.settings
         floor_c = float(self.floors[t])
@@ -558,6 +614,10 @@ class _Problem:
             "extreme_price": bool(self.inputs.extreme[t]),
             # extra objective if the setpoint were one step lower / higher
             "marginal_objective_sek": marginal,
+            # every setpoint the plan could have picked and what it cost, or what ruled it out
+            "alternatives": alternatives,
+            # the first hour only: the applied choice was kept against a better one
+            "held_by_commitment": held_by_commitment,
         }
 
 

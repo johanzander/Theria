@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -35,7 +36,9 @@ def test_a_record_is_read_back(tmp_path):
     assert found[HOUR].rts_c == 17.0 and found[HOUR].baseline_energy_kwh == 2.0
 
 
-def test_only_the_first_plan_of_an_hour_is_kept_it_is_the_one_that_was_applied(tmp_path):
+def test_only_the_first_plan_of_an_hour_is_kept_it_is_the_one_that_was_applied(
+    tmp_path,
+):
     store = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
     store.append(record(rts=17.0))
     store.append(record(rts=19.0))
@@ -111,7 +114,9 @@ def test_the_saving_per_hour_is_the_baseline_energy_minus_the_energy_at_the_hour
 ):
     store = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
     past_hour = PLAN_START - timedelta(hours=2)
-    store.append(record(hour=past_hour))  # planned 1.5 kWh against 2.0 kWh flat, at 1.2 kr
+    store.append(
+        record(hour=past_hour)
+    )  # planned 1.5 kWh against 2.0 kWh flat, at 1.2 kr
     service, *_ = make(settings, plan_record=store, actuals_loader=measured_with_energy)
     run_cycle(service)
     row = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}[past_hour]
@@ -134,9 +139,13 @@ def test_flow_and_reason_travel_with_the_hour(settings, tmp_path):
     run_cycle(service)
     first = service.latest().plan.hours[0]
     found = store.read(PLAN_START, PLAN_START + timedelta(hours=1))[PLAN_START]
-    assert found.flow_c == first.flow_target_c and found.binding == first.reason.get("binding")
+    assert found.flow_c == first.flow_target_c and found.binding == first.reason.get(
+        "binding"
+    )
     row = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}[PLAN_START]
-    assert row["flow_planned_c"] == first.flow_target_c and row["reason"] == found.binding
+    assert (
+        row["flow_planned_c"] == first.flow_target_c and row["reason"] == found.binding
+    )
 
 
 def test_an_older_record_without_the_new_fields_is_still_read(tmp_path):
@@ -144,10 +153,25 @@ def test_an_older_record_without_the_new_fields_is_still_read(tmp_path):
 
     path = tmp_path / "plan_record.jsonl"
     old = {
-        "hour": HOUR.isoformat(), "computed_at": HOUR.isoformat(), "rts_c": 17.0, "room_c": 19.4,
-        "energy_kwh": 1.5, "baseline_rts_c": 18.0, "baseline_room_c": 19.5,
-        "baseline_energy_kwh": 2.0, "price_sek_per_kwh": 1.2,
+        "hour": HOUR.isoformat(),
+        "computed_at": HOUR.isoformat(),
+        "rts_c": 17.0,
+        "room_c": 19.4,
+        "energy_kwh": 1.5,
+        "baseline_rts_c": 18.0,
+        "baseline_room_c": 19.5,
+        "baseline_energy_kwh": 2.0,
+        "price_sek_per_kwh": 1.2,
     }
     path.write_text(json.dumps(old) + "\n")
     found = PlanRecordStore(str(path)).read(HOUR, HOUR + timedelta(hours=1))[HOUR]
     assert found.flow_c is None and found.binding is None
+
+
+def test_a_record_keeps_the_options_the_plan_weighed_for_the_hour(tmp_path):
+    options = [{"rts_c": 16.0, "excluded": None, "extra_objective_sek": 0.0}]
+    store = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
+    store.append(replace(record(), alternatives=options, held_by_commitment=None))
+    again = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
+    found = again.read(HOUR - timedelta(hours=1), HOUR + timedelta(hours=1))[HOUR]
+    assert found.alternatives == options
