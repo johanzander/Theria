@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
-from core.theria.plan.confirm import read_until
+from core.theria.plan.confirm import CONFIRM_INTERVAL_S, read_until
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.snapshot import PlanSnapshot
 
@@ -213,12 +213,19 @@ class PlanExecutor:
             return self._record(ExecutionResult("kept", value, None, reason, now))
         try:
             self._ha.set_temperature(self._s.room_setpoint_entity, value)
-            confirmed = read_until(
-                lambda: float(
+            reads = 0
+
+            def read_back() -> float:
+                nonlocal reads
+                reads += 1
+                return float(
                     self._ha.get_climate_state(self._s.room_setpoint_entity)[
                         "target_temperature"
                     ]
-                ),
+                )
+
+            confirmed = read_until(
+                read_back,
                 value,
                 CONFIRM_TOLERANCE_C,
                 self._sleep,
@@ -236,7 +243,12 @@ class PlanExecutor:
             self._pending = value  # the pump may still accept it
             return self._record(
                 ExecutionResult(
-                    "failed", value, None, f"read back {confirmed}, wrote {value}", now
+                    "failed",
+                    value,
+                    None,
+                    f"read back {confirmed} after {reads} reads over "
+                    f"{(reads - 1) * CONFIRM_INTERVAL_S:.0f}s, wrote {value}",
+                    now,
                 )
             )
         self._last_written = value

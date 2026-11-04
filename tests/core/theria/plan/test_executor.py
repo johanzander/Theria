@@ -160,6 +160,13 @@ def test_a_write_that_is_not_confirmed_by_the_read_back_is_reported(make):
     assert result.action == "failed" and "read back" in result.reason
 
 
+def test_a_write_that_is_not_confirmed_says_how_long_it_waited(make):
+    executor, ha, _ = make(18.0)
+    ha.ignore_write = True
+    result = executor.execute(snapshot([17.0]))
+    assert "read back 18.0 after 10 reads over 18s" in result.reason
+
+
 def test_a_failing_home_assistant_does_not_raise(make):
     executor, ha, _ = make(18.0)
     ha.fail_write = True
@@ -245,7 +252,9 @@ def test_a_write_that_never_took_effect_is_simply_tried_again(make):
     assert executor.execute(snapshot([18.0])).action == "wrote"
 
 
-def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_still_a_hand_change(make):
+def test_a_value_that_is_neither_the_old_nor_the_pending_one_is_still_a_hand_change(
+    make,
+):
     executor, ha = slow_pump_failing_once(make)
     ha.setpoint = 19.5
     assert executor.execute(snapshot([18.0])).action == "paused"
