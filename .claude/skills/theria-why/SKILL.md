@@ -11,7 +11,8 @@ answer. A suspicion is a lead to check, not a finding.
 
 ## The rule
 
-Every answer has three parts, in this order:
+Every answer uses these three headings, written out, in this order (no heading may be skipped; an
+empty one says "the data does not show ..."):
 
 1. **What happened** - the observed fact, with its timestamp and whether the time is UTC or local
    (Theria's tables and logs are UTC; the plan table and chart are mostly local - check which).
@@ -52,7 +53,9 @@ Ingress URL: open the add-on in Chrome (`https://casazander.se/local_theria`), f
    authority limit (`min_authority`, effective range), the ramp limit (`max_rts_step_per_hour_c`),
    comfort floors/ceiling and night window, extreme-price floor, safety/trouble pause, hand-change
    pause, executor refusal ("read back"), mode (off/shadow/active).
-5. Compare with the neighbours (same price, same state) - a one-hour exception needs a cause that
+5. Rule each blocker in or out in the answer with its evidence, including a failed write
+   ("read back" = the pump still reported the old value after the write; the cause of that is not in
+   the trace until it is recorded). Compare with the neighbours (same price, same state) - a one-hour exception needs a cause that
    differs in that hour.
 6. State the conclusion and the evidence. If two causes both fit the data, say so and name the
    measurement that separates them. Do not pick one.
@@ -76,6 +79,9 @@ Known gaps (update this list when one is closed):
 - **Which input made the applied value differ from the plan:** the trace has the asked and the result,
   but not the constraint that changed the ask (pause, trouble, executor limit). Record the reason for
   every deviation next to the ask.
+- **Why a write failed `read back X, wrote Y`:** the trace shows the pump still read X after the write
+  (2026-11-04 16:12 UTC, asked 18.0, pump 20.0), not whether the pump refused, was slow to report, or
+  was changed by something else. Record the read-back delay and the value read at each retry.
 - **Event times:** keep UTC in storage; label the zone wherever a time is shown.
 
 ## Do not
