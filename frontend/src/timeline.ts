@@ -162,9 +162,9 @@ export function quarterRows(views: (DayView | null)[]): QuarterRow[] {
   return out
 }
 
-/** Every `every`-th key starting from the first, for the x axis. */
-export function axisTicks(keys: string[], every: number): string[] {
-  return keys.filter((_, i) => i % every === 0)
+/** The keys that fall on an even hour (00:00, 02:00, ...), for the x axis. */
+export function axisTicks(keys: string[]): string[] {
+  return keys.filter((k) => k.slice(14, 16) === '00' && Number(k.slice(11, 13)) % 2 === 0)
 }
 
 /** The hour as 'HH' on the axis (00, 01, 02), like BESS Manager; the day lines mark the midnights. */

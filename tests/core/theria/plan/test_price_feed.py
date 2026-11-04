@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import threading
+
 import pytest
 
 from core.theria.exceptions import PriceDataError
@@ -98,8 +100,12 @@ class FakeWithHistory(FakeNordpool):
     def get_service_response(self, domain, service, data):
         self.calls.append((domain, service, data))
         day = datetime.fromisoformat(data["date"]).replace(tzinfo=UTC)
-        if day >= datetime(2026, 10, 11, tzinfo=UTC) and day <= datetime(2026, 10, 14, tzinfo=UTC):
-            return answer(day - timedelta(hours=2), price_per_mwh=100.0 * (day.day - 10))
+        if day >= datetime(2026, 10, 11, tzinfo=UTC) and day <= datetime(
+            2026, 10, 14, tzinfo=UTC
+        ):
+            return answer(
+                day - timedelta(hours=2), price_per_mwh=100.0 * (day.day - 10)
+            )
         raise RuntimeError("no prices for that date")
 
 
@@ -127,3 +133,29 @@ def test_a_day_the_integration_cannot_answer_for_is_left_out_not_filled_from_els
     start = datetime(2026, 10, 8, 22, tzinfo=UTC)  # the 9th and 10th are not answered
     periods = feed(client).history(start, NOW)
     assert len(periods) == 96 * 4  # the 11th, 12th, 13th and today
+
+
+def test_a_caller_that_arrives_while_tomorrow_is_being_fetched_gets_tomorrow_too():
+    """At start the plan, the radiators and the charts ask at once; one fetch serves them all."""
+    started, release = threading.Event(), threading.Event()
+
+    class SlowTomorrow(FakeNordpool):
+        def get_service_response(self, domain, service, data):
+            if data["date"] == "2026-10-15":
+                started.set()
+                release.wait(5)
+            return super().get_service_response(domain, service, data)
+
+    client = SlowTomorrow(tomorrow_published=True)
+    prices = feed(client)
+    first, second = [], []
+    a = threading.Thread(target=lambda: first.append(len(prices.periods())))
+    a.start()
+    assert started.wait(5)  # the first caller is inside the fetch of tomorrow
+    b = threading.Thread(target=lambda: second.append(len(prices.periods())))
+    b.start()
+    b.join(0.3)  # the second caller must not run past the fetch that is under way
+    release.set()
+    a.join(5)
+    b.join(5)
+    assert first == [192] and second == [192]

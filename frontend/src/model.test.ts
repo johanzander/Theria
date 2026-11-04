@@ -274,8 +274,10 @@ describe('quarterRows', () => {
 describe('axis helpers', () => {
   const keys = Array.from({ length: 10 }, (_, i) => `2026-10-14 ${String(i).padStart(2, '0')}:00`)
 
-  it('ticks every n-th key', () => {
-    expect(axisTicks(keys, 3)).toEqual([keys[0], keys[3], keys[6], keys[9]])
+  it('ticks the even hours on the hour, whatever the row length', () => {
+    expect(axisTicks(keys)).toEqual([keys[0], keys[2], keys[4], keys[6], keys[8]])
+    const quarters = ['2026-10-14 01:45', '2026-10-14 02:00', '2026-10-14 02:15', '2026-10-14 03:00', '2026-10-14 04:00']
+    expect(axisTicks(quarters)).toEqual(['2026-10-14 02:00', '2026-10-14 04:00'])
   })
 
   it('labels the hours 00, 01, 02 like BESS Manager', () => {

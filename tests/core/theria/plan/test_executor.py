@@ -134,9 +134,13 @@ def test_without_a_fresh_plan_it_goes_back_to_the_base(make):
     assert (
         ha.writes == [18.0] and result.action == "fallback" and "plan" in result.reason
     )
-    executor2, ha2, _ = make(17.0)
-    assert executor2.execute(None).action == "fallback"
-    assert ha2.writes == [18.0]
+
+
+def test_before_the_first_plan_nothing_is_written(make):
+    executor, ha, _ = make(17.0)
+    result = executor.execute(None)
+    assert result.action == "kept" and "no plan yet" in result.reason
+    assert ha.writes == []
 
 
 def test_a_manual_change_is_respected_for_an_hour(make):

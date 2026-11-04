@@ -140,7 +140,12 @@ class PlanExecutor:
             )
         self._pause_until = None
 
-        if snapshot is None or now - snapshot.computed_at > MAX_PLAN_AGE:
+        if snapshot is None:
+            # after a start, until the first plan: the pump keeps what it has
+            if abs(current - self._s.rts_base_c) < 1e-9:
+                self._last_written = current  # a later hand change is then noticed
+            return self._record(ExecutionResult("kept", None, None, "no plan yet", now))
+        if now - snapshot.computed_at > MAX_PLAN_AGE:
             return self._write(
                 self._s.rts_base_c, current, "fallback", "no fresh plan", now, False
             )

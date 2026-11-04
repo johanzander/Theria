@@ -44,7 +44,7 @@ function Summary({ rows }: { rows: ShiftRow[] }) {
 }
 
 function HourCharts({ rows }: { rows: ShiftRow[] }) {
-  const axis = axisFor(rows, 1)
+  const axis = axisFor(rows)
   const now = rows.find((r) => r.current)?.key
   const dayStarts = axis.dayStarts
   const withMeasured = rows.some((r) => r.cumulativeMeasured !== null)

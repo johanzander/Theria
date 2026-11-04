@@ -6,6 +6,7 @@ SEK/MWh for one local day. Today is asked for once per day, tomorrow until it is
 """
 
 import logging
+import threading
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
@@ -60,8 +61,15 @@ class NordpoolFeed:
         self._days: dict[date, list[PricePeriod]] = {}
         self._past: dict[date, list[PricePeriod]] = {}  # finished days never change
         self._tomorrow_asked_at: datetime | None = None
+        # the plan, the radiators and the charts ask at once when the add-on starts: a caller that
+        # came while tomorrow was being fetched must wait for it, not return today's prices alone
+        self._lock = threading.RLock()
 
     def periods(self) -> list[PricePeriod]:
+        with self._lock:
+            return self._periods()
+
+    def _periods(self) -> list[PricePeriod]:
         now = self._now()
         today = now.astimezone(self._zone).date()
         for day in [d for d in self._days if d < today]:
@@ -76,8 +84,8 @@ class NordpoolFeed:
             self._tomorrow_asked_at = now
             try:
                 self._days[tomorrow] = self._fetch(tomorrow)
-            except (RuntimeError, PriceDataError):
-                pass  # not published yet
+            except (RuntimeError, PriceDataError) as e:
+                logger.info("tomorrow's prices are not available: %s", e)
         return [p for d in sorted(self._days) for p in self._days[d]]
 
     def history(self, start: datetime, stop: datetime) -> list[PricePeriod]:

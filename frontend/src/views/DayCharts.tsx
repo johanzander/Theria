@@ -13,11 +13,11 @@ const C = {
 }
 const ROOM_COLOURS = ['#2f855a', '#b7791f', '#7b3fa0', '#c2410c']
 
-/** The x axis shared by the charts: every hour as 00, 01, 02, with a line at each midnight. */
-export function axisFor(rows: { key: string }[], perHour: number) {
+/** The x axis shared by the charts: every even hour as 00, 02, 04, with a line at each midnight. */
+export function axisFor(rows: { key: string }[]) {
   const keys = rows.map((r) => r.key)
   return {
-    ticks: axisTicks(keys, perHour),
+    ticks: axisTicks(keys),
     tickFormatter: axisLabel,
     dayStarts: keys.filter((k) => k.slice(11, 16) === '00:00'),
   }
@@ -41,11 +41,11 @@ export function predictedArea(rows: { key: string; past: boolean }[], yAxisId?: 
 
 const PREDICTED_DASH = '6 3'
 
-export function Chart({ rows, height, children, unitFor, minutes = 60, perHour = 1, axisRows }: {
-  rows: object[]; height: number; children: React.ReactNode; unitFor: (name: string) => Unit; minutes?: number; perHour?: number
+export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows }: {
+  rows: object[]; height: number; children: React.ReactNode; unitFor: (name: string) => Unit; minutes?: number
   axisRows: { key: string }[]
 }) {
-  const axis = axisFor(axisRows, perHour)
+  const axis = axisFor(axisRows)
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={rows}>
@@ -66,8 +66,8 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
   const quarters = splitPredicted(quarterRows(views), ['rtsPlanned'])
   const now = rows.find((r) => r.current)?.key
   const quarterNow = quarters.find((q) => q.current)?.key
-  const dayStarts = axisFor(rows, 1).dayStarts
-  const quarterDayStarts = axisFor(quarters, 4).dayStarts
+  const dayStarts = axisFor(rows).dayStarts
+  const quarterDayStarts = axisFor(quarters).dayStarts
   const thermostats = Object.keys(rows.find((r) => Object.keys(r.thermostats).length > 0)?.thermostats ?? {})
   const roomRows = splitPredicted(
     rows.map((r) => ({
@@ -89,7 +89,7 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
         title="Price and pump setpoint"
         description="Grey bars: the electricity price per quarter of an hour. Lines: the pump's room setpoint, which is a heat-curve offset and not a room temperature. Dark: what the pump actually had. Blue: what the plan chose; solid for hours that have passed (the plan that was applied), dashed in the shaded area, where it is only a prediction that changes with every replan. Dashed grey: the flat setpoint the plan is compared with. A good plan sits above the dashed line when the price is low and below it when the price is high."
       >
-        <Chart rows={quarters} axisRows={quarters} height={280} unitFor={priceOrTemp} minutes={15} perHour={4}>
+        <Chart rows={quarters} axisRows={quarters} height={280} unitFor={priceOrTemp} minutes={15}>
           <YAxis yAxisId="price" orientation="right" unit=" kr" />
           <YAxis yAxisId="rts" domain={[16, 20]} unit="°" />
           {predictedArea(quarters, 'rts')}
