@@ -94,7 +94,6 @@ SLAB_INIT_FRACTION = 0.5  # rough prior: slab sits half way between room and flo
 SUN_WARMUP_HOURS = 24
 LOG_KEPT = 200
 ENTITY_ID = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
-RADIATOR_HOLD = timedelta(hours=1)  # a radiator that called stays counted this long
 TUNING_DAYS = 14
 TUNING_CACHE = timedelta(
     hours=1
@@ -224,8 +223,6 @@ class PlanService:
         self._event_log = event_log
         self._disturbance = DisturbanceEstimator()
         self._skill = SkillTracker()
-        self._radiators: dict[str, Any] | None = None
-        self._radiator_called_at: datetime | None = None
         self._authority_day: tuple[date, float] | None = None
         self._regulator = (
             Regulator(
@@ -445,8 +442,7 @@ class PlanService:
 
     def _effective_settings(self) -> PlanSettings:
         """The settings the plan runs on: the night kept warmer by the learned margin, and the
-        ceiling lowered by the rise the floor adds after the valves close. (A radiator calling for
-        heat is not in here: it raises the pump setpoint at execution, not the plan's choices.)
+        ceiling lowered by the rise the floor adds after the valves close.
         """
         s = self._settings
         # the swing of the setpoint around its base grows with the model's measured skill
@@ -688,7 +684,6 @@ class PlanService:
             "last_lk": lk_result,
             "regulator": self._regulator_statuses,
             "authority": self._authority(),
-            "radiators": self._radiators,
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
         }
@@ -794,37 +789,6 @@ class PlanService:
         )
         if innovation is not None:
             self._skill.add(innovation)
-
-    def _read_radiators(self) -> None:
-        """Whether any radiator on the shared flow calls for heat; unreadable ones are not counted."""
-        entities = self._settings.radiator_entities
-        if not entities:
-            self._radiators = None
-            return
-        calling, readable = False, 0
-        for entity in entities:
-            try:
-                state = self._ha.get_state(entity)
-            except (RuntimeError, ValueError, KeyError, TypeError):
-                continue
-            if state["state"] in ("unavailable", "unknown"):
-                continue
-            readable += 1
-            calling = calling or state["attributes"].get("hvac_action") == "heating"
-        now = self._now()
-        if calling:
-            self._radiator_called_at = now
-        held = (
-            self._radiator_called_at is not None
-            and now - self._radiator_called_at < RADIATOR_HOLD
-        )
-        # `calling` stays on for an hour after the last call: radiator thermostats cycle, and the
-        # pump setpoint must not follow them
-        self._radiators = {
-            "calling": held,
-            "calling_now": calling,
-            "readable": readable,
-        }
 
     def _open_fraction(self) -> float | None:
         """Share of the floor loops that are open now; None when no actuators are configured."""
@@ -998,7 +962,6 @@ class PlanService:
         )
         swing_now = self._room.sun_swing_c_per_wm2 * sun_filtered_now
         self._sample_disturbance(now, room_c - swing_now, weather)
-        self._read_radiators()
         # with the sun's swing known the level is the measured room minus the swing; without it the
         # lower of the room and its day's median stands in for it
         level_c = (
@@ -1261,8 +1224,7 @@ class PlanService:
                         }
                     ),
                     "rts_range_c": [effective.rts_min_c, effective.rts_max_c],
-                    "radiators": self._radiators,
-                    "disturbance_c_per_h": self._disturbance.at(now),
+                            "disturbance_c_per_h": self._disturbance.at(now),
                     "regulator": [
                         {
                             "room": r.room,
@@ -1384,10 +1346,7 @@ class PlanService:
                 self._last_trouble = trouble
                 self._log("trouble", "reported", trouble)
                 self._notify(TROUBLE_NOTIFICATION, "Theria: heater running", trouble)
-            radiators = self._radiators is not None and self._radiators["calling"]
-            pump = self._executor.execute(
-                self.latest(), floor_c=base if radiators else None
-            )
+            pump = self._executor.execute(self.latest())
             if pump.action != "kept":
                 self._log("pump", pump.action, f"{pump.target_c}: {pump.reason}")
             holds = None

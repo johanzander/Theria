@@ -55,8 +55,9 @@ class PlanSettings:
     # What the pump still uses in an hour with the floor loops closed, as a share of its energy at the
     # lowest setpoint (hot water, radiators, standby). A prior: lower it as measured closed hours show.
     closed_energy_share: float = 0.15
-    # Climate entities of radiators on the shared flow (guest house, salon). While one of them calls
-    # for heat (hvac_action heating) the plan may not cut the pump setpoint below its base.
+    # No longer read by the plan: a radiator calling for heat does not hold the pump setpoint any more
+    # (2026-11-03). Kept only so that options already stored in Home Assistant still load; remove with
+    # the next options migration.
     radiator_entities: tuple[str, ...] = ()
     price_area: str = "SE4"
     mode: str = "off"

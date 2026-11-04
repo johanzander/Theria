@@ -80,7 +80,6 @@ export interface Execution {
   mode: string
   regulator: RoomStatus[]
   authority: number
-  radiators: { calling: boolean; readable: number } | null
   last_execution: { action: string; target_c: number | null; reason: string; at: string } | null
   last_lk: { action: string; target_c: number | null; reason: string; at: string } | null
   last_trouble: string | null
