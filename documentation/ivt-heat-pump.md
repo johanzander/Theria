@@ -615,3 +615,37 @@ All values **[observed]** unless noted; scripts were run in a scratchpad, nothin
   changed. The planner anchors the drift to the room's current temperature, which absorbs the `k_out` error.
 - **What is still open:** `k_slab` (0.00355/h) looks about 3 times too low against a = 0.010/h, which would mean that
   closed loops sag the room about 0.1 C/h and not 0.04. Not tested on closed loops. A step test decides it.
+
+## Closed loops measured, and what the room forecast needs (2026-11-04)
+
+All values **[observed]**, from Home Assistant history 27 Oct - 4 Nov (212 hours, outdoor 4-13 C; InfluxDB has no actuators and,
+on 2026-11-04, nothing after 2 Nov 01:00). Room = mean of the two LK sensors,
+loops = share of the eight actuators open, flow capped at 40 C and left out while the pump makes hot water.
+
+- **Fit on hours 00-06 local (52 hours, 9 nights), no constant:** `dR = a * open * (F - R) + k * (T - R)` gives a = 0.0065/h
+  (90 % 0.0037-0.0081, bootstrap by night) and k = 0.0113/h (0.0077-0.0129). The planner has `k_slab` 0.0036 and `k_out` 0.0044.
+  Both are too low by about the same factor (1.8 and 2.6), the gain a / (a + k) of 0.37 is close to the daily model's.
+  Raising `k_out` alone is wrong: the plan then thinks the pump cannot win the room back (a replay fell to 16.9 C).
+- **Clean closed nights:** -0.117 C/h on 29 Oct (room 19.9, outdoor 10.9), -0.10 on 31 Oct: k about 0.012 with no constant.
+- **After the stove:** -0.5 C/h for some hours (31 Oct, 3 Nov 15:00 UTC). No model here follows that.
+- **The anchor is the larger fault.** `anchored_room_params` makes the baseline hold today's room. With a stove-warmed room above
+  the LK limit the valve term is 0, so the drift cancels all the loss for the whole horizon: on 4 Nov (22.0 C) the forecast rose
+  to 22.07 C next evening with the pump at 15 and the loops closed.
+- **Days have real extra heat.** New a and k alone forecast 1.1 C too cold after 24 h. The mean residual per block, on all
+  hours, is +0.093 C/h 06-12, +0.126 12-18, +0.028 18-24 and 0 at night. It holds sun, people and the stove as they were
+  these nine days, not a law.
+- **Backtest, free run on the real flow and loops, the nights touched left out of the fit, bias / RMSE in C:**
+
+  | Starts | + h | no change | now (anchored) | new a, k | new a, k + day profile |
+  |---|---|---|---|---|---|
+  | all | 6 | -0.02 / 0.87 | -0.17 / 0.89 | -0.34 / 0.87 | +0.03 / 0.73 |
+  | all | 24 | -0.01 / 0.85 | -0.57 / 1.02 | -1.15 / 1.34 | +0.14 / 0.79 |
+  | 22-02 local | 6 | +0.30 / 0.45 | +0.16 / 0.29 | -0.01 / 0.17 | +0.04 / 0.17 |
+  | loops closed | 12 | +0.74 / 1.02 | +0.31 / 0.84 | -0.22 / 0.59 | +0.37 / 0.56 |
+  | room >= 20.8 | 12 | +1.89 / 2.03 | +1.68 / 1.89 | +0.77 / 0.95 | +1.21 / 1.34 |
+
+- **Still open:** nine mild days only (k rises in the cold, see above), the profile may count the plan's sun swing twice,
+  a stove-warmed room is still forecast about 1 C too warm, and a replan from the measured room is what corrects that.
+- **In the planner since then:** `with_measured_response` replaces `k_slab` and `k_out`, the anchored drift and the night
+  pattern are gone, `day_heat_c_per_h` is the day profile. The daily fit and the night model are kept for reports and the
+  morning margin but no longer set the forecast. Refits do not move these values: they are constants until they are measured again.

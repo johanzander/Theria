@@ -1,15 +1,13 @@
 """How much the room cools during the night, as a function of the outdoor temperature.
 
 The room response model (`daily_room`) says how the flow temperature moves the room over days.
-It cannot say that on a cold night the room simply loses heat: the plan anchors the drift so
-that a flat setpoint holds the room, which hides it. This model learns the missing part from
-the nights themselves: for every night (the window in which comfort is not needed, so no
+This model learns what the nights themselves do, for the morning margin and the reports; the
+plan's forecast has the cooling in the room model. For every night (the window in which comfort is not needed, so no
 stove, people or sun) the change of the room temperature from the start to the end of the
 night is regressed on the mean outdoor temperature. Only nights with a steady setpoint count,
 and recent nights count more, so the model follows the house as it (and the heat curve) changes.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -162,26 +160,3 @@ def fit_night_drift(
     return NightDrift(
         intercept, slope, level_slope, level_ref_c, length, len(days), rmse, recent
     )
-
-
-def drift_pattern(
-    drift: NightDrift,
-    in_night: Callable[[datetime], bool],
-    hour_starts: list[datetime],
-    t_out_c: FloatArray,
-    room_c: float,
-) -> FloatArray:
-    """Room temperature change per hour from what the room does on its own, for the planner.
-
-    The night hours get the learned cooling at that hour's outdoor temperature. The same amount
-    is given back over the other hours, so that over the horizon the pattern adds up to zero:
-    the planner's anchoring (a flat setpoint holds the room on average) stays true and only the
-    shape of the day changes. Without a night hour in the horizon there is no pattern.
-    """
-    night = np.array([in_night(start) for start in hour_starts], dtype=bool)
-    pattern = np.zeros(len(hour_starts))
-    if not night.any() or night.all():
-        return pattern
-    pattern[night] = [drift_per_hour(drift, float(t), room_c) for t in t_out_c[night]]
-    pattern[~night] = -float(np.sum(pattern[night])) / int((~night).sum())
-    return pattern

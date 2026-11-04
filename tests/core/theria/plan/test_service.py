@@ -13,7 +13,11 @@ from core.theria.exceptions import (
 from core.theria.plan.calibration import FittedModels, PumpFit, RoomFit
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.prices import PricePeriod
-from core.theria.plan.room_model import PRIOR_ROOM_PARAMS, RoomParams
+from core.theria.plan.room_model import (
+    PRIOR_ROOM_PARAMS,
+    RoomParams,
+    with_measured_response,
+)
 from core.theria.plan.service import PlanService
 from core.theria.plan.state_store import PlanStateStore
 from core.theria.plan.weather import WeatherHour
@@ -212,7 +216,8 @@ def test_refit_switches_to_fitted_models_and_plans_with_them(settings):
     assert (
         status["pump"]["source"] == "fitted" and status["pump"]["params"] == FITTED_PUMP
     )
-    assert status["room"]["params"] == FITTED_ROOM and status["fitted_at"] == NOW
+    assert status["room"]["params"] == with_measured_response(FITTED_ROOM)
+    assert status["fitted_at"] == NOW
     snapshot = service.run_once()
     assert snapshot.model_status == {"pump": "fitted", "room": "fitted"}
     assert snapshot.plan.hours[0].flow_target_c != before
@@ -299,7 +304,7 @@ def test_a_rejected_room_fit_still_applies_the_pump_fit_and_keeps_the_room_prior
     assert status["pump"]["source"] == "fitted"
     assert (
         status["room"]["source"] == "prior"
-        and status["room"]["params"] == PRIOR_ROOM_PARAMS
+        and status["room"]["params"] == with_measured_response(PRIOR_ROOM_PARAMS)
     )
     assert status["room"]["fit_error"] == "ModelFitError: rejected"
     assert service.run_once().model_status == {"pump": "fitted", "room": "prior"}
@@ -317,7 +322,8 @@ def test_a_later_rejection_keeps_the_room_fit_that_was_accepted_before(settings)
     service.refit()
     status = service.model_status()
     assert (
-        status["room"]["source"] == "fitted" and status["room"]["params"] == FITTED_ROOM
+        status["room"]["source"] == "fitted"
+        and status["room"]["params"] == with_measured_response(FITTED_ROOM)
     )
     assert status["room"]["fit_error"] == "ModelFitError: rejected"
 
@@ -345,14 +351,3 @@ def test_a_plan_is_not_made_when_no_comfort_sensor_is_healthy(settings):
     with pytest.raises(SensorError):
         service.run_once()
     assert service.latest() is not None  # the previous plan stays available
-
-
-def test_the_baseline_keeps_the_room_near_its_current_temperature(settings):
-    # The model only knows how the flow temperature moves the room; the baseline (flat
-    # setpoint) must therefore hold the room where it is, not drift to an invented equilibrium.
-    snapshot = make_service(settings).run_once()
-    drift = [
-        abs(h.room_c_end - snapshot.initial.room_c)
-        for h in snapshot.plan.baseline_hours
-    ]
-    assert max(drift) < 0.15

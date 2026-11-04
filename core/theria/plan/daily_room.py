@@ -223,8 +223,8 @@ def fit_daily_room(data: DailyData) -> DailyRoomFit:
 
 def room_params_from_fit(fit: DailyRoomFit) -> RoomParams:
     """Hourly planner parameters: floor heat couples directly to the room (no slab state),
-    sun and the unmeasured heat gain are left out (the plan anchors the drift to the room's
-    current temperature)."""
+    sun and the unmeasured heat gain are left out. The planner uses the measured response in
+    its place (`with_measured_response`); these parameters are kept for the record."""
     per_hour = fit.rate_per_day / 24.0
     return RoomParams(
         tau_slab_h=1.0,

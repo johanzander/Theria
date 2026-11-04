@@ -48,7 +48,7 @@ from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecuto
 from core.theria.plan.lk_executor import LKExecutor, LKResult, step_up
 from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.morning import MorningRules, update_margin
-from core.theria.plan.night_drift import NightDrift, drift_pattern
+from core.theria.plan.night_drift import NightDrift
 from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
@@ -74,7 +74,8 @@ from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomParams,
     RoomState,
-    anchored_room_params,
+    day_heat_c_per_h,
+    with_measured_response,
 )
 from core.theria.plan.scoring import LeadScore, ScoreBoard
 from core.theria.plan.settings import SUPPORTED_MODES, PlanSettings
@@ -178,7 +179,7 @@ class PlanService:
         self._settings = settings
         self._weather = weather
         self._pump = pump_params
-        self._room = room_params
+        self._room = with_measured_response(room_params)
         self._now = now
         self._interval_seconds = interval_seconds
         self._mode = settings.mode
@@ -232,7 +233,6 @@ class PlanService:
             else None
         )
         self._regulator_statuses: list[RoomStatus] = []
-        self._anchored_room: RoomParams | None = None
         self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
         self._events: deque[dict[str, Any]] = deque(
@@ -696,7 +696,7 @@ class PlanService:
         self._warmup_error = models.warmup_error
         self._pump = models.pump.params
         if models.room is not None:
-            self._room = models.room.params
+            self._room = with_measured_response(models.room.params)
 
     def refit(self) -> FittedModels:
         """Fit both models to history now; keeps the old models if the fit is rejected."""
@@ -753,17 +753,15 @@ class PlanService:
     def latest(self) -> PlanSnapshot | None:
         return self._snapshots[-1] if self._snapshots else None
 
-    def _extra_drift(
-        self, starts: list[datetime], t_out: np.ndarray, level_c: float, now: datetime
-    ) -> np.ndarray:
-        """What the room does on top of the anchored drift: the night pattern and the disturbance."""
-        corrected = self._disturbance.correction(starts, now)
-        if self._night is None:
-            return corrected
-        pattern = drift_pattern(
-            self._night, self._settings.in_night, starts, t_out, level_c
+    def _day_heat(self, moment: datetime) -> float:
+        return day_heat_c_per_h(
+            moment.astimezone(ZoneInfo(self._settings.timezone)).hour
         )
-        return corrected + pattern
+
+    def _extra_drift(self, starts: list[datetime], now: datetime) -> np.ndarray:
+        """What the room does on top of the model: the measured day heat and the disturbance."""
+        day_heat = np.array([self._day_heat(start) for start in starts])
+        return self._disturbance.correction(starts, now) + day_heat
 
     def _sample_disturbance(
         self, now: datetime, room_c: float, weather: dict[datetime, WeatherHour]
@@ -785,7 +783,9 @@ class PlanService:
             )
             return
         innovation = self._disturbance.update(
-            sample, self._anchored_room or self._warmed_room(), s.lk_limit_c
+            sample,
+            replace(self._warmed_room(), drift_c_per_h=self._day_heat(now)),
+            s.lk_limit_c,
         )
         if innovation is not None:
             self._skill.add(innovation)
@@ -984,16 +984,13 @@ class PlanService:
             initial=initial,
             previous_rts_c=previous_rts,
             previous_closed=self._closed_now(now),
-            extra_drift_c_per_h=self._extra_drift(starts, t_out, level_c, now),
+            extra_drift_c_per_h=self._extra_drift(starts, now),
         )
         baseline_flow = np.minimum(
             np.asarray(flow_target(self._pump, t_out, s.rts_base_c), dtype=float),
             s.floor_mix_max_c,
         )
-        room_params = anchored_room_params(
-            self._warmed_room(), level_c, t_out, baseline_flow, s.lk_limit_c
-        )
-        self._anchored_room = room_params
+        room_params = self._warmed_room()
         effective = self._effective_settings()
         result = plan(inputs, effective, self._pump, room_params)
         self._keep_run(now, inputs, effective, room_params, result)

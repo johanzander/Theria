@@ -14,11 +14,11 @@ from core.theria.plan.pump_model import (
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomState,
-    anchored_room_params,
     step,
 )
 
 from .conftest import HORIZON
+from .room_helpers import anchored_room_params
 
 BASE_SETTINGS = {
     "price_config_entry": "entry",

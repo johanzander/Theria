@@ -49,8 +49,8 @@ class PlanInputs:
     previous_rts_c: float
     # the floor loops were closed in the hour that is applied now (the plan's own valve state)
     previous_closed: bool = False
-    # What the room does on its own, per hour (the learned night cooling and the warming by day
-    # that balances it); None when nothing is known and the anchored drift is all there is.
+    # What the room does on its own, per hour (the measured heat by day and the disturbance);
+    # None when nothing is known.
     extra_drift_c_per_h: FloatArray | None = None
 
 

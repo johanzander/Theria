@@ -6,7 +6,6 @@ from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomParams,
     RoomState,
-    anchored_room_params,
     simulate,
     step,
     valve_open,
@@ -48,28 +47,3 @@ def test_prior_is_the_measured_response_of_the_house():
     time_constant_days = 1 / ((p.k_slab + p.k_out) * 24)
     assert gain == pytest.approx(0.39)
     assert time_constant_days == pytest.approx(1 / 0.21)
-
-
-def test_anchored_drift_keeps_the_baseline_near_the_current_room_temperature():
-    hours = np.arange(72)
-    t_out = 3 + 4 * np.sin(2 * np.pi * hours / 24)
-    baseline_flow = flow_target(PRIOR_PUMP_PARAMS, t_out, 18.0)
-    anchored = anchored_room_params(PRIOR_ROOM_PARAMS, 20.0, t_out, baseline_flow, 21.0)
-    room = simulate(
-        anchored, RoomState(20.0, 20.0, 0.0), baseline_flow, t_out, np.zeros(72), 21.0
-    )
-    assert np.abs(room - 20.0).max() < 0.4
-
-
-def test_anchored_model_still_responds_to_a_different_flow_temperature():
-    t_out = np.full(72, 3.0)
-    baseline_flow = flow_target(PRIOR_PUMP_PARAMS, t_out, 18.0)
-    lk = 30.0  # valves stay open: only the dynamics are tested here
-    anchored = anchored_room_params(PRIOR_ROOM_PARAMS, 20.0, t_out, baseline_flow, lk)
-    start = RoomState(20.0, 20.0, 0.0)
-    base = simulate(anchored, start, baseline_flow, t_out, np.zeros(72), lk)
-    warm = simulate(anchored, start, baseline_flow + 5.0, t_out, np.zeros(72), lk)
-    # 5 C more flow for three days: gain * 5 * (1 - exp(-rate * 3)) = about 0.9 C
-    assert warm[-1] - base[-1] == pytest.approx(
-        0.39 * 5 * (1 - np.exp(-0.21 * 3)), abs=0.1
-    )

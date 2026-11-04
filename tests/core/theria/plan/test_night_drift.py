@@ -140,28 +140,6 @@ def test_night_drift_is_a_plain_value_object():
     assert drift.nights == 100
 
 
-def test_the_pattern_cools_the_night_and_warms_the_day_by_the_same_amount():
-    from core.theria.plan.night_drift import drift_pattern
-
-    drift = NightDrift(-0.5, 0.06, -0.2, 19.5, 6, 100, 0.1, ())
-    starts = [START + timedelta(hours=i) for i in range(36)]  # starts at 00:00 UTC
-    t_out = np.full(36, -4.0)
-    pattern = drift_pattern(drift, lambda moment: moment.hour < 6, starts, t_out, 19.5)
-    assert pattern[:6] == pytest.approx([(A + B * -4.0) / 6] * 6)
-    assert np.sum(pattern) == pytest.approx(0.0, abs=1e-9)
-    assert pattern[6] > 0 and pattern[6] == pytest.approx(pattern[10])
-
-
-def test_without_a_night_in_the_horizon_there_is_no_pattern():
-    from core.theria.plan.night_drift import drift_pattern
-
-    drift = NightDrift(-0.5, 0.06, -0.2, 19.5, 6, 100, 0.1, ())
-    starts = [START + timedelta(hours=8 + i) for i in range(10)]
-    assert not np.any(
-        drift_pattern(drift, lambda m: m.hour < 6, starts, np.full(10, 0.0), 19.5)
-    )
-
-
 def test_a_warmer_room_cools_more_over_the_night():
     drift = fit(world(level_slope=-0.2))
     assert drift.level_c_per_c == pytest.approx(-0.2, abs=0.02)

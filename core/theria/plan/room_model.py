@@ -2,10 +2,9 @@
 
 Hourly dynamics: floor heat couples to the room through a slab state that follows the flow
 temperature while the LK valves are open, the room loses heat to the outdoors, and the sun
-adds heat. The parameters come from the daily response fit (`daily_room.py`), which only
-knows how strongly and how fast the room follows the flow temperature; everything else the
-room does (stove, people, weather swings) is outside the model and is handled by anchoring
-the drift to the room's current temperature (`anchored_room_params`).
+adds heat. The response is the measured one (`with_measured_response`). What else the room does
+(stove, people, weather swings) is outside the model: the plan adds the measured heat by day
+(`day_heat_c_per_h`) and the disturbance, and every plan starts from the measured room.
 """
 
 from dataclasses import dataclass, replace
@@ -15,6 +14,14 @@ import numpy as np
 Array = float | np.ndarray  # scalars and numpy arrays are both accepted
 
 VALVE_RAMP_C = 0.5  # valves close over the last 0.5 C below the LK setpoint
+# Measured on real plan nights with the loops open and closed, 27 Oct - 4 Nov 2026, outdoor 4-13 C
+# (documentation/ivt-heat-pump.md, "Closed loops measured"). The daily fit's response is about half as fast.
+MEASURED_K_SLAB = 0.0065
+MEASURED_K_OUT = 0.0113
+# What the house gains by day on top of that (sun, people, the stove as it was used those days),
+# per local hour block; nothing at night. A mean, so a day without a fire comes in cooler: the next
+# plan starts from the measured room.
+DAY_HEAT_C_PER_H = ((6, 0.0), (12, 0.093), (18, 0.126), (24, 0.028))
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,19 @@ class RoomState:
     room_c: float
     slab_c: float
     sun_filtered_wm2: float
+
+
+def with_measured_response(params: "RoomParams") -> "RoomParams":
+    """The room model with the measured response, and no drift: what the house adds comes from
+    `day_heat_c_per_h` and from the disturbance, never from the room's temperature right now."""
+    return replace(
+        params, k_slab=MEASURED_K_SLAB, k_out=MEASURED_K_OUT, drift_c_per_h=0.0
+    )
+
+
+def day_heat_c_per_h(local_hour: int) -> float:
+    """The measured extra heat in this local hour."""
+    return next(heat for end, heat in DAY_HEAT_C_PER_H if local_hour < end)
 
 
 def valve_open(room_c: Array, lk_setpoint_c: Array) -> Array:
@@ -118,25 +138,3 @@ def simulate(
         )
         out[i] = room
     return out
-
-
-def anchored_room_params(
-    params: RoomParams,
-    room_c: float,
-    t_out_c: np.ndarray,
-    flow_c: np.ndarray,
-    lk_setpoint_c: float,
-) -> RoomParams:
-    """Set the drift so that the baseline (the given flow temperatures) keeps the room near
-    its current temperature on average.
-
-    The room follows what the house does anyway (stove, people, weather), which the data
-    cannot predict; the model is only used for how much the plan's flow temperature moves
-    the room away from that baseline.
-    """
-    valve = float(valve_open(room_c, lk_setpoint_c))
-    drift = -(
-        valve * params.k_slab * (float(np.mean(flow_c)) - room_c)
-        + params.k_out * (float(np.mean(t_out_c)) - room_c)
-    )
-    return replace(params, drift_c_per_h=drift)
