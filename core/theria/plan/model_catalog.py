@@ -295,7 +295,7 @@ def build_catalog(
             disturbance_c_per_h,
             "°C/h",
             "learned",
-            "What the room did beyond the model in the last hours, from measured flow, valves and weather. Fades with time.",
+            "What the room did beyond the model in the last hours, from measured flow, valves and weather. Fades with time. Shown, not planned with: it made the forecast worse.",
         ),
         _entry(
             g,
@@ -549,7 +549,7 @@ def build_catalog(
         _entry(
             g,
             "disturbance_max_c_per_h",
-            "Largest drift the plan is told",
+            "Largest drift estimate",
             disturbance.MAX_DRIFT_C_PER_H,
             "°C/h",
             "constant",

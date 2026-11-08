@@ -758,10 +758,10 @@ class PlanService:
             moment.astimezone(ZoneInfo(self._settings.timezone)).hour
         )
 
-    def _extra_drift(self, starts: list[datetime], now: datetime) -> np.ndarray:
-        """What the room does on top of the model: the measured day heat and the disturbance."""
-        day_heat = np.array([self._day_heat(start) for start in starts])
-        return self._disturbance.correction(starts, now) + day_heat
+    def _extra_drift(self, starts: list[datetime]) -> np.ndarray:
+        """What the room does on top of the model: the measured day heat. The disturbance is measured
+        but not carried forward: in the backtest of 27 Oct-4 Nov it made the 6-12 h forecast worse."""
+        return np.array([self._day_heat(start) for start in starts])
 
     def _sample_disturbance(
         self, now: datetime, room_c: float, weather: dict[datetime, WeatherHour]
@@ -984,7 +984,7 @@ class PlanService:
             initial=initial,
             previous_rts_c=previous_rts,
             previous_closed=self._closed_now(now),
-            extra_drift_c_per_h=self._extra_drift(starts, now),
+            extra_drift_c_per_h=self._extra_drift(starts),
         )
         baseline_flow = np.minimum(
             np.asarray(flow_target(self._pump, t_out, s.rts_base_c), dtype=float),

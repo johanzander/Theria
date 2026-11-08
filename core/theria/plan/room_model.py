@@ -4,7 +4,7 @@ Hourly dynamics: floor heat couples to the room through a slab state that follow
 temperature while the LK valves are open, the room loses heat to the outdoors, and the sun
 adds heat. The response is the measured one (`with_measured_response`). What else the room does
 (stove, people, weather swings) is outside the model: the plan adds the measured heat by day
-(`day_heat_c_per_h`) and the disturbance, and every plan starts from the measured room.
+(`day_heat_c_per_h`), and every plan starts from the measured room.
 """
 
 from dataclasses import dataclass, replace
@@ -70,7 +70,7 @@ class RoomState:
 
 def with_measured_response(params: "RoomParams") -> "RoomParams":
     """The room model with the measured response, and no drift: what the house adds comes from
-    `day_heat_c_per_h` and from the disturbance, never from the room's temperature right now."""
+    `day_heat_c_per_h`, never from the room's temperature right now."""
     return replace(
         params, k_slab=MEASURED_K_SLAB, k_out=MEASURED_K_OUT, drift_c_per_h=0.0
     )

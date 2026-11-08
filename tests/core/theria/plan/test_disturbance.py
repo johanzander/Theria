@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import numpy as np
 import pytest
 
 from core.theria.plan.disturbance import (
@@ -17,20 +16,37 @@ LIMIT = 22.0
 PARAMS = PRIOR_ROOM_PARAMS
 
 
-def simulate(estimator, extra_c_per_h=0.0, minutes=15, steps=40, valves=None, flow=None):
+def simulate(
+    estimator, extra_c_per_h=0.0, minutes=15, steps=40, valves=None, flow=None
+):
     """Feed samples from a room that follows the model plus `extra_c_per_h`."""
-    room, slab, sun_f = 19.0, 23.5, 0.0  # the estimator starts the slab half way to the flow
+    room, slab, sun_f = (
+        19.0,
+        23.5,
+        0.0,
+    )  # the estimator starts the slab half way to the flow
     dt = minutes / 60
     estimator.update(Sample(NOW, room, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT)
     for k in range(1, steps + 1):
         valve = 1.0 if valves is None else valves(k)
         f = 28.0 if flow is None else flow(k)
         room, slab, sun_f = step(
-            PARAMS, room, slab, sun_f, f, 5.0, 0.0, room + 10.0, dt_h=dt, valve_scale=valve
+            PARAMS,
+            room,
+            slab,
+            sun_f,
+            f,
+            5.0,
+            0.0,
+            room + 10.0,
+            dt_h=dt,
+            valve_scale=valve,
         )
         room += extra_c_per_h * dt
         estimator.update(
-            Sample(NOW + timedelta(minutes=minutes * k), float(room), f, valve, 5.0, 0.0),
+            Sample(
+                NOW + timedelta(minutes=minutes * k), float(room), f, valve, 5.0, 0.0
+            ),
             PARAMS,
             LIMIT,
         )
@@ -64,21 +80,9 @@ def test_without_new_information_the_estimate_fades():
     estimator = DisturbanceEstimator()
     last = simulate(estimator, extra_c_per_h=0.1)
     before = estimator.at(last)
-    assert estimator.at(last + timedelta(hours=HALF_LIFE_H)) == pytest.approx(before / 2)
-
-
-def test_the_correction_reaches_less_far_the_further_ahead_the_hour_is():
-    estimator = DisturbanceEstimator()
-    last = simulate(estimator, extra_c_per_h=0.1)
-    starts = [last + timedelta(hours=h) for h in range(12)]
-    correction = estimator.correction(starts, last)
-    assert correction[0] > 0 and correction[0] > correction[-1] > 0
-    assert np.all(np.diff(correction) <= 1e-12)
-
-
-def test_a_new_estimator_changes_nothing():
-    starts = [NOW + timedelta(hours=h) for h in range(4)]
-    assert not DisturbanceEstimator().correction(starts, NOW).any()
+    assert estimator.at(last + timedelta(hours=HALF_LIFE_H)) == pytest.approx(
+        before / 2
+    )
 
 
 def test_a_long_gap_between_samples_is_not_judged():
@@ -108,11 +112,22 @@ def test_a_sensor_that_reads_in_tenths_does_not_look_like_a_drift():
     worst = 0.0
     for k in range(1, 49):
         room, slab, sun_f = step(
-            PARAMS, room, slab, sun_f, 28.0, 5.0, 0.0, room + 10.0, dt_h=0.25, valve_scale=1.0
+            PARAMS,
+            room,
+            slab,
+            sun_f,
+            28.0,
+            5.0,
+            0.0,
+            room + 10.0,
+            dt_h=0.25,
+            valve_scale=1.0,
         )
         read = round(float(room), 1)
         estimator.update(
-            Sample(NOW + timedelta(minutes=15 * k), read, 28.0, 1.0, 5.0, 0.0), PARAMS, LIMIT
+            Sample(NOW + timedelta(minutes=15 * k), read, 28.0, 1.0, 5.0, 0.0),
+            PARAMS,
+            LIMIT,
         )
         worst = max(worst, abs(estimator.drift_c_per_h))
     assert worst <= 0.06
@@ -172,7 +187,9 @@ def test_a_sunny_rise_is_not_taken_as_a_disturbance_while_the_sun_is_not_modelle
     assert service.parameters()["disturbance_c_per_h"] == 0.0
 
 
-def test_with_the_suns_swing_known_the_plan_starts_from_the_room_minus_the_swing(settings):
+def test_with_the_suns_swing_known_the_plan_starts_from_the_room_minus_the_swing(
+    settings,
+):
     from dataclasses import replace
 
     afternoon = EVENING.replace(hour=13, minute=0)  # the fake sun shines 09-15 UTC

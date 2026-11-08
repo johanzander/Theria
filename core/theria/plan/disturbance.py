@@ -3,16 +3,17 @@
 Each cycle the room is advanced one step from the previous sample with the model, using what was
 actually measured in between: the flow that reached the floor, how many loops were open, the
 outdoor temperature and the sun. The difference to the measured temperature, per hour, is the
-innovation; it is smoothed into one slowly varying disturbance that the next plan adds to its drift
-for the coming hours and that fades with time, because what the house does that the model cannot
-predict (stove, people, a window) does not last. Because the inputs are the measured ones, the plan's
-own effect (the flow it chose, valves that opened or closed) is not read as disturbance.
+innovation. The innovations measure how well the model predicts (`skill.py`); they are also smoothed
+into one slowly varying disturbance that is shown, not planned with: carried into the forecast it
+made the 6-12 h forecast worse (backtest 27 Oct-4 Nov 2026, RMSE 0.78 -> 0.87 C), because after a
+stove the room cools faster than the model instead of staying warm. Because the inputs are the
+measured ones, the plan's own effect (the flow it chose, valves that opened or closed) is not read as
+disturbance.
 
 While the sun is not in the model sunny samples are skipped: the estimator learns in the hours
 without sun. With the sun's swing in the model the caller passes the room minus the swing. Nothing is persisted: after a restart the estimate starts from zero.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -22,7 +23,7 @@ from core.theria.plan.room_model import RoomParams, step
 
 GAIN = 0.3  # share of a new error rate taken into the estimate per update
 HALF_LIFE_H = 4.0  # the estimate (and its reach into the future) halves in this time
-MAX_DRIFT_C_PER_H = 0.15  # sanity limit on what the plan may be told
+MAX_DRIFT_C_PER_H = 0.15  # sanity limit on the estimate
 MAX_GAP = timedelta(hours=2)  # a longer silence is not judged
 # A step is judged over at least this long: the error of a sensor that reads in tenths of a degree
 # is divided by the step, so a quarter of an hour turns 0.1 C into 0.4 C/h of imagined drift.
@@ -118,7 +119,3 @@ class DisturbanceEstimator:
             sample.flow_c - sample.room_c
         )
         self._sun_filtered = sample.sun_wm2
-
-    def correction(self, hour_starts: Sequence[datetime], now: datetime) -> np.ndarray:
-        """Drift to add per planned hour (the further ahead, the less)."""
-        return np.array([self.at(max(h, now)) for h in hour_starts], dtype=float)
