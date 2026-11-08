@@ -188,5 +188,5 @@ Key highlights:
 1. **comfort_target and allowed_deviation** - Configured but not yet used in optimization logic
 2. **Thermal characteristics** - Being learned continuously but not yet used for predictions
 3. **Port 8081** - Consistent across all configs (Dockerfile, config.yaml, docker-compose)
-4. **Frontend** - React/Vite UI in `frontend/` (tabs: Overview, Plan, Savings, Models, Settings, Sensors, Control, Radiators)
+4. **Frontend** - React/Vite UI in `frontend/` (tabs: Overview, Värmepump, Plan, Savings, Models, Settings, Sensors, Control, Radiators)
 5. **Observation mode** - System is learning, not actively controlling thermostats yet

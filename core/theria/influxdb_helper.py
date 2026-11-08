@@ -10,10 +10,13 @@ import logging
 import os
 import re
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
+
+from core.theria.exceptions import SensorError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +65,45 @@ def get_influxdb_config():
         _LOGGER.error("InfluxDB configuration is incomplete.")
 
     return config
+
+
+def query_influx(statements: list[str]) -> list[list[list[Any]]]:
+    """Run several InfluxQL statements in one request; the rows of each, in statement order.
+
+    A row is `[time in ms, value]`; a statement that found nothing has no rows.
+
+    Raises:
+        SensorError: The database cannot be reached or rejects a statement.
+    """
+    config = get_influxdb_config()
+    url, username, password = config["url"], config["username"], config["password"]
+    if not url or not username or not password:
+        raise SensorError("Incomplete InfluxDB configuration")
+    try:
+        response = requests.get(
+            url,
+            auth=(username, password),
+            params={
+                "db": config["bucket"].split("/", 1)[0],
+                "q": ";".join(statements),
+                "epoch": "ms",
+            },
+            timeout=60,
+        )
+    except requests.RequestException as e:
+        raise SensorError(f"Cannot reach InfluxDB: {e!s}") from e
+    if response.status_code != 200:
+        raise SensorError(f"InfluxDB error: {response.status_code}")
+    try:
+        results = response.json()["results"]
+    except (ValueError, KeyError, TypeError) as e:
+        raise SensorError(f"Unexpected InfluxDB response: {e!s}") from e
+    rows: list[list[list[Any]]] = []
+    for result in results:
+        if "error" in result:
+            raise SensorError(f"InfluxDB query error: {result['error']}")
+        rows.append([v for series in result.get("series", []) for v in series["values"]])
+    return rows
 
 
 def get_sensor_timeseries(

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { tabHref } from './model'
 import { Control } from './views/Control'
+import { HeatPump } from './views/HeatPump'
 import { Models } from './views/Models'
 import { Overview } from './views/Overview'
 import { PlanTable } from './views/PlanTable'
@@ -19,6 +20,7 @@ const OLD_PAGES = [
 
 const VIEWS = [
   { id: 'overview', label: 'Overview', view: <Overview /> },
+  { id: 'heatpump', label: 'Värmepump', view: <HeatPump /> },
   { id: 'plan', label: 'Plan', view: <PlanTable /> },
   { id: 'savings', label: 'Savings', view: <Savings /> },
   { id: 'models', label: 'Models', view: <Models /> },
@@ -42,7 +44,7 @@ export function App() {
   }, [])
   const active = VIEWS.find((v) => v.id === id) ?? VIEWS[0]
   return (
-    <main>
+    <main className={id === 'heatpump' ? 'wide' : undefined}>
       <h1>Theria - price and plan</h1>
       <nav className="tabs">
         {VIEWS.map((v) => (

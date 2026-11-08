@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import log_config  # noqa: F401
 
 # Import API router
+import heat_pump_api
 import plan_api
 import radiator_api
 import sensor_api
@@ -364,6 +365,7 @@ app.add_middleware(
 # Include API router
 app.include_router(api_router)
 app.include_router(plan_api.router)
+app.include_router(heat_pump_api.router)
 app.include_router(radiator_api.router)
 app.include_router(sensor_api.router)
 

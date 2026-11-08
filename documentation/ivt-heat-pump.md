@@ -111,6 +111,7 @@ Analysis of hourly means of `sensor.outdoor`, `sensor.heating_setpoint`, `sensor
 
 ## Data quality notes
 
+- **[observed, 2026-11-08]** `binary_sensor.compressor` has no points in InfluxDB after 2026-11-04 22:10 UTC, and none on 25-27 Oct, while HA shows 16-26 changes a day on 5-8 Nov. `binary_sensor.switch_valve_1` still arrives. Cause not found; use `sensor.compressor_speed_2` to see whether the compressor runs.
 - H60 sensors are noisy; Johan filters spikes in `~/GitHub/home-analytics` (`backend/api.py`:
   `_remove_outliers`, gap-spike repair, `_enforce_monotonicity`). That pipeline is aimed at **cumulative
   energy counters** (`compr_consump_tot`, `supp_energy_tot` etc. in `backend/sensors.yaml`). Reuse it for any
@@ -178,7 +179,8 @@ Sun = Open-Meteo `shortwave_radiation` for lat 55.578 / lon 12.927 (modelled, no
 - **Implication [unverified]:** The pump cannot be "turned off" with the room setpoint; the saving is modulation
   (roughly 7 % per degree, so ~35 % lower heating energy at room setpoint 13 vs 18). Price-driven shifting
   therefore means *less* energy in expensive hours and *more* (pre-heat) in cheap ones, not on/off.
-- `sensor.compressor_speed_2` (kW) is not usable in InfluxDB (zero / missing).
+- **[observed, 2026-11-08] The two compressor sensors are named the wrong way round.** `sensor.compressor_speed` reads in kW and `sensor.compressor_speed_2` in % (HA units and values: 5.30 kW, 30 %). Both have data in InfluxDB (an earlier note here said `_2` was zero or missing).
+- **[observed, 2026-11-08] The kW sensor is not electrical input.** Over 7 days it integrates to 1023 kWh against 835 kWh supplied (`supp_energy_*`) and 231 kWh compressor electricity (`compr_cons_*`), correlation per hour 0.76 with supplied and 0.66 with electricity. What the H60 measures is unknown; do not use it for consumption.
 
 ## Floor construction, LK design and the flow temperature limit
 
@@ -493,7 +495,8 @@ The H60 gateway answers with garbage now and then. What was found in the stored 
   sensor and stopped recording on 2026-10-13, so every measured day from the 14th had no price and counted 0 hours while the
   plan itself, on the feed, had prices. The sensor setting, the HACS attribute reader, the old `PriceOptimizer` with its
   `/api/price/*` endpoints and the price banner of the old dashboard are gone. A day the integration cannot answer for (about
-  a month back it still can) has no price rather than another source's.
+  a month back it still can) has no price rather than another source's. The Värmepump tab is the one exception: it reads the stored `sensor.nord_pool_se4_current_price` (InfluxDB, from 2025-08-30), the same
+  integration (2026-11-08: 672 quarters, all within 0.01 kr of the feed), so that it can show more than a month back.
 
 ## Heating vs hot water
 

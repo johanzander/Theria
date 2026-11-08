@@ -9,14 +9,22 @@ export function useLoaded<T>(
   const [state, setState] = useState<{ data: T | null; error: string | null }>({ data: null, error: null })
   const [tick, setTick] = useState(0)
   useEffect(() => {
+    let current = true // an answer to an earlier request must not replace the newer one
     const run = () =>
       load().then(
-        (data) => setState({ data, error: null }),
-        (e: Error) => setState((s) => ({ ...s, error: e.message })),
+        (data) => {
+          if (current) setState({ data, error: null })
+        },
+        (e: Error) => {
+          if (current) setState((s) => ({ ...s, error: e.message }))
+        },
       )
     run()
     const id = setInterval(run, REFRESH_MS)
-    return () => clearInterval(id)
+    return () => {
+      current = false
+      clearInterval(id)
+    }
   }, [tick, ...deps])
   return { ...state, reload: () => setTick((n) => n + 1) }
 }

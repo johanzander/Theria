@@ -51,8 +51,9 @@ the Husdata Modbus register (IDX), not the HA entity ID.**
   not "forward" - typo baked into the real integration)
 - `sensor.heat_carrier_return` (reg `0003`) - HP's internal heat carrier return
 - `sensor.heating_setpoint` (reg `0107`) - Target temp for heating (read/write)
-- `sensor.compressor_speed` (reg `3108`) - Compressor speed (% of max, same as Hz)
-- `sensor.compressor_speed_2` (reg `9112`) - Compressor power (kW, instantaneous)
+- `sensor.compressor_speed_2` - Compressor speed (% of max; the name is misleading, see below)
+- `sensor.compressor_speed` - Power in kW, not electrical input (2026-11-08: the name and the unit do not match, and
+  it integrates to more than the heat supplied; see `documentation/ivt-heat-pump.md`)
 - `binary_sensor.switch_valve_1` (reg `1A07`) - `0`/off = Radiator heating, `1`/on = Hot water heating
 
 **Energy Monitoring - Compressor (cumulative kWh counters):**

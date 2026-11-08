@@ -18,6 +18,11 @@ export const fetchDay = (day?: string) => get<DayView>(day ? `plan/day?day=${day
 export const fetchExecution = () => get<Execution>('plan/execution')
 export const fetchSavings = (days: number) => get<SavingsResponse>(`savings?days=${days}`)
 
+import type { Timeline } from './heatpump'
+
+export const fetchTimeline = (from: number, to: number) =>
+  get<Timeline>(`heatpump/timeline?start=${new Date(from).toISOString()}&stop=${new Date(to).toISOString()}`)
+
 import type { ComfortResponse, LogEntry, ModelHealth, ParameterHistory, Preflight } from './model'
 
 export const fetchModelHealth = () => get<ModelHealth>('model/health')
