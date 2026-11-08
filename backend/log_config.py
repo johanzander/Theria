@@ -1,8 +1,11 @@
 import logging
+import os
 import sys
 from pathlib import Path
 
 from loguru import logger
+
+from core.theria.data_dir import data_dir
 
 # Remove default handler
 logger.remove()
@@ -26,9 +29,10 @@ logger.add(
 
 
 # A log file per day, kept for a week, that the debug export reads (/api/export-debug-data)
-if Path("/data").is_dir():
+LOG_DIR = Path(data_dir(os.environ)) / "logs"
+if LOG_DIR.parent.is_dir():
     logger.add(
-        "/data/logs/theria-{time:YYYY-MM-DD}.log",
+        str(LOG_DIR / "theria-{time:YYYY-MM-DD}.log"),
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <5} | {extra[module_name]} - {message}",
         level="INFO",
         rotation="00:00",

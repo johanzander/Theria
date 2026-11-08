@@ -90,6 +90,8 @@ done
 
 export HA_URL="http://localhost:8123"
 export HA_TOKEN="mock_token"
+export THERIA_DATA_DIR="$(pwd)/.mock-data"
+mkdir -p "$THERIA_DATA_DIR"
 
 echo "📡 Starting Theria backend on http://localhost:8081 ..."
 echo "   (mock HA: http://localhost:8123, sensor health banner: http://localhost:8081/system-insights)"

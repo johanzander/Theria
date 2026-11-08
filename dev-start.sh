@@ -18,8 +18,11 @@ set -a
 source .env
 set +a
 
+# Local runs read the real Home Assistant and write nothing to it, unless .env says otherwise
+export HA_TEST_MODE="${HA_TEST_MODE:-true}"
+
 # Display which HA instance we're connecting to
-echo "🏠 Connecting to Home Assistant at: $HA_URL"
+echo "🏠 Connecting to Home Assistant at: $HA_URL (test mode: $HA_TEST_MODE)"
 
 # Check if token is still the default
 if [[ "$HA_TOKEN" == "your_long_lived_access_token_here" ]]; then
@@ -59,6 +62,14 @@ if [ -z "$HA_TOKEN" ]; then
     exit 1
 fi
 echo "✓ Environment variables loaded successfully"
+
+# Plan from the add-on's own settings, models and memory: copy them before every start
+export THERIA_DATA_DIR="${THERIA_DATA_DIR:-$(pwd)/.dev-data}"
+echo "📥 Copying settings and state from the add-on to $THERIA_DATA_DIR ..."
+if ! python scripts/pull_addon_data.py "$THERIA_DATA_DIR"; then
+    echo "❌ Could not copy the add-on's settings: not starting with different ones"
+    exit 1
+fi
 
 # Change to backend directory
 cd backend

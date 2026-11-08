@@ -9,22 +9,22 @@ import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-import log_config  # noqa: F401
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from loguru import logger
-
-# Add core to Python path
+# Add core to Python path (log_config reads where the data directory is)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+import log_config  # noqa: F401
 
 # Import API router
 import plan_api
 import radiator_api
 import sensor_api
-from api import ZONES, ha_client
+from api import DATA_DIR, ZONES, ha_client
 from api import router as api_router
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from loguru import logger
 
 from core.theria.exceptions import TheriaError
 from core.theria.ha_client import HANotifier
@@ -65,6 +65,8 @@ async def lifespan(app: FastAPI):
     """Lifespan manager for startup/shutdown."""
     # Startup
     logger.info("Theria starting")
+    if ha_client and ha_client.test_mode:
+        logger.warning("Test mode: reads Home Assistant, writes nothing to it")
 
     # Log registered routes
     routes = [
@@ -151,7 +153,7 @@ async def lifespan(app: FastAPI):
     if ha_client:
         try:
             guard_settings = load_guard_settings(
-                "/data/options.json",
+                os.path.join(DATA_DIR, "options.json"),
                 os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
             )
             if guard_settings:
@@ -173,64 +175,22 @@ async def lifespan(app: FastAPI):
     if ha_client:
         try:
             plan_settings = load_plan_settings(
-                "/data/options.json",
+                os.path.join(DATA_DIR, "options.json"),
                 os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
             )
             if plan_settings:
-                overrides_path = (
-                    "/data/plan_overrides.json"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".plan_overrides.json"
-                    )
-                )
+                overrides_path = os.path.join(DATA_DIR, "plan_overrides.json")
                 settings_manager = SettingsManager(plan_settings, overrides_path)
                 plan_settings = settings_manager.current
                 weather_client = OpenMeteoClient(
                     plan_settings.latitude, plan_settings.longitude
                 )
-                state_path = (
-                    "/data/plan_state.json"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".plan_state.json"
-                    )
-                )
-                parameter_path = (
-                    "/data/plan_parameters.jsonl"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".plan_parameters.jsonl"
-                    )
-                )
-                event_path = (
-                    "/data/plan_events.jsonl"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".plan_events.jsonl"
-                    )
-                )
-                record_path = (
-                    "/data/plan_record.jsonl"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".plan_record.jsonl"
-                    )
-                )
-                runs_path = (
-                    "/data/plan_runs.jsonl"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".plan_runs.jsonl"
-                    )
-                )
-                trace_path = (
-                    "/data/exec_trace.jsonl"
-                    if os.path.isdir("/data")
-                    else os.path.join(
-                        os.path.dirname(__file__), "..", ".exec_trace.jsonl"
-                    )
-                )
+                state_path = os.path.join(DATA_DIR, "plan_state.json")
+                parameter_path = os.path.join(DATA_DIR, "plan_parameters.jsonl")
+                event_path = os.path.join(DATA_DIR, "plan_events.jsonl")
+                record_path = os.path.join(DATA_DIR, "plan_record.jsonl")
+                runs_path = os.path.join(DATA_DIR, "plan_runs.jsonl")
+                trace_path = os.path.join(DATA_DIR, "exec_trace.jsonl")
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -281,7 +241,7 @@ async def lifespan(app: FastAPI):
                     plan_record=plan_record,
                     plan_runs=PlanRunStore(runs_path, datetime.now(UTC)),
                     exec_trace=ExecTraceStore(trace_path, datetime.now(UTC)),
-                    log_dir="/data/logs" if os.path.isdir("/data") else None,
+                    log_dir=os.path.join(DATA_DIR, "logs"),
                     settings_manager=settings_manager,
                     actuals_loader=actuals_loader,
                     price_periods=prices.periods,
@@ -296,20 +256,13 @@ async def lifespan(app: FastAPI):
 
                 # Salon and guest house radiators: shadow only, shares the plan's price feed
                 radiator_settings = load_radiator_settings(
-                    "/data/options.json",
+                    os.path.join(DATA_DIR, "options.json"),
                     os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
                 )
                 if radiator_settings:
-                    here = os.path.dirname(__file__)
-                    radiator_prefs_path = (
-                        "/data/radiator_prefs.json"
-                        if os.path.isdir("/data")
-                        else os.path.join(here, "..", ".radiator_prefs.json")
-                    )
-                    radiator_events_path = (
-                        "/data/radiator_events.jsonl"
-                        if os.path.isdir("/data")
-                        else os.path.join(here, "..", ".radiator_events.jsonl")
+                    radiator_prefs_path = os.path.join(DATA_DIR, "radiator_prefs.json")
+                    radiator_events_path = os.path.join(
+                        DATA_DIR, "radiator_events.jsonl"
                     )
                     radiator_service = RadiatorService(
                         ha_client,

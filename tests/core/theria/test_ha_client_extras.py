@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import requests
 
-from core.theria.ha_client import HAClient, HANotifier
+from core.theria.ha_client import HAClient, HANotifier, env_test_mode
 
 START = datetime(2026, 10, 10, tzinfo=UTC)
 
@@ -113,4 +113,76 @@ def test_setting_a_temperature_waits_long_enough_for_a_slow_cloud_thermostat():
     client = HAClient("http://ha", "token")
     client.session = session
     client.set_temperature("climate.lk_a", 21.0)
-    assert session.last_timeout >= 30  # the LK integration answers only after its cloud call
+    assert (
+        session.last_timeout >= 30
+    )  # the LK integration answers only after its cloud call
+
+
+def client_in_test_mode(session) -> HAClient:
+    ha = HAClient("http://ha", "token", test_mode=True)
+    ha.session = session
+    return ha
+
+
+def test_test_mode_sends_no_setpoint_to_home_assistant():
+    session = FakeSession(FakeResponse())
+    client_in_test_mode(session).set_temperature("climate.room_temp_setpoint", 16.0)
+    assert session.calls == []
+
+
+def test_test_mode_sends_no_hvac_mode_to_home_assistant():
+    session = FakeSession(FakeResponse())
+    client_in_test_mode(session).set_hvac_mode("climate.room_temp_setpoint", "off")
+    assert session.calls == []
+
+
+def test_test_mode_sends_no_notification_to_home_assistant():
+    session = FakeSession(FakeResponse())
+    HANotifier(client_in_test_mode(session)).notify("theria_x", "t", "m")
+    assert session.calls == []
+
+
+def test_test_mode_lets_the_nord_pool_read_through():
+    session = FakeSession(FakeResponse({"service_response": {"SE4": []}}))
+    answer = client_in_test_mode(session).get_service_response(
+        "nordpool", "get_prices_for_date", {"date": "2026-11-05"}
+    )
+    assert answer == {"SE4": []}
+
+
+def test_test_mode_refuses_a_service_with_an_answer_that_is_not_a_known_read():
+    session = FakeSession(FakeResponse({"service_response": {}}))
+    with pytest.raises(RuntimeError):
+        client_in_test_mode(session).get_service_response("script", "turn_on", {})
+    assert session.calls == []
+
+
+def test_test_mode_reads_back_the_simulated_setpoint_on_the_real_state():
+    session = FakeSession(
+        FakeResponse({"state": "heat", "attributes": {"temperature": 20.0}})
+    )
+    ha = client_in_test_mode(session)
+    ha.set_temperature("climate.room_temp_setpoint", 16.0)
+    climate = ha.get_climate_state("climate.room_temp_setpoint")
+    assert climate["target_temperature"] == 16.0 and climate["hvac_mode"] == "heat"
+
+
+def test_a_simulated_setpoint_stays_on_its_own_entity():
+    session = FakeSession(
+        FakeResponse({"state": "heat", "attributes": {"temperature": 20.0}})
+    )
+    ha = client_in_test_mode(session)
+    ha.set_temperature("climate.room_temp_setpoint", 16.0)
+    assert ha.get_climate_state("climate.lk_a")["target_temperature"] == 20.0
+
+
+def test_outside_test_mode_the_setpoint_reaches_home_assistant():
+    session = FakeSession(FakeResponse())
+    client(session).set_temperature("climate.room_temp_setpoint", 16.0)
+    assert [call[0] for call in session.calls] == ["POST"]
+
+
+def test_test_mode_is_off_unless_the_environment_turns_it_on():
+    assert env_test_mode({}) is False
+    assert env_test_mode({"HA_TEST_MODE": "false"}) is False
+    assert env_test_mode({"HA_TEST_MODE": "true"}) is True

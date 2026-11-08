@@ -5,6 +5,7 @@ Minimal client for reading sensors and controlling climate entities.
 """
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -12,16 +13,26 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# The only services that may reach Home Assistant in test mode: everything else is blocked
+SAFE_READ_SERVICES = {("nordpool", "get_prices_for_date")}
+
+
+def env_test_mode(environ: Mapping[str, str]) -> bool:
+    """HA_TEST_MODE as bess-manager reads it."""
+    return environ.get("HA_TEST_MODE", "false").lower() in ("true", "1", "yes")
+
 
 class HAClient:
     """Simple Home Assistant REST API client."""
 
-    def __init__(self, base_url: str, token: str):
+    def __init__(self, base_url: str, token: str, test_mode: bool = False):
         """Initialize HA client.
 
         Args:
             base_url: Home Assistant URL (e.g., "http://supervisor/core")
             token: Long-lived access token
+            test_mode: Read everything, write nothing. A setpoint that would have been written
+                is shown on that entity's state, so the read-back after a write works as usual.
         """
         self.base_url = base_url.rstrip("/")
         self.headers = {
@@ -36,6 +47,8 @@ class HAClient:
         # A service call that makes a cloud thermostat change its setpoint answers only after that
         # call has finished (the LK integration took more than 5 s several times)
         self.write_timeout = 30
+        self.test_mode = test_mode
+        self._simulated_setpoints: dict[str, float] = {}
 
     def get_state(self, entity_id: str) -> dict[str, Any]:
         """Get current state of an entity.
@@ -54,13 +67,41 @@ class HAClient:
         try:
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
-            return response.json()
+            return self._with_simulated_setpoint(entity_id, response.json())
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 raise ValueError(f"Entity not found: {entity_id}") from e
             raise RuntimeError(f"Failed to get state for {entity_id}: {e}") from e
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"HA API request failed: {e}") from e
+
+    def _with_simulated_setpoint(
+        self, entity_id: str, state: dict[str, Any]
+    ) -> dict[str, Any]:
+        if entity_id not in self._simulated_setpoints:
+            return state
+        attributes = {
+            **state["attributes"],
+            "temperature": self._simulated_setpoints[entity_id],
+        }
+        return {**state, "attributes": attributes}
+
+    def _post_service(
+        self,
+        domain: str,
+        service: str,
+        data: dict[str, Any],
+        timeout: int,
+        query: str = "",
+    ) -> requests.Response | None:
+        """The one way to a Home Assistant service. None when test mode blocked the call."""
+        if self.test_mode and (domain, service) not in SAFE_READ_SERVICES:
+            logger.info("[TEST MODE] Would call %s.%s with %s", domain, service, data)
+            return None
+        url = f"{self.base_url}/api/services/{domain}/{service}{query}"
+        response = self.session.post(url, json=data, timeout=timeout)
+        response.raise_for_status()
+        return response
 
     def get_temperature(self, entity_id: str) -> float:
         """Get temperature from sensor or climate entity.
@@ -144,16 +185,19 @@ class HAClient:
         Raises:
             RuntimeError: If service call fails
         """
-        url = f"{self.base_url}/api/services/climate/set_temperature"
         data = {
             "entity_id": entity_id,
             "temperature": temperature,
         }
 
         try:
-            logger.debug(f"Calling {url} with data: {data}")
-            response = self.session.post(url, json=data, timeout=self.write_timeout)
-            response.raise_for_status()
+            logger.debug(f"Calling climate.set_temperature with data: {data}")
+            response = self._post_service(
+                "climate", "set_temperature", data, self.write_timeout
+            )
+            if response is None:
+                self._simulated_setpoints[entity_id] = temperature
+                return
             logger.info(
                 f"Set {entity_id} to {temperature}°C - Response: {response.status_code}"
             )
@@ -171,16 +215,14 @@ class HAClient:
         Raises:
             RuntimeError: If service call fails
         """
-        url = f"{self.base_url}/api/services/climate/set_hvac_mode"
         data = {
             "entity_id": entity_id,
             "hvac_mode": mode,
         }
 
         try:
-            response = self.session.post(url, json=data, timeout=self.timeout)
-            response.raise_for_status()
-            logger.info(f"Set {entity_id} HVAC mode to {mode}")
+            if self._post_service("climate", "set_hvac_mode", data, self.timeout):
+                logger.info(f"Set {entity_id} HVAC mode to {mode}")
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to set HVAC mode for {entity_id}: {e}") from e
 
@@ -230,10 +272,8 @@ class HAClient:
         Raises:
             RuntimeError: If the service call fails
         """
-        url = f"{self.base_url}/api/services/{domain}/{service}"
         try:
-            response = self.session.post(url, json=data, timeout=self.timeout)
-            response.raise_for_status()
+            self._post_service(domain, service, data, self.timeout)
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"HA service {domain}.{service} failed: {e}") from e
 
@@ -245,10 +285,12 @@ class HAClient:
         Raises:
             RuntimeError: If the service call fails
         """
-        url = f"{self.base_url}/api/services/{domain}/{service}?return_response"
         try:
-            response = self.session.post(url, json=data, timeout=self.timeout)
-            response.raise_for_status()
+            response = self._post_service(
+                domain, service, data, self.timeout, "?return_response"
+            )
+            if response is None:
+                raise RuntimeError(f"{domain}.{service} is blocked in test mode")
             return response.json()["service_response"]
         except (requests.exceptions.RequestException, KeyError, ValueError) as e:
             raise RuntimeError(f"HA service {domain}.{service} failed: {e}") from e

@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
@@ -14,7 +15,8 @@ from pydantic import BaseModel
 # Add core to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.theria.ha_client import HAClient
+from core.theria.data_dir import data_dir, read_data_files
+from core.theria.ha_client import HAClient, env_test_mode
 from core.theria.history import history_tracker
 from core.theria.settings import ZoneSettings
 
@@ -24,7 +26,13 @@ router = APIRouter()
 HA_URL = os.environ.get("HA_URL", "http://supervisor/core")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 
-ha_client = HAClient(HA_URL, HA_TOKEN) if HA_TOKEN else None
+DATA_DIR = data_dir(os.environ)
+
+ha_client = (
+    HAClient(HA_URL, HA_TOKEN, test_mode=env_test_mode(os.environ))
+    if HA_TOKEN
+    else None
+)
 
 # Load zones from config (in production, this comes from options.json)
 # For development, we'll use a simple example
@@ -42,7 +50,7 @@ def load_zones_from_config():
     global ZONES
 
     # Try to load from options.json (production)
-    options_path = "/data/options.json"
+    options_path = os.path.join(DATA_DIR, "options.json")
     if os.path.exists(options_path):
         import json
 
@@ -103,7 +111,14 @@ async def health_check():
         "app": "Theria",
         "version": "0.1.0",
         "ha_connected": ha_client is not None,
+        "test_mode": ha_client is not None and ha_client.test_mode,
     }
+
+
+@router.get("/api/data-files")
+async def get_data_files() -> dict[str, Any]:
+    """The add-on's settings and state, without secrets: a local run plans from the same ones."""
+    return read_data_files(DATA_DIR)
 
 
 @router.get("/api/zones")

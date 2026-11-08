@@ -128,6 +128,14 @@ zones:
 ./dev-start.sh  # Starts FastAPI on port 8081 with hot reload
 ```
 
+`dev-start.sh` runs in test mode unless `.env` sets `HA_TEST_MODE=false`: it reads the real Home Assistant
+and InfluxDB, but only `nordpool.get_prices_for_date` gets through as a service call. Before it starts it
+copies the add-on's options, settings overrides, plan state and radiator preferences into `.dev-data/`
+(`scripts/pull_addon_data.py`, through ingress; it stops if that fails), so the plan is made from the same
+settings and models as in the add-on. A setpoint Theria
+would have written shows on that entity until the next restart, so mode and settings can be changed
+and the plan runs as usual; `[TEST MODE] Would call ...` in the log shows what was held back.
+
 ### Test
 
 ```bash
