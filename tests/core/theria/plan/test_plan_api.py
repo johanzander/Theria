@@ -138,7 +138,12 @@ def test_the_model_catalog_lists_the_parameters(client):
     service.run_once()
     body = http.get("/api/plan/model").json()
     keys = {e["key"] for e in body}
-    assert {"energy_per_rts", "k_slab", "comfort_cost_sek_per_c_hour", "end_cost_sek_per_c"} <= keys
+    assert {
+        "energy_per_rts",
+        "k_slab",
+        "comfort_cost_sek_per_c_hour",
+        "end_cost_sek_per_c",
+    } <= keys
     assert all(e["description"] for e in body)
 
 
@@ -179,3 +184,47 @@ def test_an_invalid_change_is_a_422_that_says_why(editable_client):
     response = http.put("/api/plan/settings", json={"values": {"floor_c": 99}})
     assert response.status_code == 422 and "floor_c" in response.json()["detail"]
     assert service._settings.floor_c == before
+
+
+def test_the_forecast_check_summarises_the_checked_hours(tmp_path, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from core.theria.plan.forecast_check import ForecastCheckStore
+
+    store = ForecastCheckStore(str(tmp_path / "check.jsonl"))
+    hour = datetime.now(UTC).replace(minute=0, second=0, microsecond=0) - timedelta(
+        hours=3
+    )
+    measured = dict.fromkeys(
+        ("room_c", "energy_kwh", "rts_c", "flow_c", "t_out_c", "sun_wm2"), 1.0
+    )
+    store.append(
+        [
+            {
+                "hour": hour.isoformat(),
+                "measured": dict(measured, room_c=20.0),
+                "predicted": {"1-3 h": {"room_c": 20.5}},
+                "runs": {"1-3 h": 1},
+            }
+        ]
+    )
+    monkeypatch.setattr(plan_api, "forecast_check_store", store)
+    app = FastAPI()
+    app.include_router(plan_api.router)
+    body = TestClient(app).get("/api/plan/forecast-check?days=7").json()
+    assert body["hours"] == 1
+    assert body["rows"][0] == {
+        "quantity": "room_c",
+        "unit": "°C",
+        "lead": "1-3 h",
+        "n": 1,
+        "bias": 0.5,
+        "mae": 0.5,
+    }
+
+
+def test_the_forecast_check_is_503_until_it_is_configured(monkeypatch):
+    monkeypatch.setattr(plan_api, "forecast_check_store", None)
+    app = FastAPI()
+    app.include_router(plan_api.router)
+    assert TestClient(app).get("/api/plan/forecast-check").status_code == 503

@@ -86,3 +86,13 @@ def test_a_run_keeps_the_options_of_every_decided_hour_and_the_valve_state_it_st
     assert "held_by_commitment" in first
     assert body["inputs"]["previous_closed"] is False
     assert run_from_dict(body).inputs.previous_closed is False
+
+
+def test_a_run_keeps_the_room_and_flow_it_expected_so_they_can_be_checked_later(
+    settings, tmp_path
+):
+    service, store = kept_run(settings, tmp_path)
+    [body] = store.read(PLAN_START - timedelta(hours=1))
+    hour = service.latest().plan.hours[0]
+    assert body["decided"][0]["room_c"] == hour.room_c_end + hour.sun_swing_c
+    assert body["decided"][0]["flow_c"] == hour.flow_target_c

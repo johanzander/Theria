@@ -1,5 +1,7 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { fetchModelCatalog, fetchModelHealth, fetchParameters } from '../api'
+import { useState } from 'react'
+import { fetchForecastCheck, fetchModelCatalog, fetchModelHealth, fetchParameters } from '../api'
+import { forecastCheckTable, type ForecastCheck } from '../forecastCheck'
 import { Card, PageIntro, Panel, useLoaded } from '../ui'
 import { fitQuality, formatNumber, formatValue, groupBy, parameterSeries, warmupText, type ModelEntry, type ParameterHistory } from '../model'
 
@@ -16,6 +18,63 @@ const TRACKED: { key: string; title: string; unit: string }[] = [
   { key: 'sun_swing_c_per_wm2', title: 'Sun: °C the room is lifted per W/m² of sun', unit: '' },
   { key: 'morning_margin_c', title: 'Night margin (learned from mornings)', unit: ' °C' },
 ]
+
+function signed(value: number, digits: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`
+}
+
+function PlanVsReality() {
+  const [days, setDays] = useState(7)
+  const { data, error } = useLoaded<ForecastCheck>(() => fetchForecastCheck(days), [days])
+  const table = data ? forecastCheckTable(data) : null
+  return (
+    <div className="panel">
+      <h2>Plan against reality</h2>
+      <p className="note">
+        Every finished hour next to what the plans made before it said, by how far ahead they were made. Each cell is the mean
+        error (planned minus measured: + means the plan expected more) and the mean absolute error. Sun is compared with
+        Open-Meteo's record of the hour.
+      </p>
+      <p>
+        {[7, 30, 90].map((d) => (
+          <button key={d} onClick={() => setDays(d)} disabled={d === days}>
+            {d} days
+          </button>
+        ))}
+      </p>
+      {error && <p className="note">Could not load: {error}</p>}
+      {table && data && (
+        <>
+          <table>
+            <thead>
+              <tr>
+                <th>Planned ahead</th>
+                {table.leads.map((lead) => <th key={lead}>{lead}</th>)}
+                <th>Hours not measured</th>
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row) => (
+                <tr key={row.quantity}>
+                  <td>{row.label} ({row.unit})</td>
+                  {row.cells.map((cell, i) => {
+                    const digits = row.quantity === 'sun_wm2' ? 0 : 2
+                    return (
+                      <td key={i} title={cell ? `${cell.n} hours` : 'no plans to compare'}>
+                        {cell ? `${signed(cell.bias, digits)} / ${cell.mae.toFixed(digits)}` : '-'}
+                      </td>
+                    )
+                  })}
+                  <td>{row.missing} of {data.hours}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  )
+}
 
 function Learning({ history }: { history: ParameterHistory }) {
   const events = history.history.filter((r) => r.kind !== 'refit').slice(-15).reverse()
@@ -210,6 +269,7 @@ export function Models() {
       )}
       {catalog.data && <ParameterList entries={catalog.data} />}
       {learned.data && <Learning history={learned.data} />}
+      <PlanVsReality />
       <div className="panel">
         <h2>Live prediction error (shadow plans vs measured room)</h2>
         <p className="note">How far the room was from what plans made 1, 6 and 24 hours earlier expected.</p>

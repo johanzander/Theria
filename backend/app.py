@@ -35,6 +35,11 @@ from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
+from core.theria.plan.forecast_check import (
+    ForecastChecker,
+    ForecastCheckStore,
+    load_measured,
+)
 from core.theria.plan.lk_executor import LKExecutor
 from core.theria.plan.outcomes import (
     DayOutcome,
@@ -191,6 +196,7 @@ async def lifespan(app: FastAPI):
                 record_path = os.path.join(DATA_DIR, "plan_record.jsonl")
                 runs_path = os.path.join(DATA_DIR, "plan_runs.jsonl")
                 trace_path = os.path.join(DATA_DIR, "exec_trace.jsonl")
+                check_path = os.path.join(DATA_DIR, "forecast_check.jsonl")
                 history_source = InfluxHistorySource()
                 built: list[PlanService] = (
                     []
@@ -222,6 +228,22 @@ async def lifespan(app: FastAPI):
                         plan_settings.comfort_starts_at,
                     )
 
+                plan_runs = PlanRunStore(runs_path, datetime.now(UTC))
+                forecast_check_store = ForecastCheckStore(check_path)
+                plan_api.forecast_check_store = forecast_check_store
+                forecast_check = ForecastChecker(
+                    plan_runs,
+                    lambda start, stop: load_measured(
+                        history_source,
+                        plan_settings,
+                        weather_client.history,
+                        start,
+                        stop,
+                    ),
+                    forecast_check_store,
+                    lambda: datetime.now(UTC),
+                )
+
                 plan_service = PlanService(
                     ha_client,
                     plan_settings,
@@ -239,13 +261,14 @@ async def lifespan(app: FastAPI):
                     parameter_log=ParameterLog(parameter_path),
                     event_log=EventLog(event_path),
                     plan_record=plan_record,
-                    plan_runs=PlanRunStore(runs_path, datetime.now(UTC)),
+                    plan_runs=plan_runs,
                     exec_trace=ExecTraceStore(trace_path, datetime.now(UTC)),
                     log_dir=os.path.join(DATA_DIR, "logs"),
                     settings_manager=settings_manager,
                     actuals_loader=actuals_loader,
                     price_periods=prices.periods,
                     price_history=prices.history,
+                    forecast_check=forecast_check,
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service

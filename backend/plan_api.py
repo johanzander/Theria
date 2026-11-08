@@ -15,6 +15,7 @@ from core.theria.exceptions import (
     SetpointRestoreError,
     TheriaError,
 )
+from core.theria.plan.forecast_check import ForecastCheckStore, summarize
 from core.theria.plan.service import PlanService
 from core.theria.plan.snapshot import PlanSnapshot
 
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/api")
 
 # Set by app.py during startup, like the other services in api.py.
 service: PlanService | None = None
+forecast_check_store: ForecastCheckStore | None = None
 
 
 def get_service() -> PlanService:
@@ -197,6 +199,19 @@ async def get_savings(
     except ConfigurationError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return jsonable_encoder(body)
+
+
+@router.get("/plan/forecast-check")
+async def get_forecast_check(
+    days: Annotated[int, Query(ge=1, le=365)] = 7,
+) -> Any:
+    """Plan against reality over the last `days`: per quantity and lead, the mean error (planned
+    minus measured) and the mean absolute error, and how many hours had no measurement."""
+    if forecast_check_store is None:
+        raise HTTPException(status_code=503, detail="Forecast check is not configured")
+    since = datetime.now(UTC) - timedelta(days=days)
+    summary = summarize(await asyncio.to_thread(forecast_check_store.read, since))
+    return {"since": since, **summary}
 
 
 @router.get("/plan/preflight")

@@ -114,6 +114,10 @@ class Notifier(Protocol):
     def dismiss(self, notification_id: str) -> None: ...
 
 
+class ForecastCheck(Protocol):
+    def run_due(self) -> int: ...
+
+
 OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
 ActualsLoader = Callable[[datetime, datetime], OutcomeInputs]
 TROUBLE_NOTIFICATION = "theria_plan_trouble"
@@ -174,6 +178,7 @@ class PlanService:
         event_log: EventLog | None = None,
         actuals_loader: ActualsLoader | None = None,
         price_history: Callable[[datetime, datetime], list[PricePeriod]] | None = None,
+        forecast_check: ForecastCheck | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -235,6 +240,7 @@ class PlanService:
         self._regulator_statuses: list[RoomStatus] = []
         self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
+        self._forecast_check = forecast_check
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
         )
@@ -1120,6 +1126,11 @@ class PlanService:
             await asyncio.to_thread(self._regulate)
         except Exception:  # supervisor boundary: the loop must survive
             logger.exception("regulator failed")
+        if self._forecast_check is not None:
+            try:
+                await asyncio.to_thread(self._forecast_check.run_due)
+            except Exception:  # supervisor boundary: the loop must survive
+                logger.exception("checking the plans against what happened failed")
         if self._mode == "active":
             try:
                 await asyncio.to_thread(self._control)

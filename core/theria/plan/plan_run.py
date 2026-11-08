@@ -29,7 +29,8 @@ class PlanRun:
     settings: PlanSettings
     pump: PumpParams
     room: RoomParams
-    # what the plan decided then, per hour: start, rts_c, valves_closed, energy_kwh, binding and the options it weighed
+    # what the plan decided then, per hour: start, rts_c, valves_closed, energy_kwh, room_c, flow_c,
+    # binding and the options it weighed
     decided: list[dict[str, Any]]
     objective_sek: float
 
@@ -118,6 +119,9 @@ def make_run(
                 "rts_c": h.rts_c,
                 "valves_closed": h.valves_closed,
                 "energy_kwh": h.energy_kwh,
+                # what the room was expected to read at the end of the hour, and the flow target
+                "room_c": h.room_c_end + h.sun_swing_c,
+                "flow_c": h.flow_target_c,
                 "binding": h.reason.get("binding"),
                 "alternatives": h.reason.get("alternatives"),
                 "held_by_commitment": h.reason.get("held_by_commitment"),

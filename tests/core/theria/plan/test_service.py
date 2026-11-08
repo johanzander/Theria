@@ -33,7 +33,9 @@ def feed_periods(days=2, base=1.0, evening=3.0) -> list[PricePeriod]:
     return [
         PricePeriod(
             DAY_START + timedelta(minutes=15 * q),
-            evening if 16 <= (DAY_START + timedelta(minutes=15 * q)).hour < 20 else base,
+            evening
+            if 16 <= (DAY_START + timedelta(minutes=15 * q)).hour < 20
+            else base,
         )
         for q in range(96 * days)
     ]
@@ -85,6 +87,7 @@ def make_service(
     sensor_guard=None,
     parameter_log=None,
     settings_manager=None,
+    forecast_check=None,
 ):
     from dataclasses import replace
 
@@ -100,6 +103,7 @@ def make_service(
         sensor_guard=sensor_guard,
         parameter_log=parameter_log,
         settings_manager=settings_manager,
+        forecast_check=forecast_check,
     )
 
 
@@ -302,10 +306,9 @@ def test_a_rejected_room_fit_still_applies_the_pump_fit_and_keeps_the_room_prior
     service.refit()
     status = service.model_status()
     assert status["pump"]["source"] == "fitted"
-    assert (
-        status["room"]["source"] == "prior"
-        and status["room"]["params"] == with_measured_response(PRIOR_ROOM_PARAMS)
-    )
+    assert status["room"]["source"] == "prior" and status["room"][
+        "params"
+    ] == with_measured_response(PRIOR_ROOM_PARAMS)
     assert status["room"]["fit_error"] == "ModelFitError: rejected"
     assert service.run_once().model_status == {"pump": "fitted", "room": "prior"}
 
@@ -321,10 +324,9 @@ def test_a_later_rejection_keeps_the_room_fit_that_was_accepted_before(settings)
     service.refit()
     service.refit()
     status = service.model_status()
-    assert (
-        status["room"]["source"] == "fitted"
-        and status["room"]["params"] == with_measured_response(FITTED_ROOM)
-    )
+    assert status["room"]["source"] == "fitted" and status["room"][
+        "params"
+    ] == with_measured_response(FITTED_ROOM)
     assert status["room"]["fit_error"] == "ModelFitError: rejected"
 
 
@@ -351,3 +353,28 @@ def test_a_plan_is_not_made_when_no_comfort_sensor_is_healthy(settings):
     with pytest.raises(SensorError):
         service.run_once()
     assert service.latest() is not None  # the previous plan stays available
+
+
+class FakeCheck:
+    def __init__(self, error=None):
+        self.calls, self.error = 0, error
+
+    def run_due(self):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return 1
+
+
+def test_every_cycle_checks_the_hours_that_have_finished_against_the_plans(settings):
+    check = FakeCheck()
+    asyncio.run(make_service(settings, forecast_check=check).cycle())
+    assert check.calls == 1
+
+
+def test_a_failing_check_does_not_stop_the_planning_cycle(settings):
+    service = make_service(
+        settings, forecast_check=FakeCheck(RuntimeError("influx down"))
+    )
+    asyncio.run(service.cycle())  # must not raise
+    assert service.latest() is not None
