@@ -20,6 +20,7 @@ import numpy as np
 
 from core.theria.exceptions import (
     ConfigurationError,
+    PriceDataError,
     SensorError,
     SetpointRestoreError,
     TheriaError,
@@ -45,6 +46,7 @@ from core.theria.plan.disturbance import DisturbanceEstimator, Sample
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
+from core.theria.plan.heat_shift import make_plan
 from core.theria.plan.lk_executor import LKExecutor, LKResult, step_up
 from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.morning import MorningRules, update_margin
@@ -57,7 +59,6 @@ from core.theria.plan.planner import (
     HourPlan,
     Plan,
     PlanInputs,
-    plan,
     sun_filtered_sequence,
 )
 from core.theria.plan.preflight import Check, preflight_checks
@@ -80,6 +81,14 @@ from core.theria.plan.room_model import (
 from core.theria.plan.scoring import LeadScore, ScoreBoard
 from core.theria.plan.settings import SUPPORTED_MODES, PlanSettings
 from core.theria.plan.settings_manager import SettingsManager
+from core.theria.plan.shift_rules import (
+    NORMAL,
+    OPENING,
+    SalonStatus,
+    ShiftReadings,
+    ShiftWindow,
+    thermostat_target,
+)
 from core.theria.plan.skill import SkillTracker
 from core.theria.plan.snapshot import ComfortOutlook, PlanSnapshot
 from core.theria.plan.state_store import PlanState, PlanStateStore
@@ -179,6 +188,7 @@ class PlanService:
         actuals_loader: ActualsLoader | None = None,
         price_history: Callable[[datetime, datetime], list[PricePeriod]] | None = None,
         forecast_check: ForecastCheck | None = None,
+        energy_forecast: ForecastCheck | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -187,6 +197,9 @@ class PlanService:
         self._room = with_measured_response(room_params)
         self._now = now
         self._interval_seconds = interval_seconds
+        self._wake = (
+            asyncio.Event()
+        )  # set to run the next cycle now instead of after the interval
         self._mode = settings.mode
         self._history = PriceHistory(settings.extreme_history_days)
         self._snapshots: deque[PlanSnapshot] = deque(maxlen=SNAPSHOTS_KEPT)
@@ -230,6 +243,8 @@ class PlanService:
         self._disturbance = DisturbanceEstimator()
         self._skill = SkillTracker()
         self._authority_day: tuple[date, float] | None = None
+        self._shift_window: ShiftWindow | None = None
+        self._salon_status: Callable[[], SalonStatus] | None = None
         self._regulator = (
             Regulator(
                 settings.room_controls, settings.lk_limit_c, settings.room_actuators
@@ -241,6 +256,8 @@ class PlanService:
         self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
         self._forecast_check = forecast_check
+        self._energy_forecast = energy_forecast
+        self._restore_failed = False  # leaving active mode failed: no window may be reapplied
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
         )
@@ -263,6 +280,8 @@ class PlanService:
                 self._regulator.load_state(state.regulator)
             if state.skill is not None:
                 self._skill.load_state(state.skill)
+            if state.shift_window is not None:
+                self._shift_window = ShiftWindow.from_dict(state.shift_window)
 
     def now(self) -> datetime:
         return self._now()
@@ -305,6 +324,7 @@ class PlanService:
                     self._refuse_while_automation_is_on()
             if was_active and mode != "active" and self._executor is not None:
                 failure = self._restore_all()
+                self._restore_failed = failure is not None
                 if failure is not None:
                     raise SetpointRestoreError(
                         f"the base setpoints could not be restored ({failure}); "
@@ -588,6 +608,11 @@ class PlanService:
                         else self._regulator.export_state()
                     ),
                     skill=self._skill.export_state(),
+                    shift_window=(
+                        None
+                        if self._shift_window is None
+                        else self._shift_window.to_dict()
+                    ),
                 )
             )
 
@@ -766,8 +791,25 @@ class PlanService:
 
     def _extra_drift(self, starts: list[datetime]) -> np.ndarray:
         """What the room does on top of the model: the measured day heat. The disturbance is measured
-        but not carried forward: in the backtest of 27 Oct-4 Nov it made the 6-12 h forecast worse."""
+        but not carried forward: in the backtest of 27 Oct-4 Nov it made the 6-12 h forecast worse.
+        """
         return np.array([self._day_heat(start) for start in starts])
+
+    def _prices_today(
+        self, periods: list[PricePeriod], first_hour: datetime
+    ) -> np.ndarray:
+        """The hourly prices from local midnight up to `first_hour`, as far back as they are known."""
+        tz = ZoneInfo(self._settings.timezone)
+        midnight = first_hour.astimezone(tz).replace(hour=0, minute=0, second=0)
+        prices: list[float] = []
+        hour = first_hour
+        while hour > midnight:
+            hour -= timedelta(hours=1)
+            try:
+                prices.append(hourly_prices(periods, hour)[0][1])
+            except PriceDataError:
+                break
+        return np.array(prices[::-1], dtype=float)
 
     def _sample_disturbance(
         self, now: datetime, room_c: float, weather: dict[datetime, WeatherHour]
@@ -791,10 +833,42 @@ class PlanService:
         innovation = self._disturbance.update(
             sample,
             replace(self._warmed_room(), drift_c_per_h=self._day_heat(now)),
-            s.lk_limit_c,
+            s.lk_setpoint_c,
         )
         if innovation is not None:
             self._skill.add(innovation)
+
+    def use_salon_status(self, status: Callable[[], SalonStatus]) -> None:
+        """Where the heat shift reads the salon from; without it the salon is not looked after."""
+        self._salon_status = status
+
+    def _salon_reading(self) -> SalonStatus | None:
+        if self._salon_status is None:
+            return None
+        try:
+            return self._salon_status()
+        except (TheriaError, RuntimeError, ValueError, KeyError, TypeError):
+            logger.warning("cannot read the salon", exc_info=True)
+            return SalonStatus(None, 0.0)
+
+    def _shift_readings(self, room_c: float) -> ShiftReadings | None:
+        if self._settings.plan_strategy != "heat_shift":
+            return None
+        return ShiftReadings(room_c, self._salon_reading(), self._shift_window)
+
+    def _keep_shift_window(self, window: ShiftWindow | None) -> None:
+        if window == self._shift_window:
+            return
+        if window is not None and (
+            self._shift_window is None or window.ended_by != self._shift_window.ended_by
+        ):
+            self._log(
+                "shift",
+                f"ended by {window.ended_by}" if window.ended_by else "window started",
+                f"{window.adjust_c:+.1f} C until {window.end.isoformat()}",
+            )
+        self._shift_window = window
+        self._save_state()
 
     def _open_fraction(self) -> float | None:
         """Share of the floor loops that are open now; None when no actuators are configured."""
@@ -922,10 +996,8 @@ class PlanService:
         """Room temperature prediction error by lead time, from the stored snapshots."""
         return self._scoreboard.scores(list(self._snapshots))
 
-    def run_once(self) -> PlanSnapshot | None:
-        """Compute and store one plan; returns None when mode is off."""
-        if self._mode == "off":
-            return None
+    def run_once(self) -> PlanSnapshot:
+        """Compute and store one plan."""
         now = self._now()
         s = self._settings
 
@@ -991,6 +1063,8 @@ class PlanService:
             previous_rts_c=previous_rts,
             previous_closed=self._closed_now(now),
             extra_drift_c_per_h=self._extra_drift(starts),
+            past_prices_sek_per_kwh=self._prices_today(periods, starts[0]),
+            shift=self._shift_readings(room_c),
         )
         baseline_flow = np.minimum(
             np.asarray(flow_target(self._pump, t_out, s.rts_base_c), dtype=float),
@@ -998,7 +1072,8 @@ class PlanService:
         )
         room_params = self._warmed_room()
         effective = self._effective_settings()
-        result = plan(inputs, effective, self._pump, room_params)
+        result = make_plan(inputs, effective, self._pump, room_params)
+        self._keep_shift_window(result.shift_window)
         self._keep_run(now, inputs, effective, room_params, result)
         snapshot = PlanSnapshot(
             computed_at=now,
@@ -1131,6 +1206,11 @@ class PlanService:
                 await asyncio.to_thread(self._forecast_check.run_due)
             except Exception:  # supervisor boundary: the loop must survive
                 logger.exception("checking the plans against what happened failed")
+        if self._energy_forecast is not None:
+            try:
+                await asyncio.to_thread(self._energy_forecast.run_due)
+            except Exception:  # supervisor boundary: the loop must survive
+                logger.exception("the energy forecast failed")
         if self._mode == "active":
             try:
                 await asyncio.to_thread(self._control)
@@ -1139,7 +1219,7 @@ class PlanService:
 
     def _regulate(self) -> None:
         """Measure every room, decide which valves should be closed and log what changed."""
-        if self._regulator is None or self._mode == "off":
+        if self._regulator is None:
             return
         statuses = self._regulator.step(
             self._now(), lambda entity: self._ha.get_state(entity)["state"]
@@ -1175,6 +1255,13 @@ class PlanService:
             ),
             None,
         )
+
+    def planned_setpoint(self, hour: datetime) -> float | None:
+        """The setpoint the plan will write in `hour`; None when it writes nothing (shadow mode)."""
+        if self._mode != "active":
+            return None
+        plan_hour = self._plan_hour_now(hour)
+        return None if plan_hour is None else plan_hour.rts_c
 
     def _closed_now(self, now: datetime) -> bool:
         """Whether the plan last computed has the floor loops closed in the hour that is applied."""
@@ -1307,6 +1394,45 @@ class PlanService:
     def exec_trace(self, since: datetime) -> list[dict[str, Any]]:
         return [] if self._exec_trace is None else self._exec_trace.read(since)
 
+    def _room_c(self, thermostat: str) -> float | None:
+        try:
+            return float(self._ha.get_climate_state(thermostat)["current_temperature"])
+        except (RuntimeError, ValueError, KeyError, TypeError):
+            logger.warning("cannot read the room at %s", thermostat, exc_info=True)
+            return None
+
+    def _shift_holds(self) -> tuple[dict[str, float], str | None]:
+        """Every thermostat's target in the heat shift, and the window it belongs to (None outside one)."""
+        s = self._settings
+        now = self._now()
+        snapshot = self.latest()
+        normal = dict.fromkeys(s.room_thermostat_entities, s.lk_base_c)
+        if (
+            self._restore_failed
+            or snapshot is None
+            or now - snapshot.computed_at > MAX_PLAN_AGE
+        ):
+            return normal, None
+        hours = snapshot.plan.hours
+        current = next(
+            (i for i, h in enumerate(hours) if h.start <= now < h.start + timedelta(hours=1)),
+            None,
+        )
+        if current is None or hours[current].thermostat == NORMAL:
+            return normal, None
+        mode = hours[current].thermostat
+        last = current
+        while last + 1 < len(hours) and hours[last + 1].thermostat == mode:
+            last += 1
+        night = s.in_night(now)
+        targets = {
+            entity: thermostat_target(
+                mode, night, self._room_c(entity) if mode == OPENING else None, s
+            )
+            for entity in s.room_thermostat_entities
+        }
+        return targets, f"{mode}:{hours[last].start.isoformat()}"
+
     def _plan_valve_holds(self) -> dict[str, float]:
         """The floor loops close while the plan's current hour has them closed. The thermostats are
         held at the hour's floor, so the loops reopen by themselves if a room falls that far.
@@ -1362,8 +1488,12 @@ class PlanService:
             holds = None
             lk = None
             if self._lk is not None:
-                holds = self._holds()
-                lk = self._lk.execute(holds)
+                window = None
+                if self._settings.plan_strategy == "heat_shift":
+                    holds, window = self._shift_holds()
+                else:
+                    holds = self._holds()
+                lk = self._lk.execute(holds, window)
                 if lk.action != "kept":
                     self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")
             self._trace_cycle(pump, lk, holds)
@@ -1429,7 +1559,15 @@ class PlanService:
         except Exception:  # a failed notification must not stop the control loop
             logger.exception("could not send notification %s", notification_id)
 
+    def wake(self) -> None:
+        """Run the next cycle now (after a change of mode), not at the end of the interval."""
+        self._wake.set()
+
     async def _loop(self) -> None:
         while True:
+            self._wake.clear()
             await self.cycle()
-            await asyncio.sleep(self._interval_seconds)
+            try:
+                await asyncio.wait_for(self._wake.wait(), self._interval_seconds)
+            except TimeoutError:
+                pass

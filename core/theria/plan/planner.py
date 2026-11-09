@@ -11,6 +11,7 @@ from core.theria.exceptions import OptimizationError
 from core.theria.plan.pump_model import PumpParams, flow_target, total_kwh_per_hour
 from core.theria.plan.room_model import RoomParams, RoomState, step, valve_open
 from core.theria.plan.settings import PlanSettings
+from core.theria.plan.shift_rules import ShiftReadings, ShiftWindow
 
 FloatArray = npt.NDArray[np.float64]
 FloatGrid = npt.NDArray[np.floating[Any]]  # cost-to-go tables are float32
@@ -52,6 +53,10 @@ class PlanInputs:
     # What the room does on its own, per hour (the measured heat by day);
     # None when nothing is known.
     extra_drift_c_per_h: FloatArray | None = None
+    # Prices from local midnight up to the first hour: the heat shift finds its windows from there.
+    past_prices_sek_per_kwh: FloatArray | None = None
+    # What the heat shift's guards read, and the window that has started; None: no guards
+    shift: ShiftReadings | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,11 @@ class HourPlan:
     # The plan holds the LK thermostats low this hour: the floor loops are closed, the room only
     # loses heat and the pump runs for what is left (closed_energy_share of its energy).
     valves_closed: bool = False
+    # The heat shift's thermostats this hour: closing, opening or normal.
+    thermostat: str = "normal"
+    # What the setpoint's change does to each zone against the flat setpoint (house_model), in C.
+    main_delta_c: float = 0.0
+    salon_delta_c: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,7 @@ class Plan:
     # The end of the horizon: the level the plan is judged against and what a degree under it costs
     end_reference_c: float = 0.0
     end_cost_sek_per_c: float = 0.0
+    shift_window: ShiftWindow | None = None  # the heat shift's window that has started
 
 
 def _interp2(grid: FloatGrid, r_idx: FloatArray, s_idx: FloatArray) -> FloatArray:
@@ -224,7 +235,7 @@ class _Problem:
             flow,
             self.inputs.t_out_c[t],
             self.inputs.sun_wm2[t],
-            self.settings.lk_limit_c,
+            self.settings.lk_setpoint_c,
             valve_scale=0.0 if closed else 1.0,
         )
         return (
@@ -246,7 +257,7 @@ class _Problem:
 
     def energy_kwh(self, t: int, rts_c: float, closed: bool = False) -> float:
         kwh = float(total_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
-        return kwh * self.settings.closed_energy_share if closed else kwh
+        return kwh * self.settings.closed_share if closed else kwh
 
     def stage_cost(
         self, t: int, a: int, room_next: FloatArray, closed: bool = False
@@ -324,7 +335,7 @@ class _Problem:
             min(float(flow_target(self.pump, t_out, up)), cap)
             - min(float(flow_target(self.pump, t_out, down)), cap)
         )
-        valve = float(valve_open(reference_c, s.lk_limit_c))
+        valve = float(valve_open(reference_c, s.lk_setpoint_c))
         coupling = valve * self.room.k_slab
         rate = coupling + self.room.k_out
         room_per_rts = d_flow * coupling / rate
@@ -527,7 +538,8 @@ class _Problem:
         next_value: FloatGrid,
     ) -> list[dict[str, Any]]:
         """Every setpoint the plan could have picked this hour: what it would have cost over the
-        whole horizon relative to the chosen one (positive = worse), or what ruled it out."""
+        whole horizon relative to the chosen one (positive = worse), or what ruled it out.
+        """
         max_move = round(
             self.settings.max_rts_step_per_hour_c / self.settings.rts_step_c
         )
@@ -570,7 +582,7 @@ class _Problem:
                 flow,
                 self.inputs.t_out_c[t],
                 self.inputs.sun_wm2[t],
-                self.settings.lk_limit_c,
+                self.settings.lk_setpoint_c,
             )
             room_c, slab_c = (
                 float(room_next) + float(self.extra_drift[t]),

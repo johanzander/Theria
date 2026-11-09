@@ -9,7 +9,7 @@ from core.theria.radiators.settings import DaySchedule, RadiatorPrefs
 TZ = "Europe/Stockholm"
 MODEL = SalonModel(c_j_per_k=2.33e6, u_w_per_k=51.7, heat_power_w=1200.0)
 PREFS = RadiatorPrefs()
-BOUND = PREFS.salon_open_target_c + PREFS.salon_margin_c  # 19.3
+BOUND = PREFS.salon_open_target_c + PREFS.salon_margin_c  # 20.3
 # Monday 2026-11-02 06:00 local (UTC+1) is 05:00 UTC
 MONDAY_06 = datetime(2026, 11, 2, 5, tzinfo=UTC)
 
@@ -164,6 +164,6 @@ def test_the_pre_heat_cap_holds_when_the_salon_starts_above_it(start_mean):
 def test_an_opening_at_half_past_the_hour_finds_the_shop_warm():
     schedule = {**PREFS.salon_schedule, "mon": DaySchedule(time(9, 30), time(19, 0))}
     prefs = RadiatorPrefs(salon_schedule=schedule)
-    plan = run([0.5] * 8, prefs=prefs, start_mean=17.5)  # 06:00 local onwards
+    plan = run([0.5] * 8, prefs=prefs, start_mean=18.5)  # 06:00 local onwards
     assert plan[3].open and not plan[2].open  # 09:00-10:00 holds the opening at 09:30
     assert plan[2].mean_end_c >= BOUND - 1e-6

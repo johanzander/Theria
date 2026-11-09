@@ -15,6 +15,7 @@ from core.theria.exceptions import (
     SetpointRestoreError,
     TheriaError,
 )
+from core.theria.plan.energy_forecast import EnergyForecaster
 from core.theria.plan.forecast_check import ForecastCheckStore, summarize
 from core.theria.plan.service import PlanService
 from core.theria.plan.snapshot import PlanSnapshot
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/api")
 # Set by app.py during startup, like the other services in api.py.
 service: PlanService | None = None
 forecast_check_store: ForecastCheckStore | None = None
+energy_forecaster: EnergyForecaster | None = None
 
 
 def get_service() -> PlanService:
@@ -125,6 +127,7 @@ async def set_plan_mode(
             raise HTTPException(status_code=422, detail=f"preflight failed: {detail}")
     try:
         await asyncio.to_thread(svc.set_mode, request.mode, request.confirm)
+        svc.wake()  # plan in the new mode now, not at the next quarter of an hour
     except ConfigurationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except SetpointRestoreError as e:
@@ -212,6 +215,16 @@ async def get_forecast_check(
     since = datetime.now(UTC) - timedelta(days=days)
     summary = summarize(await asyncio.to_thread(forecast_check_store.read, since))
     return {"since": since, **summary}
+
+
+@router.get("/energy-forecast")
+async def get_energy_forecast(
+    days: Annotated[int, Query(ge=1, le=90)] = 14,
+) -> Any:
+    """The pump's electricity per day: each forecast as it was made, what was measured, and the error."""
+    if energy_forecaster is None:
+        raise HTTPException(status_code=503, detail="Energy forecast is not configured")
+    return await asyncio.to_thread(energy_forecaster.view, days)
 
 
 @router.get("/plan/preflight")

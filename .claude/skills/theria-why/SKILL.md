@@ -23,6 +23,35 @@ empty one says "the data does not show ..."):
 If a part cannot be filled from data, say exactly that: "the data does not show X; Y is missing".
 Then do the second half of this skill (close the gap), do not guess.
 
+## The physical conditions come first
+
+Before any conclusion, read how the heat actually reaches the room in question. Data explains nothing
+until you know what the hardware between the sensor and the room can do. Read in
+`documentation/ivt-heat-pump.md` (especially "Floor construction, LK design and the flow temperature limit"),
+`SYSTEM_SETUP.md` and the comments in `config.yaml`, and state in the answer which of these apply:
+
+- **What the room receives is not always what the pump delivers.** The floor loops on both floors sit behind
+  mixing valves (shunts) set to 40 C (`floor_mix_max_c`): pump flow above 40 C never reaches the floor, so a
+  flow-to-room relation for the LK rooms stops at 40 C. Radiators in the salon and the guest house take the
+  pump's full flow. A cap in a document may be superseded: check for the current one.
+- **The heat emitter and its control:** floor (slow, LK thermostats close the loops at their target), radiators
+  (Netatmo in the salon, Tado in the guest house, each with its own schedule or target).
+- **Which sensor stands where:** thermostat sensors near a radiator, floor and ceiling points in the salon.
+- **Other heat in the room:** tile stove, sun, people, none of which is logged as a heat input.
+- **What the pump can give:** measured flow against its target (it falls short in the cold), hot-water time, defrost.
+
+If a statement about a room does not hold given these, it is not a finding, however good the fit. Any
+calculated requirement must say for which circuit it holds and which limit ends it.
+
+## Keep the knowledge files current and correct
+
+This skill and the files it relies on (`documentation/`, `SYSTEM_SETUP.md`, `documentation/TODO.md`, the comments in
+`config.yaml`) must always be current and correct, because the next analysis starts from them.
+
+- When an analysis gives a new insight, or shows that something in them is wrong or out of date, propose the
+  change (which file, what the text should say) and ask Johan first. Edit only after a yes.
+- Wrong or outdated text is rewritten or deleted. Never leave it and add a note or a "superseded" marker beside it.
+
 ## Where the evidence is
 
 Read these before concluding. Use the running add-on, not only the code.
@@ -42,7 +71,8 @@ Ingress URL: open the add-on in Chrome (`https://casazander.se/local_theria`), f
 
 ## Method
 
-1. Pin down the exact claim: which quantity, which hour, UTC or local, what Johan expected instead.
+1. Pin down the exact claim: which quantity, which hour, UTC or local, what Johan expected instead, and
+   which room or circuit it concerns. Read that circuit's physical conditions (section above) before the data.
 2. Pull the **actual** value first (execution trace, history), then the **planned** value (plan day).
    They differ more often than you expect: the plan may say 16 while the pump held 18. Explain each
    difference separately; never explain the chart with the plan's logic when the pump did something else.

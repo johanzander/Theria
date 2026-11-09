@@ -114,6 +114,8 @@ def get_sensor_timeseries(
     domain: str = "sensor",
     field_name: str | None = None,
     parse_as_string: bool = False,
+    hourly_mean: bool = False,
+    plausible: tuple[float, float] | None = None,
 ) -> dict:
     """Get time series data for a single sensor or climate entity.
 
@@ -125,6 +127,10 @@ def get_sensor_timeseries(
         domain: Entity domain ('sensor', 'climate', ...)
         field_name: Field to fetch; 'current_temperature' for climate, else 'value'
         parse_as_string: Keep values as strings (for state-like fields)
+        hourly_mean: Let InfluxDB average each hour and return those means, stamped at the
+            start of the hour (years of a dense sensor do not fit in the add-on's memory)
+        plausible: (lowest, highest) value to keep; applied before an hourly mean, so that a
+            garbage reading cannot move the hour
 
     Returns:
         {"status": "success", "data": [(timestamp, value), ...]} sorted by time, or
@@ -152,9 +158,16 @@ def get_sensor_timeseries(
 
     start_str = start_time.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
     stop_str = stop_time.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+    selection = f'mean("{field_name}")' if hourly_mean else f'"{field_name}"'
+    grouping = "GROUP BY time(1h) fill(none) " if hourly_mean else ""
+    in_range = (
+        ""
+        if plausible is None
+        else f'AND "{field_name}" >= {plausible[0]} AND "{field_name}" <= {plausible[1]} '
+    )
     query = (
-        f'SELECT "{field_name}" FROM "{measurement}" '
-        f"WHERE time >= '{start_str}' AND time < '{stop_str}' ORDER BY time ASC"
+        f'SELECT {selection} FROM "{measurement}" '
+        f"WHERE time >= '{start_str}' AND time < '{stop_str}' {in_range}{grouping}ORDER BY time ASC"
     )
 
     try:

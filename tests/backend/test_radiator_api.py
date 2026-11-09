@@ -51,7 +51,7 @@ def test_prefs_roundtrip_through_put_and_get(client):
     assert put.status_code == 200
     again = http.get("/api/radiators/prefs").json()
     assert again["prefs"]["salon_open_target_c"] == 19.5
-    assert again["defaults"]["salon_open_target_c"] == 19.0
+    assert again["defaults"]["salon_open_target_c"] == 20.0
     assert again["is_default"] is False
 
 

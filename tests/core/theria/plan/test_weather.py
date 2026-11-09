@@ -12,6 +12,7 @@ def payload(**overrides):
             "time": ["2026-10-12T13:00", "2026-10-12T14:00"],
             "shortwave_radiation": [372.0, 329.0],
             "cloud_cover": [52, 87],
+            "wind_speed_10m": [11.0, None],
             "temperature_2m": [12.7, 11.8],
         }
     }

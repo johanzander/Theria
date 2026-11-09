@@ -86,8 +86,8 @@ def test_active_mode_is_refused_over_the_api_while_a_check_fails(client):
     http, service, _ = client
     ok = http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
     assert ok.status_code == 200
-    http.post("/api/plan/mode", json={"mode": "off"})
+    http.post("/api/plan/mode", json={"mode": "shadow"})
     service._snapshots.clear()  # a failure
     refused = http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
     assert refused.status_code == 422 and "plan" in refused.json()["detail"]
-    assert service.mode == "off"
+    assert service.mode == "shadow"

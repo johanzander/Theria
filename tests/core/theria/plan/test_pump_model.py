@@ -1,11 +1,16 @@
+import json
+from dataclasses import asdict, replace
+
 import numpy as np
 import pytest
 
 from core.theria.exceptions import ModelFitError
 from core.theria.plan.pump_model import (
     PRIOR_PUMP_PARAMS,
+    PumpParams,
     energy_kwh_per_hour,
     fit_pump_params,
+    fit_rts_levels,
     flow_target,
 )
 
@@ -50,7 +55,6 @@ def test_fit_refuses_data_without_variation_or_enough_samples():
         fit_pump_params(np.full_like(t_out, 5.0), flow, rts, energy)
 
 
-from dataclasses import replace  # noqa: E402
 
 from core.theria.plan.pump_model import (  # noqa: E402
     aux_kwh_per_hour,
@@ -99,3 +103,86 @@ def test_the_heater_coefficient_is_recovered_from_hourly_data():
 def test_without_hours_above_the_onset_the_heater_fit_is_refused():
     with pytest.raises(ModelFitError):
         fit_aux_per_flow_c(np.full(50, 38.0), np.zeros(50), onset_c=44.0)
+
+
+STEEP_BELOW_18 = ((15.0, -9.0), (16.0, -6.0), (17.0, -3.0), (18.0, 0.0), (20.0, 3.8))
+
+
+def with_levels(levels=STEEP_BELOW_18):
+    return replace(PRIOR_PUMP_PARAMS, rts_levels=levels)
+
+
+def test_a_measured_setpoint_moves_the_flow_by_what_the_pump_did():
+    p = with_levels()
+    assert flow_target(p, 5.0, 15.0) - flow_target(p, 5.0, 18.0) == pytest.approx(-9.0)
+
+
+def test_a_setpoint_between_two_measured_ones_lies_between_them():
+    p = with_levels()
+    assert flow_target(p, 5.0, 15.5) - flow_target(p, 5.0, 18.0) == pytest.approx(-7.5)
+
+
+def test_outside_the_measured_setpoints_the_flow_follows_the_usual_step():
+    p = with_levels()
+    assert flow_target(p, 5.0, 14.0) - flow_target(p, 5.0, 15.0) == pytest.approx(-1.9)
+    assert flow_target(p, 5.0, 21.0) - flow_target(p, 5.0, 20.0) == pytest.approx(1.9)
+
+
+def test_measured_setpoints_work_on_the_planners_grid_of_hours_and_setpoints():
+    p = with_levels()
+    grid = flow_target(p, np.array([[0.0], [5.0]]), np.array([[15.0, 18.0]]))
+    assert grid.shape == (2, 2)
+    assert grid[1, 0] - grid[1, 1] == pytest.approx(-9.0)
+
+
+def test_measured_setpoints_survive_a_json_file():
+    p = with_levels()
+    again = PumpParams(**json.loads(json.dumps(asdict(p))))
+    assert again == p
+    assert flow_target(again, 5.0, 15.0) == flow_target(p, 5.0, 15.0)
+
+
+def history_with_levels(rts_values, n_each=20):
+    rts = np.repeat(np.asarray(rts_values, dtype=float), n_each)
+    t_out = np.linspace(0.0, 10.0, len(rts))
+    return t_out, rts
+
+
+def test_the_setpoint_levels_are_fitted_from_what_the_pump_asked_for():
+    t_out, rts = history_with_levels([15.0, 16.0, 17.0, 18.0])
+    flow = 40.0 - 0.7 * t_out + 3.0 * (rts - 18.0)
+    levels = dict(fit_rts_levels(t_out, flow, rts, 40.0, -0.7))
+    assert levels == pytest.approx({15.0: -9.0, 16.0: -6.0, 17.0: -3.0, 18.0: 0.0})
+
+
+def test_a_setpoint_seen_too_seldom_is_left_out():
+    t_out, rts = history_with_levels([17.0, 18.0])
+    rare = np.array([15.0, 15.0])
+    levels = fit_rts_levels(
+        np.r_[t_out, 5.0, 5.0],
+        np.r_[40.0 - 0.7 * t_out, 20.0, 20.0],
+        np.r_[rts, rare],
+        40.0,
+        -0.7,
+    )
+    assert [rts_c for rts_c, _ in levels] == [17.0, 18.0]
+
+
+def test_an_hour_when_the_setpoint_changed_is_not_a_measurement():
+    t_out, rts = history_with_levels([17.0, 18.0])
+    levels = fit_rts_levels(
+        np.r_[t_out, np.full(20, 5.0)],
+        np.r_[40.0 - 0.7 * t_out, np.full(20, 20.0)],
+        np.r_[rts, np.full(20, 17.3)],
+        40.0,
+        -0.7,
+    )
+    assert [rts_c for rts_c, _ in levels] == [17.0, 18.0]
+
+
+def test_a_lower_setpoint_never_gets_a_higher_flow_than_a_higher_one():
+    t_out, rts = history_with_levels([16.0, 17.0, 18.0])
+    noisy = 40.0 - 0.7 * t_out + np.select([rts == 16.0, rts == 17.0], [1.0, -2.0], 0.0)
+    levels = dict(fit_rts_levels(t_out, noisy, rts, 40.0, -0.7))
+    assert levels[16.0] <= levels[17.0] <= levels[18.0]
+    assert levels[16.0] == pytest.approx(-2.0)

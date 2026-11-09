@@ -12,10 +12,9 @@ from datetime import UTC, datetime
 # Add core to Python path (log_config reads where the data directory is)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import log_config  # noqa: F401
-
 # Import API router
 import heat_pump_api
+import log_config  # noqa: F401
 import plan_api
 import radiator_api
 import sensor_api
@@ -33,6 +32,11 @@ from core.theria.health_monitor import HealthMonitorService
 from core.theria.heat_pump_monitor import HeatPumpMonitorService
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
+from core.theria.plan.energy_forecast import (
+    EnergyForecaster,
+    EnergyForecastStore,
+    load_energy_history,
+)
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
@@ -123,6 +127,8 @@ async def lifespan(app: FastAPI):
         import api
 
         api.health_monitor_service = health_monitor_service
+
+    heat_pump_api.ha_client = ha_client
 
     # Start thermal learning service if HA client is available
     learning_service = None
@@ -245,6 +251,22 @@ async def lifespan(app: FastAPI):
                     lambda: datetime.now(UTC),
                 )
 
+                energy_forecaster = EnergyForecaster(
+                    lambda start, stop: load_energy_history(
+                        history_source,
+                        plan_settings,
+                        weather_client.history,
+                        start,
+                        stop,
+                    ),
+                    weather_client.fetch,
+                    EnergyForecastStore(os.path.join(DATA_DIR, "energy_forecast.jsonl")),
+                    plan_settings.timezone,
+                    lambda: datetime.now(UTC),
+                    lambda hour: built[0].planned_setpoint(hour),
+                )
+                plan_api.energy_forecaster = energy_forecaster
+
                 plan_service = PlanService(
                     ha_client,
                     plan_settings,
@@ -270,6 +292,7 @@ async def lifespan(app: FastAPI):
                     price_periods=prices.periods,
                     price_history=prices.history,
                     forecast_check=forecast_check,
+                    energy_forecast=energy_forecaster,
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service
@@ -297,6 +320,7 @@ async def lifespan(app: FastAPI):
                         event_log=EventLog(radiator_events_path),
                     )
                     radiator_api.service = radiator_service
+                    plan_service.use_salon_status(radiator_service.salon_status)
                     await radiator_service.start()
                     logger.info("🔥 Radiator plan service started (shadow)")
         except TheriaError as e:

@@ -218,3 +218,92 @@ def test_a_thermostat_a_quarter_degree_off_is_written(lk_settings):
     ha.values["climate.lk_a"] = LIMIT - 0.25
     executor.execute()
     assert ("climate.lk_a", LIMIT) in ha.writes
+
+
+# Per room, in the heat shift
+
+
+@pytest.fixture
+def shift_settings(lk_settings):
+    from dataclasses import replace
+
+    return replace(lk_settings, plan_strategy="heat_shift")
+
+
+BASE = 19.5
+HOLD_BOTH = {"climate.lk_a": 19.0, "climate.lk_b": 19.0}
+
+
+def test_outside_a_hold_the_heat_shift_stands_at_the_base(shift_settings):
+    executor, ha, _ = make(shift_settings, FakeLK(22.0))
+    executor.execute()
+    assert ha.values["climate.lk_a"] == BASE
+
+
+def test_a_hand_change_pauses_only_that_room(shift_settings):
+    executor, ha, now = make(shift_settings, FakeLK(BASE))
+    executor.execute(HOLD_BOTH, "w1")
+    ha.values["climate.lk_a"] = 21.0
+    now[0] += timedelta(minutes=15)
+    ha.writes.clear()
+    executor.execute({"climate.lk_a": 19.0, "climate.lk_b": 18.5}, "w1")
+    assert ha.values["climate.lk_a"] == 21.0
+    assert ha.values["climate.lk_b"] == 18.5
+
+
+def test_a_room_changed_by_hand_is_left_until_the_next_window(shift_settings):
+    executor, ha, now = make(shift_settings, FakeLK(BASE))
+    executor.execute(HOLD_BOTH, "w1")
+    ha.values["climate.lk_a"] = 21.0
+    now[0] += timedelta(minutes=15)
+    executor.execute(HOLD_BOTH, "w1")
+    now[0] += timedelta(hours=2)  # the pause is over, the window is the same
+    executor.execute(HOLD_BOTH, "w1")
+    assert ha.values["climate.lk_a"] == 21.0
+    executor.execute({"climate.lk_a": BASE, "climate.lk_b": BASE}, None)  # normal
+    assert ha.values["climate.lk_a"] == 21.0
+    executor.execute(HOLD_BOTH, "w2")  # the next window
+    assert ha.values["climate.lk_a"] == 19.0
+
+
+def test_one_room_that_cannot_be_read_does_not_stop_the_other(shift_settings):
+    ha = FakeLK(BASE)
+    executor, ha, _ = make(shift_settings, ha)
+    original = ha.get_climate_state
+
+    def broken(entity_id):
+        if entity_id == "climate.lk_a":
+            raise RuntimeError("gone")
+        return original(entity_id)
+
+    ha.get_climate_state = broken
+    result = executor.execute(HOLD_BOTH, "w1")
+    assert result.action == "failed"
+    assert ha.values["climate.lk_b"] == 19.0
+
+
+def test_a_late_confirmation_of_an_earlier_value_is_not_a_hand_change(shift_settings):
+    executor, ha, now = make(shift_settings, FakeLK(BASE))
+    executor.execute()
+    ha.lag = 1000
+    assert executor.execute({"climate.lk_a": 19.0}, "w1").action == "failed"
+    now[0] += timedelta(minutes=15)
+    assert executor.execute({"climate.lk_a": 20.5}, "w2").action == "failed"
+    ha.lag, ha._pending = 0, {}
+    ha.values["climate.lk_a"] = 19.0  # the first write arrives after the second was sent
+    now[0] += timedelta(minutes=15)
+    result = executor.execute({"climate.lk_a": 20.5}, "w2")
+    assert result.action == "wrote"
+    assert ha.values["climate.lk_a"] == 20.5
+
+
+def test_a_pending_value_expires_after_the_grace_period(shift_settings):
+    executor, ha, now = make(shift_settings, FakeLK(BASE))
+    executor.execute()
+    ha.lag = 1000
+    executor.execute({"climate.lk_a": 19.0}, "w1")
+    ha.lag, ha._pending = 0, {}
+    now[0] += timedelta(hours=1, minutes=1)
+    ha.values["climate.lk_a"] = 19.0
+    result = executor.execute({"climate.lk_a": 19.0}, "w1")
+    assert result.action == "paused"

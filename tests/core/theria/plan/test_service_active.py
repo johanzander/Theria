@@ -42,7 +42,10 @@ class WritableHA(FakeHA):
 
     def get_climate_state(self, entity_id):
         if entity_id.startswith("climate.lk"):
-            return {"target_temperature": self.lk.get(entity_id, 19.5)}
+            return {
+                "target_temperature": self.lk.get(entity_id, 19.5),
+                "current_temperature": 19.5,
+            }
         return {"target_temperature": self.setpoint}
 
     def set_temperature(self, entity_id, temperature):

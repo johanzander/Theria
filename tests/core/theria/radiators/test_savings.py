@@ -7,7 +7,6 @@ from core.theria.radiators.salon_plan import SalonHour, SalonModel
 from core.theria.radiators.savings import (
     guest_saving_sek,
     salon_saving_sek,
-    would_lift_block,
 )
 
 MODEL = SalonModel(c_j_per_k=2.33e6, u_w_per_k=51.7, heat_power_w=1200.0)
@@ -60,20 +59,3 @@ def test_guest_cut_in_a_dear_hour_saves_and_is_signed():
     figure, _ = guest_saving_sek(plans, {"climate.a": 20.0}, prices, 100.0)
     # -1 K at 1 SEK and +1 K at 2 SEK on 100 W/K in one room: 0.1 kWh each way
     assert figure == pytest.approx(0.1 * 2.0 - 0.1 * 1.0)
-
-
-def test_the_block_is_lifted_only_when_all_callers_are_controlled():
-    calling = {"climate.vantsidan": True, "climate.bedroom": True}
-    assert would_lift_block(calling, {"climate.vantsidan", "climate.bedroom"}, True)
-    assert not would_lift_block(calling, {"climate.vantsidan"}, True)
-
-
-def test_the_block_is_not_lifted_when_a_room_is_below_its_bound():
-    calling = {"climate.vantsidan": True}
-    assert not would_lift_block(calling, {"climate.vantsidan"}, False)
-
-
-def test_nothing_calling_means_nothing_to_lift():
-    assert not would_lift_block(
-        {"climate.vantsidan": False}, {"climate.vantsidan"}, True
-    )

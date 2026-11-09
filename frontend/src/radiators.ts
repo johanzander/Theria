@@ -10,6 +10,7 @@ export interface GuestRoom { entity: string; t_room_c: number; band_c: number | 
 export interface RadiatorPrefs {
   salon_schedule: Record<Weekday, OpeningHours | null>
   salon_open_target_c: number
+  salon_open_floor_c: number
   salon_closed_floor_c: number
   salon_preheat_c: number
   salon_margin_c: number
@@ -40,7 +41,6 @@ export interface RadiatorSnapshot {
   would_write: Record<string, number>
   read: Record<string, number | null>
   difference: Record<string, number | null>
-  would_lift_block: boolean
   availability: Record<string, boolean>
   availability_share: Record<string, number>
   guest_saving: [number, string]

@@ -212,27 +212,6 @@ def test_cycle_survives_a_failing_price_feed():
     assert "no prices" in service.last_error
 
 
-def test_would_lift_block_is_reported_but_the_block_is_not_applied():
-    service, ha = make(periods=prices(dear_at={3}))
-    snap = service.run_once()
-    assert (
-        snap.would_lift_block is True
-    )  # both salon thermostats call and are controlled
-    assert ha.writes == []
-    ha.states[HALLWAY] = climate(
-        19.5, 17.0, "heating"
-    )  # below its band: keeps the block
-    assert service.run_once().would_lift_block is False
-
-
-def test_an_unknown_salon_does_not_report_a_lifted_block():
-    guard = FakeGuard(
-        {**SENSORS, "sensor.k": None, "sensor.floor": None, "sensor.ceiling": None}
-    )
-    service, _ = make(guard=guard, periods=prices(dear_at={3}))
-    assert service.run_once().would_lift_block is False
-
-
 def test_an_unavailable_outdoor_sensor_reuses_the_last_value_and_says_so():
     service, ha = make(periods=prices(dear_at={3}))
     assert service.run_once().outdoor_stale is False
@@ -272,3 +251,50 @@ def test_a_room_set_to_off_is_left_alone():
     assert KITCHEN not in snap.would_write
     assert snap.left_alone == [KITCHEN]
     assert snap.availability[KITCHEN] is True
+
+
+def with_targets(vantsidan, klippsidan):
+    ha = FakeHA()
+    ha.states[VANTSIDAN] = climate(vantsidan, 20.5)
+    ha.states[KLIPPSIDAN] = climate(klippsidan, 20.0)
+    service, _ = make(ha=ha, periods=prices())
+    return service, ha
+
+
+def test_the_salon_status_has_the_comfort_floor_when_netatmo_asks_for_comfort():
+    service, _ = with_targets(21.0, 21.0)
+    status = service.salon_status()
+    assert status.floor_c == 19.0
+    assert status.mean_c == pytest.approx(sum(SENSORS.values()) / len(SENSORS))
+
+
+def test_the_salon_status_has_the_closed_floor_when_netatmo_stands_low():
+    service, _ = with_targets(19.0, 19.0)
+    assert service.salon_status().floor_c == 17.0
+
+
+def test_netatmo_decides_and_not_the_hours_set_in_theria():
+    service, _ = with_targets(16.0, 16.0)  # Sunday's eco hours; Theria's hours say open
+    assert service.salon_status().floor_c == 17.0
+    evening, _ = with_targets(21.0, 21.0)
+    evening._now = lambda: (
+        NOW + timedelta(hours=8)
+    )  # 21:20 local, closed by Theria's hours
+    assert evening.salon_status().floor_c == 19.0
+
+
+def test_one_thermostat_asking_for_comfort_is_enough():
+    service, _ = with_targets(19.0, 21.0)
+    assert service.salon_status().floor_c == 19.0
+
+
+def test_one_thermostat_that_cannot_be_read_does_not_matter():
+    service, ha = with_targets(21.0, 21.0)
+    del ha.states[VANTSIDAN]
+    assert service.salon_status().floor_c == 19.0
+
+
+def test_with_no_thermostat_readable_the_salon_is_unknown():
+    service, ha = with_targets(21.0, 21.0)
+    del ha.states[VANTSIDAN], ha.states[KLIPPSIDAN]
+    assert service.salon_status().mean_c is None

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, planSaving, tabHref,
-  timelineRows, quarterRows, hasData, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted,
+  timelineRows, quarterRows, hasData, dayStatus, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted,
   type PlanResponse, type DayHour, type DayView,
 } from './model'
 
@@ -72,6 +72,8 @@ describe('describeReason', () => {
   it('explains known binding values and passes unknown ones through', () => {
     expect(describeReason('rts_min')).toMatch(/lowest allowed setpoint/i)
     expect(describeReason('flow_cap')).toMatch(/flow/i)
+    expect(describeReason('shift_sell')).toMatch(/dear/i)
+    expect(describeReason('shift_guard')).toMatch(/limit/i)
     expect(describeReason('valves_closed')).toMatch(/loops closed/i)
     expect(describeReason('something_new')).toBe('something_new')
   })
@@ -333,5 +335,17 @@ describe('history and prediction', () => {
   it('finds where the prediction starts', () => {
     expect(firstPredicted(rows)).toBe('c')
     expect(firstPredicted(rows.slice(0, 2))).toBeUndefined()
+  })
+})
+
+describe('dayStatus', () => {
+  it('says loading only until the first answer has come', () => {
+    expect(dayStatus(false, false, 'Nothing to show')).toBe('Loading...')
+  })
+  it('says why there is no plan when the add-on has none', () => {
+    expect(dayStatus(true, false, 'Nothing to show')).toMatch(/No plan.*Control/)
+  })
+  it('keeps the view’s own text when the day is there but empty', () => {
+    expect(dayStatus(true, true, 'Nothing to show')).toBe('Nothing to show')
   })
 })

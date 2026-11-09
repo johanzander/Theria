@@ -58,10 +58,12 @@ def test_model_health_reports_priors(client):
 
 def test_mode_can_be_switched_but_active_is_refused(client):
     http, service = client
-    assert http.post("/api/plan/mode", json={"mode": "off"}).json() == {"mode": "off"}
-    assert service.mode == "off"
+    assert http.post("/api/plan/mode", json={"mode": "off"}).status_code == 422
+    assert http.post("/api/plan/mode", json={"mode": "shadow"}).json() == {
+        "mode": "shadow"
+    }
     assert http.post("/api/plan/mode", json={"mode": "active"}).status_code == 422
-    assert service.mode == "off"
+    assert service.mode == "shadow"
 
 
 def test_unconfigured_service_is_503():

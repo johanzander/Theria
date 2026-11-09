@@ -58,15 +58,11 @@
 - [x] LK lever (decided with Johan 2026-10-11): thermostats go to `lk_setpoint_c` (21 C) only while the pump setpoint is actually above its base, otherwise `lk_base_c` (19.5 C); never lowered below the base; hand changes pause it 1 h (was 6 h until 2026-10-13: Johan had not agreed to 6 h); thermostats set below the base by hand are left alone; restored with the pump setpoint. Lowering LK below 19.5 to coast is NOT done (needs the buffer-tank/defrost check first).
 - [ ] Re-check the 4 h sun lag with Open-Meteo's end-of-hour labels (may be about 3.5 h) and with stove evenings excluded.
 - [x] The old `PriceOptimizer`, its `/api/price/*` endpoints and the price banner of the old dashboard are removed (2026-10-25).
-- [ ] **Adjust the heat curve manually on the pump (Johan does this; do it when the weather turns, before the cold).**
-      Finding (see `documentation/ivt-heat-pump.md`, "Where the floor reaches its limit"): the living room needs a flow
-      temperature of `42.4 - 0.98 * T_out` C (20 C indoors), but the pump curve at room setpoint 18 C gives
-      `40.8 - 0.68 * T_out`. The pump is short by 1.6 C at 0 C, 2.5 C at -3 C and 4.5 C at -9.6 C, which matches the
-      living room sitting 1-3 C under 19,5 C last winter. A steeper curve (about -1.0 C per C of outdoor temperature
-      instead of -0.68) or a higher room setpoint offset fixes this down to about -2.9 C outdoors; below that the 45 C
-      cap (LK's design flow) is the limit and the tile stove covers the rest (a few hours per season). Re-check against
-      the kitchen/hall change below, which changes the heat balance. Do not exceed 45 C flow.
-- [ ] Raise the winter delivery to the living room: pump curve is 1.6-4.5 C short of what the living room needs below 0 C (see knowledge base); decide between a higher room setpoint offset and a steeper curve, within the 45 C cap.
+- [ ] **Adjust the heat curve manually on the pump for the salon (Johan does this; do it when the weather turns, before the cold).**
+      The salon should reach 20 C with a fixed room setpoint; the curve handles the outdoor temperature. Proposal: Baspunkt 25 to 21, Slutpunkt 53 to 64, room setpoint 18
+      (`44.17 - 1.075 * T_out`). The radiators need about `44 - 1.05 * T_out` (see `documentation/ivt-heat-pump.md`). The floor loops are limited to 40 C by the mixing valves, so flow above 40 C only reaches the radiators.
+      Check in the first days at 2 C or colder: `heating_setpoint` about 40 at +3 C and 44 at 0 C, measured flow without hot-water time, salon temperature, electric heater use. At -4 C and colder the salon may still fall short.
+- [ ] Theria's flow curve is fitted on the last 240 days (`FLOW_WINDOW_DAYS`): after a curve change it mixes the old and the new curve. Solve before active mode, and set Base setpoint to 18.
 - [ ] Ask the parquet supplier for the warranty surface-temperature limit (45 C flow gives about 25-26 C at the surface, so 26 vs 27 C should not matter).
 - [ ] **Kitchen and large hall renovation (planned).** The kitchen today has only a small radiator and is under-dimensioned;
       the plan is tile in the whole kitchen and the large hall (hall #1) with water-borne underfloor heating. Johan hopes

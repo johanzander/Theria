@@ -41,6 +41,16 @@ class HistorySource(Protocol):
         """Raw (time, value) points for an entity; `field` picks an attribute."""
         ...
 
+    def hourly_means(
+        self,
+        entity_id: str,
+        start: datetime,
+        stop: datetime,
+        plausible: tuple[float, float] | None = None,
+    ) -> list[Point]:
+        """The mean of each hour with data, for sensors too dense to load point by point."""
+        ...
+
 
 class WeatherHistory(Protocol):
     def history(self, start: datetime, stop: datetime) -> list[WeatherHour]: ...
@@ -52,9 +62,37 @@ class InfluxHistorySource:
     def series(
         self, entity_id: str, start: datetime, stop: datetime, field: str | None = None
     ) -> list[Point]:
+        return self._points(entity_id, start, stop, field_name=field)
+
+    def hourly_means(
+        self,
+        entity_id: str,
+        start: datetime,
+        stop: datetime,
+        plausible: tuple[float, float] | None = None,
+    ) -> list[Point]:
+        return self._points(
+            entity_id, start, stop, hourly_mean=True, plausible=plausible
+        )
+
+    def _points(
+        self,
+        entity_id: str,
+        start: datetime,
+        stop: datetime,
+        field_name: str | None = None,
+        hourly_mean: bool = False,
+        plausible: tuple[float, float] | None = None,
+    ) -> list[Point]:
         domain, name = entity_id.split(".", 1)
         result = get_sensor_timeseries(
-            name, start, stop, domain=domain, field_name=field
+            name,
+            start,
+            stop,
+            domain=domain,
+            field_name=field_name,
+            hourly_mean=hourly_mean,
+            plausible=plausible,
         )
         if result["status"] == "error":
             # A query that worked but found no points is "no data", not a failure.
@@ -171,10 +209,10 @@ def load_calibration_inputs(
         )
 
     t_out = _cleaned(
-        source.series(settings.outdoor_entity, start, end), start, n, 7, 6.0
+        source.hourly_means(settings.outdoor_entity, start, end), start, n, 7, 6.0
     )
     rooms = [
-        _cleaned(source.series(e, start, end), start, n, 7, 2.0)
+        _cleaned(source.hourly_means(e, start, end), start, n, 7, 2.0)
         for e in settings.room_temp_entities
     ]
     lk = [
@@ -199,7 +237,7 @@ def load_calibration_inputs(
     history = (
         _mean_of(
             [
-                _cleaned(source.series(e, start, end), start, n, 7, 2.0)
+                _cleaned(source.hourly_means(e, start, end), start, n, 7, 2.0)
                 for e in settings.room_history_entities
             ]
         )
@@ -235,7 +273,11 @@ def load_calibration_inputs(
         room_c=room_c,
         room_reference_c=_extended(room_c, history),
         flow_c=_cleaned(
-            source.series(settings.flow_measured_entity, start, end), start, n, 7, 8.0
+            source.hourly_means(settings.flow_measured_entity, start, end),
+            start,
+            n,
+            7,
+            8.0,
         ),
         lk_setpoint_c=_mean_of(lk),
         sun_wm2=sun,

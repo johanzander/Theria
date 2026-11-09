@@ -7,7 +7,11 @@ from zoneinfo import ZoneInfo
 from core.theria.exceptions import ConfigurationError
 from core.theria.options import load_options
 
-SUPPORTED_MODES = ("off", "shadow", "active")
+# A plan is always made: shadow plans without writing, active plans and writes (off was removed 2026-11-08)
+SUPPORTED_MODES = ("shadow", "active")
+# Options Home Assistant may still have stored from earlier versions; they are read past
+REMOVED_OPTIONS = ("radiator_entities",)
+MAX_SHIFT_RTS_C = 2.0  # the heat shift never moves the setpoint further from its base
 
 
 @dataclass(frozen=True)
@@ -55,13 +59,13 @@ class PlanSettings:
     # What the pump still uses in an hour with the floor loops closed, as a share of its energy at the
     # lowest setpoint (hot water, radiators, standby). A prior: lower it as measured closed hours show.
     closed_energy_share: float = 0.15
-    # No longer read by the plan: a radiator calling for heat does not hold the pump setpoint any more
-    # (2026-11-03). Kept only so that options already stored in Home Assistant still load; remove with
-    # the next options migration.
-    radiator_entities: tuple[str, ...] = ()
+    # cumulative compressor electricity for hot water (kWh), for the energy forecast
+    hot_water_energy_entity: str = "sensor.compr_cons_hotwat"
     price_area: str = "SE4"
-    mode: str = "off"
-    floor_c: float = 18.5  # savings study: a floor of 18.5 C costs nothing against 17-18 C and keeps the room above it
+    mode: str = "shadow"
+    floor_c: float = (
+        18.5  # savings study: a floor of 18.5 C costs nothing against 17-18 C and keeps the room above it
+    )
     extreme_floor_c: float = 17.0
     target_c: float = 19.5
     ceiling_c: float = 22.0  # the room limit U: the plan may store heat up to it
@@ -78,6 +82,17 @@ class PlanSettings:
     # Where the thermostats stand when Theria does not control them (kill switch, shadow, off): the
     # setting the heat curve was tuned for.
     lk_base_c: float = 19.5
+    # In the heat shift: how far each room may fall in a sell, day and night. The thermostat stands
+    # `lk_close_offset_c` above the limit, because a room reopens fully about that far below its target.
+    lk_lower_day_c: float = 18.5
+    lk_lower_night_c: float = 17.5
+    lk_close_offset_c: float = 0.5
+    # A buy just before a sell sets the thermostat here, so that the loops are open and the floor stores heat.
+    lk_upper_c: float = 20.5
+    lk_opening_margin_c: float = 0.5  # a room closer to the upper limit is only half open
+    shift_buy_max_gap_h: int = 2  # a buy further from its sell is gone before the sell starts
+    # What the pump still uses in a sell with the loops closed, as a share of its energy (measured about 0.6)
+    shift_closed_energy_share: float = 0.6
     # What the mixing valves (shunts) allow the floor loops to receive, whatever the pump sends.
     floor_mix_max_c: float = 40.0
     comfort_cost_sek_per_c_hour: float = 1.0
@@ -119,6 +134,28 @@ class PlanSettings:
     # history: no use below 40 C, 1.6 % of hours at 40-44 C, 21 % of hours above 44 C, and mostly
     # when it is cold). The plan does not boost above it unless the baseline already is above.
     boost_flow_limit_c: float = 42.0
+    # How the plan is made: "heat_shift" moves heat from dear to cheap windows, "optimizer" is the
+    # dynamic programme.
+    plan_strategy: str = "heat_shift"
+    # The heat shift: how far the rooms may swing around where they are (+/-), how far the setpoint is
+    # moved in a window, and the price difference a window must be worth.
+    shift_room_swing_c: float = 0.5
+    shift_rts_c: float = 1.0
+    shift_min_gain_sek_per_kwh: float = 0.5
+
+    @property
+    def lk_setpoint_c(self) -> float:
+        """Where the thermostats stand when nothing asks for more: the heat shift's normal target, or the limit."""
+        return self.lk_base_c if self.plan_strategy == "heat_shift" else self.lk_limit_c
+
+    @property
+    def closed_share(self) -> float:
+        """The pump energy left in an hour with the floor loops closed."""
+        return (
+            self.shift_closed_energy_share
+            if self.plan_strategy == "heat_shift"
+            else self.closed_energy_share
+        )
 
     def in_night(self, moment: datetime) -> bool:
         """Whether the local time of `moment` is inside the night window (comfort not needed)."""
@@ -168,6 +205,20 @@ class PlanSettings:
             raise ConfigurationError(
                 "the plan's ceiling must not be above lk_limit_c, where the valves close"
             )
+        if not self.lk_lower_night_c <= self.lk_lower_day_c <= self.lk_upper_c:
+            raise ConfigurationError(
+                "the LK limits must satisfy night lower <= day lower <= upper"
+            )
+        if (
+            self.lk_close_offset_c < 0
+            or self.lk_opening_margin_c < 0
+            or self.shift_buy_max_gap_h < 0
+        ):
+            raise ConfigurationError(
+                "the LK offset, opening margin and buy gap must not be negative"
+            )
+        if not 0 <= self.shift_closed_energy_share <= 1:
+            raise ConfigurationError("shift_closed_energy_share must be between 0 and 1")
         if not 0 <= self.closed_energy_share <= 1:
             raise ConfigurationError("closed_energy_share must be between 0 and 1")
         if self.floor_mix_max_c <= 0:
@@ -190,6 +241,18 @@ class PlanSettings:
             raise ConfigurationError(
                 "boost_flow_limit_c must be between 30 C and max_flow_c"
             )
+        if self.plan_strategy not in ("heat_shift", "optimizer"):
+            raise ConfigurationError("plan_strategy must be heat_shift or optimizer")
+        if self.shift_rts_c > MAX_SHIFT_RTS_C:
+            raise ConfigurationError(
+                f"shift_rts_c must be at most {MAX_SHIFT_RTS_C}: larger steps have not been measured"
+            )
+        if self.shift_room_swing_c <= 0 or self.shift_rts_c <= 0:
+            raise ConfigurationError(
+                "shift_room_swing_c and shift_rts_c must be positive"
+            )
+        if self.shift_min_gain_sek_per_kwh < 0:
+            raise ConfigurationError("shift_min_gain_sek_per_kwh must not be negative")
         if self.setpoint_deviation_cost_sek_per_c_hour < 0:
             raise ConfigurationError(
                 "setpoint_deviation_cost_sek_per_c_hour must not be negative"
@@ -215,6 +278,7 @@ class PlanSettings:
     def from_dict(cls, data: dict) -> "PlanSettings":
         """Create from the `plan` section of config.yaml."""
         known = {f.name for f in fields(cls)}
+        data = {k: v for k, v in data.items() if k not in REMOVED_OPTIONS}
         unknown = set(data) - known
         if unknown:
             raise ConfigurationError(f"unknown plan settings: {sorted(unknown)}")
@@ -223,7 +287,6 @@ class PlanSettings:
             "room_temp_entities",
             "room_thermostat_entities",
             "room_history_entities",
-            "radiator_entities",
         ):
             if key in converted:
                 converted[key] = tuple(converted[key])

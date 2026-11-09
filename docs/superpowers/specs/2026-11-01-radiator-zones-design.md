@@ -56,16 +56,16 @@ S1. The comfort measure is the **mean of all valid temperature points** in the s
     disagreeing sensor is left out by the existing sensor guard (`core/theria/sensor_guard.py`), which gets the
     salon sensors added. If fewer than two points are valid the zone is treated as "unknown" and not cut.
 S2. An **opening schedule**, editable in Theria: weekdays 09:00-19:00, weekends 10:00-16:00 (local time).
-    During opening hours the mean must be about **19 C** (setting `salon_open_target_c`, default 19.0).
+    During opening hours the mean must be about **20 C** (setting `salon_open_target_c`, default 20.0, by Johan 2026-11-09).
 S3. Outside opening hours the plan may let the salon cool (setting `salon_closed_floor_c`, default 17.0 -
     the builder's/our call, Johan gave no number; the water shut-off and pipes need nothing near frost
     levels).
 S4. **Pre-heat:** before a dear period the salon may be heated above target, up to `salon_preheat_c`
-    (default 20.0), so that it coasts through the dear hours and is back at 19 C only at the end of them.
-    Heating up must also be planned so that the salon reaches 19 C by the time it opens.
+    (default 21.0), so that it coasts through the dear hours and is back at the target only at the end of them.
+    Heating up must also be planned so that the salon reaches the target by the time it opens.
 S5. Johan's stated preference is to **err on saving too little**: the plan should cut the dear hours
     decisively but use the thermal model's uncertainty on the safe side, not the saving side. In practice: a
-    margin of `salon_margin_c` (default 0.3 C) above 19 C in the prediction; and no cut if the zone's
+    margin of `salon_margin_c` (default 0.3 C) above the target in the prediction; and no cut if the zone's
     prediction error has recently been large (the same idea as `skill.py`).
 S6. Both thermostats get the same setpoint (they are one room, two radiators).
 

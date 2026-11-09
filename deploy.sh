@@ -10,6 +10,13 @@
 set -e
 
 TARGET_PATH=${TARGET_PATH:-"/Volumes/addons/theria"}
+HA_SHARE=${HA_SHARE:-"smb://192.168.2.99/addons"}
+
+# Mount the HA addons share when it is missing (macOS, password from the keychain)
+if [ ! -d "$(dirname "$TARGET_PATH")" ] && [ "$(dirname "$TARGET_PATH")" = "/Volumes/addons" ]; then
+    echo "Mounting $HA_SHARE ..."
+    osascript -e "mount volume \"$HA_SHARE\"" >/dev/null || true
+fi
 
 if [ ! -d "$(dirname "$TARGET_PATH")" ]; then
     echo "Error: $(dirname "$TARGET_PATH") does not exist (is the HA addons share mounted?)"

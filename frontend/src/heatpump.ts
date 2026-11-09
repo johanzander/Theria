@@ -17,6 +17,12 @@ export interface Timeline {
   prices: { times: number[]; values: Column }
 }
 
+/** What Home Assistant reads now; a sensor that is unavailable or shows garbage has null. */
+export interface PumpNow {
+  values: Record<string, number | null>
+  hot_water: boolean
+}
+
 export type Range = { kind: 'last'; hours: number } | { kind: 'fixed'; from: number; to: number }
 export interface Span { from: number; to: number }
 

@@ -226,6 +226,39 @@ def clean_counter(points: list[Point], max_kwh_per_hour: float) -> list[Point]:
     return out
 
 
+def interpolated_counter_energy(
+    points: list[Point],
+    start: datetime,
+    n_hours: int,
+    max_kwh_per_hour: float,
+    max_gap_hours: int,
+) -> FloatArray:
+    """Hourly consumption with each counter step spread evenly over the time between two readings.
+
+    The counters step in whole kWh, so differences between hours are mostly 0 or 1. A jump a pump
+    cannot make is a reset and adds nothing. Hours inside a gap of more than `max_gap_hours` between
+    readings are NaN, as are hours outside the readings.
+    """
+    track = clean_counter(points, max_kwh_per_hour)
+    out = np.full(n_hours, np.nan)
+    if len(track) < 2:
+        return out
+    first = hour_floor(start).timestamp()
+    times = np.array([moment.timestamp() for moment, _ in track])
+    cumulative = np.zeros(len(track))
+    for i, (a, b) in enumerate(pairwise(track), start=1):
+        step = b[1] - a[1] if _connects(a, b, max_kwh_per_hour) else 0.0
+        cumulative[i] = cumulative[i - 1] + step
+    edges = first + 3600.0 * np.arange(n_hours + 1)
+    energy = np.diff(np.interp(edges, times, cumulative))
+    middle = np.clip(np.searchsorted(times, edges[:-1] + 1800.0), 1, len(times) - 1)
+    gap = times[middle] - times[middle - 1]
+    inside = (edges[:-1] >= times[0]) & (edges[1:] <= times[-1])
+    known = inside & (gap <= max_gap_hours * 3600.0)
+    out[known] = energy[known]
+    return out
+
+
 def fill_flat_gaps(values: FloatArray) -> FloatArray:
     """Fill NaN runs between two equal readings: a counter that has not moved used nothing.
 

@@ -1,10 +1,12 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from core.theria.exceptions import ModelFitError
 from core.theria.plan.calibration import Calibrator, fit_pump
 from core.theria.plan.calibration_data import load_calibration_inputs
-from core.theria.plan.pump_model import energy_kwh_per_hour
+from core.theria.plan.pump_model import energy_kwh_per_hour, flow_target
 from core.theria.plan.room_model import RoomParams
 
 from .world import (
@@ -22,6 +24,27 @@ def calibrator(settings, world, overrides=None, days=150):
     return Calibrator(
         FakeSource(world, overrides), FakeWeatherHistory(world), settings, days=days
     )
+
+
+def test_the_dense_sensors_are_not_fetched_point_by_point(settings):
+    """The flow sensor has millions of points in three years: loading them killed the add-on."""
+    raw = []
+
+    class Source(FakeSource):
+        def series(self, entity_id, start, stop, field=None):
+            raw.append(entity_id)
+            return super().series(entity_id, start, stop, field)
+
+        def hourly_means(self, entity_id, start, stop):
+            return FakeSource.series(self, entity_id, start, stop)  # not counted as raw
+
+    world = World(days=20)
+    inputs = load_calibration_inputs(
+        Source(world), FakeWeatherHistory(world), settings, END, days=20
+    )
+    assert np.isfinite(inputs.flow_c).any()
+    for dense in ("flow", "outdoor", "room", "sonoff"):
+        assert ENTITIES[dense] not in raw
 
 
 def test_inputs_are_aligned_hour_by_hour_and_hot_water_hours_are_marked(settings):
@@ -226,3 +249,20 @@ def test_the_sun_swing_of_the_house_is_fitted_with_the_room_model(settings):
 def test_a_house_without_a_sun_swing_gets_none(settings):
     fitted = calibrator(settings, three_seasons(), days=3 * 365).run(END)
     assert fitted.room is not None and fitted.room.params.sun_swing_c_per_wm2 < 0.0005
+
+
+def test_the_fit_uses_what_each_setpoint_really_gave(settings):
+    world = World()
+    inputs = load_calibration_inputs(
+        FakeSource(world), FakeWeatherHistory(world), settings, END, days=150
+    )
+    # the pump is set in whole degrees here, and below 18 it moves the flow 3 C per degree, not 1.9
+    rts = np.round(inputs.rts_c)
+    steeper = (
+        inputs.heating_setpoint_c
+        + 1.9 * (rts - inputs.rts_c)
+        + np.minimum(rts - 18.0, 0.0) * 1.1
+    )
+    pump = fit_pump(replace(inputs, rts_c=rts, heating_setpoint_c=steeper)).params
+    drop = float(flow_target(pump, 5.0, 16.0) - flow_target(pump, 5.0, 18.0))
+    assert drop == pytest.approx(-6.0, abs=0.3)

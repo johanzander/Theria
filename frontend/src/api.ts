@@ -18,7 +18,9 @@ export const fetchDay = (day?: string) => get<DayView>(day ? `plan/day?day=${day
 export const fetchExecution = () => get<Execution>('plan/execution')
 export const fetchSavings = (days: number) => get<SavingsResponse>(`savings?days=${days}`)
 
-import type { Timeline } from './heatpump'
+import type { PumpNow, Timeline } from './heatpump'
+
+export const fetchPumpNow = () => get<PumpNow>('heatpump/now')
 
 export const fetchTimeline = (from: number, to: number) =>
   get<Timeline>(`heatpump/timeline?start=${new Date(from).toISOString()}&stop=${new Date(to).toISOString()}`)
@@ -44,6 +46,10 @@ export const fetchLog = () => get<LogEntry[]>('plan/log')
 export const fetchParameters = () => get<ParameterHistory>('plan/parameters?limit=1000')
 
 import type { ForecastCheck } from './forecastCheck'
+
+import type { EnergyForecast } from './energyForecast'
+
+export const fetchEnergyForecast = (days: number) => get<EnergyForecast>(`energy-forecast?days=${days}`)
 
 export const fetchForecastCheck = (days: number) => get<ForecastCheck>(`plan/forecast-check?days=${days}`)
 

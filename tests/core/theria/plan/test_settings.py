@@ -33,7 +33,7 @@ def test_defaults_match_the_agreed_design():
         22.0,
     )
     assert s.comfort_cost_sek_per_c_hour == 1.0
-    assert s.mode == "off"
+    assert s.mode == "shadow"
     assert s.room_temp_entities == ("sensor.a", "sensor.b")
 
 
@@ -53,6 +53,9 @@ def test_defaults_match_the_agreed_design():
         {"room_thermostat_entities": []},
         {"boost_flow_limit_c": 29.0},  # below any useful flow temperature
         {"boost_flow_limit_c": 46.0},  # above the floor limit
+        {"plan_strategy": "whatever"},
+        {"shift_room_swing_c": 0.0},
+        {"shift_rts_c": 0.0},
         {"max_flow_c": 29.0},  # below any useful flow temperature
         {"max_flow_c": 63.0},  # above the pump limit of 62 C
         {"unknown_option": 1},
@@ -72,14 +75,19 @@ def test_missing_required_setting_raises_configuration_error():
 
 def test_from_options_returns_none_without_a_plan_section():
     assert PlanSettings.from_options({"zones": []}) is None
-    assert PlanSettings.from_options({"plan": BASE}).mode == "off"
+    assert PlanSettings.from_options({"plan": BASE}).mode == "shadow"
+
+
+def test_there_is_no_off_mode_a_plan_is_always_made():
+    with pytest.raises(ConfigurationError):
+        PlanSettings.from_options({"plan": {**BASE, "mode": "off"}})
 
 
 def test_load_prefers_addon_options_json_over_config_yaml(tmp_path):
     options = tmp_path / "options.json"
     options.write_text(json.dumps({"plan": {**BASE, "mode": "shadow"}}))
     config = tmp_path / "config.yaml"
-    config.write_text(yaml.safe_dump({"options": {"plan": {**BASE, "mode": "off"}}}))
+    config.write_text(yaml.safe_dump({"options": {"plan": {**BASE, "mode": "bogus"}}}))
     assert load_plan_settings(str(options), str(config)).mode == "shadow"
 
 
@@ -160,3 +168,22 @@ def test_the_plan_starts_with_three_quarters_of_the_setpoint_range_and_the_minim
     for bad in (0.0, 1.5):
         with pytest.raises(ConfigurationError):
             replace(settings, min_authority=bad)
+
+
+def test_the_setpoint_shift_stays_inside_what_has_been_measured():
+    with pytest.raises(ConfigurationError):
+        PlanSettings.from_dict({**BASE, "shift_rts_c": 2.5})
+
+
+def test_an_option_that_was_removed_can_still_be_stored_in_home_assistant(settings):
+    from dataclasses import asdict
+
+    from core.theria.plan.settings import PlanSettings
+
+    stored = {
+        k: v
+        for k, v in asdict(settings).items()
+        if k not in ("room_actuators", "room_controls")
+    }
+    loaded = PlanSettings.from_dict({**stored, "radiator_entities": ["climate.a"]})
+    assert loaded.outdoor_entity == settings.outdoor_entity

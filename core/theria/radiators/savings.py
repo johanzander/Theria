@@ -1,11 +1,11 @@
-"""What the radiator plan would save, and whether it would lift the pump plan's radiator block.
+"""What the radiator plan would save.
 
 There is no heat meter per zone, so the figures are estimates: the salon from its thermal model, the
 guest house from a crude loss coefficient and labelled indicative.
 """
 
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from core.theria.radiators.guest_plan import GuestHour
 from core.theria.radiators.salon_plan import SalonHour, SalonModel
@@ -59,11 +59,3 @@ def guest_saving_sek(
                 / 1000.0
             )
     return saved, INDICATIVE
-
-
-def would_lift_block(
-    calling: Mapping[str, bool], controlled: Collection[str], readings_ok: bool
-) -> bool:
-    """Whether the pump plan's 'no cut while a radiator calls' could be lifted this hour."""
-    callers = [entity for entity, is_calling in calling.items() if is_calling]
-    return bool(callers) and readings_ok and all(e in controlled for e in callers)

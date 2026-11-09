@@ -5,18 +5,23 @@ const REFRESH_MS = 60_000
 export function useLoaded<T>(
   load: () => Promise<T | null>,
   deps: unknown[] = [],
-): { data: T | null; error: string | null; reload: () => void } {
-  const [state, setState] = useState<{ data: T | null; error: string | null }>({ data: null, error: null })
+): { data: T | null; error: string | null; loaded: boolean; reload: () => void } {
+  // loaded: an answer has come; data stays null when the add-on had none (404)
+  const [state, setState] = useState<{ data: T | null; error: string | null; loaded: boolean }>({
+    data: null,
+    error: null,
+    loaded: false,
+  })
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let current = true // an answer to an earlier request must not replace the newer one
     const run = () =>
       load().then(
         (data) => {
-          if (current) setState({ data, error: null })
+          if (current) setState({ data, error: null, loaded: true })
         },
         (e: Error) => {
-          if (current) setState((s) => ({ ...s, error: e.message }))
+          if (current) setState((s) => ({ ...s, error: e.message, loaded: true }))
         },
       )
     run()

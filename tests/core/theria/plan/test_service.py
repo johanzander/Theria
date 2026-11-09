@@ -68,6 +68,7 @@ class FakeWeather:
                 200.0 if 9 <= (first + timedelta(hours=i)).hour < 15 else 0.0,
                 50.0,
                 5.0,
+                10.0,
             )
             for i in range(hours)
         ]
@@ -152,18 +153,19 @@ def test_evening_price_hours_get_lower_setpoint_than_cheap_hours(settings):
     assert sum(evening) / len(evening) < sum(other) / len(other)
 
 
-def test_off_mode_does_nothing_and_reads_nothing(settings):
-    service = make_service(settings, mode="off")
-    assert service.run_once() is None
-    assert service._ha.reads == []
+def test_there_is_no_off_mode(settings):
+    service = make_service(settings)
+    with pytest.raises(ConfigurationError):
+        service.set_mode("off")
+    assert service.mode == "shadow"
 
 
 def test_set_mode_rejects_active_until_the_executor_exists(settings):
     service = make_service(settings)
     with pytest.raises(ConfigurationError):
         service.set_mode("active")
-    service.set_mode("off")
-    assert service.mode == "off"
+    service.set_mode("shadow")
+    assert service.mode == "shadow"
 
 
 def test_missing_tomorrow_prices_shortens_the_horizon(settings):
@@ -267,9 +269,10 @@ def test_mode_and_fitted_models_survive_a_restart(settings, tmp_path):
         state_store=PlanStateStore(path),
     )
     first.refit()
-    first.set_mode("off")
+    first._mode = "active"  # as the API leaves it, without an executor in this test
+    first._save_state()
     second = make_service(settings, state_store=PlanStateStore(path), mode="shadow")
-    assert second.mode == "off"
+    assert second.mode == "active"
     assert second.model_status()["pump"]["params"] == FITTED_PUMP
     assert second.model_status()["room"]["params"] != PRIOR_ROOM_PARAMS
 
@@ -378,3 +381,41 @@ def test_a_failing_check_does_not_stop_the_planning_cycle(settings):
     )
     asyncio.run(service.cycle())  # must not raise
     assert service.latest() is not None
+
+
+def test_a_plan_is_made_at_start_without_waiting_for_the_interval(settings):
+    async def scenario():
+        service = make_service(settings)
+        service._interval_seconds = 3600
+        await service.start()
+        for _ in range(100):
+            if service.latest() is not None:
+                break
+            await asyncio.sleep(0.02)
+        await service.stop()
+        return service.latest()
+
+    assert asyncio.run(scenario()) is not None
+
+
+def test_a_change_of_mode_runs_the_next_cycle_at_once(settings):
+    async def scenario():
+        service = make_service(settings)
+        service._interval_seconds = 3600
+        await service.start()
+        for _ in range(100):
+            if service.latest() is not None:
+                break
+            await asyncio.sleep(0.02)
+        first = service.latest().computed_at
+        clock = [NOW + timedelta(minutes=1)]
+        service._now = lambda: clock[0]
+        service.wake()
+        for _ in range(100):
+            if service.latest().computed_at != first:
+                break
+            await asyncio.sleep(0.02)
+        await service.stop()
+        return service.latest().computed_at != first
+
+    assert asyncio.run(scenario())

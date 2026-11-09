@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { tabHref } from './model'
 import { Control } from './views/Control'
 import { HeatPump } from './views/HeatPump'
+import { EnergyForecast } from './views/EnergyForecast'
 import { Models } from './views/Models'
 import { Overview } from './views/Overview'
 import { PlanTable } from './views/PlanTable'
@@ -23,6 +24,7 @@ const VIEWS = [
   { id: 'heatpump', label: 'Värmepump', view: <HeatPump /> },
   { id: 'plan', label: 'Plan', view: <PlanTable /> },
   { id: 'savings', label: 'Savings', view: <Savings /> },
+  { id: 'energy', label: 'Energy', view: <EnergyForecast /> },
   { id: 'models', label: 'Models', view: <Models /> },
   { id: 'settings', label: 'Settings', view: <Settings /> },
   { id: 'sensors', label: 'Sensors', view: <Sensors /> },

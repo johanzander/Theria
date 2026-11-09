@@ -1,7 +1,7 @@
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useState } from 'react'
 import { fetchDay, fetchPlan, fetchSettings } from '../api'
-import { axisLabel, axisTicks, describeReason, rangeLabel, timelineRows, tooltipFormatter, UNITS, MODE_LABEL, type HourRow } from '../model'
+import { axisLabel, axisTicks, dayStatus, describeReason, rangeLabel, timelineRows, tooltipFormatter, UNITS, MODE_LABEL, type HourRow } from '../model'
 import { DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
 
 const fix = (v: number | null, digits: number, suffix = '') => (v === null ? '-' : `${v.toFixed(digits)}${suffix}`)
@@ -41,7 +41,7 @@ export function PlanTable() {
       {error && <p className="bad">{error}</p>}
       <DayNav day={day} onChange={setDay} />
       {rows.length === 0 ? (
-        <p>{first.data ? 'Nothing to show for this day yet.' : 'Loading...'}</p>
+        <p>{dayStatus(first.loaded, first.data !== null, 'Nothing to show for this day yet.')}</p>
       ) : (
         <>
           <Panel

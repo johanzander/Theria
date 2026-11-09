@@ -23,32 +23,19 @@ const PANELS: ChartPanel[] = [
     { key: 'comp', name: 'Kompressorhastighet', colour: G.green, stepped: true, area: 0.18 },
     { key: 'aux', name: 'Tillskott, elpatron', colour: G.yellow, stepped: true, area: 0.25 },
   ] },
-  { kind: 'lines', id: 'power', title: 'Effekt', height: 140, unit: ' kW', min: 0, lines: [
-    { key: 'power', name: 'Effekt, pumpens egen mätning', colour: G.orange, area: 0.15 },
-  ] },
   { kind: 'lines', id: 'heat', title: 'Värme', height: 200, unit: ' °C', lines: [
     { key: 'outdoor', name: 'Utomhustemperatur', colour: G.purple },
     { key: 'flowset', name: 'Börvärde', colour: G.yellow, stepped: true },
     { key: 'rts', name: 'Rumsbörvärde', colour: G.blue, stepped: true },
     { key: 'flow', name: 'Framledningstemperatur', colour: G.orange, area: 0.1 },
   ] },
-  { kind: 'lines', id: 'carrier', title: 'Värmebärare: fram, retur och delta', height: 170, unit: ' °C', lines: [
-    { key: 'hc_fwd', name: 'Värmebärare fram', colour: G.orange },
-    { key: 'hc_ret', name: 'Värmebärare retur', colour: G.blue },
-    { key: 'hc_delta', name: 'Delta (fram - retur)', colour: G.green },
-  ] },
-  { kind: 'lines', id: 'circuit', title: 'Köldkrets', height: 170, unit: ' °C', lines: [
-    { key: 'hotgas', name: 'Hetgas kompressor', colour: G.red },
-    { key: 'cond', name: 'Kondensor ut', colour: G.orange },
-    { key: 'evap', name: 'Förångare in', colour: G.blue },
-  ] },
-  { kind: 'lines', id: 'circ', title: 'Cirkulationspump', height: 130, unit: ' %', min: 0, max: 100, lines: [
-    { key: 'circ', name: 'Cirkulationspump', colour: G.teal, stepped: true },
-  ] },
   { kind: 'lines', id: 'dhw', title: 'Varmvatten', height: 170, unit: ' °C', lines: [
     { key: 'dhwset', name: 'Börvärde varmvatten', colour: G.green, stepped: true },
     { key: 'dhwtop', name: 'Varmvatten topp', colour: G.yellow },
     { key: 'dhwmid', name: 'Varmvatten mitt', colour: G.blue },
+  ] },
+  { kind: 'lines', id: 'circ', title: 'Cirkulationspump', height: 130, unit: ' %', min: 0, max: 100, lines: [
+    { key: 'circ', name: 'Cirkulationspump', colour: G.teal, stepped: true },
   ] },
   { kind: 'bars', id: 'energy', title: 'Energi: avgiven och förbrukad', height: 190, unit: ' kWh', bars: [
     { group: 0, key: 'supp_heat', name: 'Avgiven, värme', colour: G.green },
@@ -59,6 +46,19 @@ const PANELS: ChartPanel[] = [
   ] },
   { kind: 'lines', id: 'price', title: 'Elpris', height: 150, unit: ' kr', prices: true, lines: [
     { key: 'price', name: 'Nord Pool SE4, spot', colour: G.teal, stepped: true, area: 0.12 },
+  ] },
+  { kind: 'lines', id: 'circuit', title: 'Köldkrets', height: 170, unit: ' °C', lines: [
+    { key: 'hotgas', name: 'Hetgas kompressor', colour: G.red },
+    { key: 'cond', name: 'Kondensor ut', colour: G.orange },
+    { key: 'evap', name: 'Förångare in', colour: G.blue },
+  ] },
+  { kind: 'lines', id: 'carrier', title: 'Värmebärare: fram, retur och delta', height: 170, unit: ' °C', lines: [
+    { key: 'hc_fwd', name: 'Värmebärare fram', colour: G.orange },
+    { key: 'hc_ret', name: 'Värmebärare retur', colour: G.blue },
+    { key: 'hc_delta', name: 'Delta (fram - retur)', colour: G.green },
+  ] },
+  { kind: 'lines', id: 'power', title: 'Effekt', height: 140, unit: ' kW', min: 0, lines: [
+    { key: 'power', name: 'Effekt, pumpens egen mätning', colour: G.orange, area: 0.15 },
   ] },
 ]
 

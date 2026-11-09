@@ -18,10 +18,11 @@ VALVE_RAMP_C = 0.5  # valves close over the last 0.5 C below the LK setpoint
 # (documentation/ivt-heat-pump.md, "Closed loops measured"). The daily fit's response is about half as fast.
 MEASURED_K_SLAB = 0.0065
 MEASURED_K_OUT = 0.0113
-# What the house gains by day on top of that (sun, people, the stove as it was used those days),
-# per local hour block; nothing at night. A mean, so a day without a fire comes in cooler: the next
-# plan starts from the measured room.
-DAY_HEAT_C_PER_H = ((6, 0.0), (12, 0.093), (18, 0.126), (24, 0.028))
+# What the house gains by day on top of that and the sun swing (people, and sun the swing misses), per
+# local hour block; nothing at night. The median of the days 30 Oct - 8 Nov 2026 with the real loop
+# state, so that a fire does not count: a fire warms the room and the next plan starts from there,
+# while heat that was counted on and does not come leaves the room cold.
+DAY_HEAT_C_PER_H = ((6, 0.0), (12, 0.026), (18, 0.105), (24, 0.047))
 
 
 @dataclass(frozen=True)

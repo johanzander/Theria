@@ -82,6 +82,47 @@ def test_helper_asks_influxql_for_the_entity_between_the_two_times(
     assert moment == START and value == 4.5
 
 
+def test_the_server_can_average_each_hour_instead_of_sending_every_point(
+    monkeypatch, influx_config
+):
+    calls = serve(
+        monkeypatch,
+        FakeResponse(
+            200, series("sensor.flow", ["time", "mean"], [[1767225600000, 35.25]])
+        ),
+    )
+    result = influxdb_helper.get_sensor_timeseries(
+        "flow", START, STOP, hourly_mean=True
+    )
+    query = calls[0][1]["params"]["q"]
+    assert 'SELECT mean("value") FROM "sensor.flow"' in query
+    assert "GROUP BY time(1h) fill(none)" in query
+    assert result["data"] == [(START, 35.25)]
+
+
+def test_history_source_asks_for_hourly_means_and_returns_floats(monkeypatch):
+    asked = {}
+
+    def fake(*args, **kwargs):
+        asked.update(kwargs)
+        return {"status": "success", "data": [(START, 2)]}
+
+    monkeypatch.setattr(calibration_data, "get_sensor_timeseries", fake)
+    assert InfluxHistorySource().hourly_means("sensor.flow", START, STOP) == [
+        (START, 2.0)
+    ]
+    assert asked["hourly_mean"] is True and asked["domain"] == "sensor"
+
+
+def test_hourly_means_turn_no_data_into_an_empty_series(monkeypatch):
+    monkeypatch.setattr(
+        calibration_data,
+        "get_sensor_timeseries",
+        lambda *a, **k: {"status": "error", "reason": "no_data", "message": "whatever"},
+    )
+    assert InfluxHistorySource().hourly_means("sensor.flow", START, STOP) == []
+
+
 def test_the_database_is_taken_from_the_configured_bucket(monkeypatch):
     monkeypatch.setattr(
         influxdb_helper,

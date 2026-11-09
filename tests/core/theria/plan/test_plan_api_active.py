@@ -48,7 +48,7 @@ def test_active_mode_needs_confirm_in_the_request(client):
 def test_leaving_active_through_the_api_restores_the_base(client):
     http, _, ha = client
     http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
-    http.post("/api/plan/mode", json={"mode": "off"})
+    http.post("/api/plan/mode", json={"mode": "shadow"})
     assert ha.setpoint == 18.0
 
 
@@ -89,6 +89,6 @@ def test_a_failed_restore_is_reported_as_a_bad_gateway_and_the_mode_stays(client
     http, service, ha = client
     http.post("/api/plan/mode", json={"mode": "active", "confirm": True})
     ha.fail_writes = True
-    response = http.post("/api/plan/mode", json={"mode": "off"})
+    response = http.post("/api/plan/mode", json={"mode": "shadow"})
     assert response.status_code == 502
     assert service.mode == "active"

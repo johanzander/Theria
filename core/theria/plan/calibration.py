@@ -27,6 +27,8 @@ from core.theria.plan.pump_model import (
     fit_aux_per_flow_c,
     fit_energy_model,
     fit_flow_curve,
+    fit_rts_levels,
+    flow_target,
 )
 from core.theria.plan.room_model import (
     PRIOR_GAIN_C_PER_C,
@@ -139,6 +141,13 @@ def fit_pump(inputs: CalibrationInputs) -> PumpFit:
         energy_intercept=e0,
         energy_per_outdoor=e_out,
         energy_per_rts=e_rts,
+        rts_levels=fit_rts_levels(
+            inputs.t_out_c[flow_rows],
+            inputs.heating_setpoint_c[flow_rows],
+            inputs.rts_c[flow_rows],
+            intercept,
+            slope,
+        ),
     )
     aux_rows = (
         heating
@@ -163,11 +172,7 @@ def fit_pump(inputs: CalibrationInputs) -> PumpFit:
         raise ModelFitError(
             f"implausible mean heating electricity {mean_kwh:.2f} kWh/h"
         )
-    flow_pred = (
-        intercept
-        + slope * inputs.t_out_c[flow_rows]
-        + DEFAULT_FLOW_PER_RTS * (inputs.rts_c[flow_rows] - rts_ref)
-    )
+    flow_pred = flow_target(params, inputs.t_out_c[flow_rows], inputs.rts_c[flow_rows])
     return PumpFit(
         params=params,
         flow_rows=int(flow_rows.sum()),

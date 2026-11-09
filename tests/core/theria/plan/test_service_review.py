@@ -48,13 +48,13 @@ def test_the_kill_switch_waits_for_a_running_control_cycle(settings):
     control = threading.Thread(target=service._control)
     control.start()
     assert started.wait(5)
-    switch = threading.Thread(target=lambda: service.set_mode("off"))
+    switch = threading.Thread(target=lambda: service.set_mode("shadow"))
     switch.start()
     time.sleep(0.2)
     release.set()
     control.join(5)
     switch.join(5)
-    assert service.mode == "off" and ha.setpoint == 18.0
+    assert service.mode == "shadow" and ha.setpoint == 18.0
 
 
 def test_a_failed_restore_keeps_active_mode_and_says_so(settings, tmp_path):
@@ -63,12 +63,12 @@ def test_a_failed_restore_keeps_active_mode_and_says_so(settings, tmp_path):
     service.set_mode("active", confirm=True)
     ha.fail_writes = True
     with pytest.raises(SetpointRestoreError):
-        service.set_mode("off")
+        service.set_mode("shadow")
     assert service.mode == "active"
     assert store.load().mode == "active"
     ha.fail_writes = False
-    service.set_mode("off")
-    assert ha.setpoint == 18.0 and service.mode == "off"
+    service.set_mode("shadow")
+    assert ha.setpoint == 18.0 and service.mode == "shadow"
 
 
 def test_the_base_setpoint_is_restored_before_the_mode_is_saved(settings, tmp_path):

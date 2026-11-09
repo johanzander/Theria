@@ -1,4 +1,4 @@
-"""Everything the heat pump does, on one time axis, read from InfluxDB for the Värmepump tab.
+"""What the heat pump does: its history from InfluxDB, its current readings from Home Assistant.
 
 Read only. Many H60 sensors are stored when they change, so a value is carried until the next
 reading and the last reading before the range starts the series. Readings outside what the sensor
@@ -13,6 +13,8 @@ from itertools import pairwise
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from core.theria.ha_client import HAClient
+from core.theria.heat_pump_monitor import _read_float, _read_mode
 from core.theria.influxdb_helper import query_influx
 from core.theria.plan.calibration_data import (
     MAX_AUX_KWH_PER_HOUR,
@@ -101,6 +103,33 @@ COUNTERS = (
     Counter("cons_hw", "sensor.compr_cons_hotwat", MAX_ENERGY_KWH_PER_HOUR),
     Counter("cons_aux", "sensor.aux_consumption_tot", MAX_AUX_KWH_PER_HOUR),
 )
+
+
+LIVE_KEYS = (
+    "outdoor", "evap", "cond", "hotgas", "power", "comp",
+    "aux", "flow", "hc_fwd", "hc_ret", "dhwtop", "dhwmid",
+)  # fmt: skip
+VALVE_ENTITY = "binary_sensor.switch_valve_1"
+
+
+def _live_value(client: HAClient, series: Series) -> float | None:
+    value = _read_float(client, series.measurement)
+    if value is None:
+        return None
+    if series.low is not None and value < series.low:
+        return None
+    if series.high is not None and value > series.high:
+        return None
+    return value
+
+
+def read_pump_now(client: HAClient) -> dict[str, Any]:
+    """What the pump's sensors in Home Assistant read now; garbage or unavailable has no value."""
+    by_key = {s.key: s for s in SERIES}
+    return {
+        "values": {key: _live_value(client, by_key[key]) for key in LIVE_KEYS},
+        "hot_water": _read_mode(client, VALVE_ENTITY) == "hot_water",
+    }
 
 
 def _step_for(span_s: int) -> int:

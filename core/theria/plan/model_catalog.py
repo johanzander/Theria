@@ -83,7 +83,7 @@ def build_catalog(
             pump.flow_per_rts,
             "°C/°C",
             p_src,
-            "The pump's 'room setpoint' is a curve offset: one step moves the flow temperature this much.",
+            "Used outside the setpoints the pump has been measured at; between them the measured flow counts.",
         ),
         _entry(
             g,

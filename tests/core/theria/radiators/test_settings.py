@@ -26,9 +26,10 @@ def test_defaults_match_the_spec():
     assert prefs.salon_schedule["fri"] == DaySchedule(time(9), time(19))
     assert prefs.salon_schedule["sat"] == DaySchedule(time(10), time(16))
     assert prefs.salon_schedule["sun"] == DaySchedule(time(10), time(16))
-    assert prefs.salon_open_target_c == 19.0
+    assert prefs.salon_open_target_c == 20.0
+    assert prefs.salon_open_floor_c == 19.0
     assert prefs.salon_closed_floor_c == 17.0
-    assert prefs.salon_preheat_c == 20.0
+    assert prefs.salon_preheat_c == 21.0
     assert prefs.salon_margin_c == 0.3
     assert prefs.salon_max_setpoint_c == 22.0
     assert prefs.guest_band_c == 1.5
@@ -151,3 +152,11 @@ def test_invalid_guest_rooms_raise_configuration_error(room):
 def test_a_non_finite_salon_number_is_invalid():
     with pytest.raises(ConfigurationError):
         RadiatorPrefs(salon_closed_floor_c=float("nan"))
+
+
+@pytest.mark.parametrize(
+    "bad", [{"salon_open_floor_c": 20.5}, {"salon_open_floor_c": 16.5}]
+)
+def test_the_open_floor_lies_between_the_closed_floor_and_the_target(bad):
+    with pytest.raises(ConfigurationError):
+        RadiatorPrefs(**bad)

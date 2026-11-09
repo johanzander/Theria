@@ -352,5 +352,5 @@ This real-time adaptation handles:
 
 For architecture diagrams, sequence flows, and implementation phases, see:
 
-- **[architecture.md](architecture.md)** - System design and control flow
-- **[implementation-plan.md](implementation-plan.md)** - Development roadmap
+- **[docs/SOFTWARE_DESIGN.md](docs/SOFTWARE_DESIGN.md)** - Components, data flow, storage and API
+- **[docs/ALGORITHM_EXPLAINED.md](docs/ALGORITHM_EXPLAINED.md)** - How the plan decides, heat demand and energy calculations

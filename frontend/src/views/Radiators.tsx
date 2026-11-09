@@ -9,6 +9,7 @@ import { Card, PageIntro, Panel, useLoaded } from '../ui'
 
 const NUMBERS: { key: keyof RadiatorPrefs; label: string; description: string; step: number }[] = [
   { key: 'salon_open_target_c', label: 'Salon target (open)', description: 'The mean of all salon points should be about this while the shop is open.', step: 0.5 },
+  { key: 'salon_open_floor_c', label: 'Salon floor (open)', description: 'Below this while the shop is open, the heat pump plan stops lowering the setpoint.', step: 0.5 },
   { key: 'salon_margin_c', label: 'Salon margin', description: 'The plan keeps the mean this far above the target in its prediction.', step: 0.1 },
   { key: 'salon_preheat_c', label: 'Salon pre-heat', description: 'The highest mean the salon is heated to before dear hours.', step: 0.5 },
   { key: 'salon_closed_floor_c', label: 'Salon closed floor', description: 'The salon may cool this far when the shop is closed.', step: 0.5 },
@@ -30,11 +31,6 @@ function Status({ snap }: { snap: RadiatorSnapshot }) {
         value={reading.mean_c === null ? 'unknown' : `${reading.mean_c.toFixed(1)} °C`}
         tone={reading.unknown ? 'bad' : undefined}
         note={`${reading.used.length} valid points${Object.keys(reading.skipped).length ? `, left out: ${Object.keys(reading.skipped).join(', ')}` : ''}`}
-      />
-      <Card
-        label="Would lift the pump block"
-        value={snap.would_lift_block ? 'yes' : 'no'}
-        note="Whether the radiators would stop blocking the pump plan's flow cuts (not applied in shadow)."
       />
       <Card label="Thermostats readable" value={`${Math.round(overallAvailability(snap.availability_share) * 100)} %`} note="Share of cycles since start." />
       <Card

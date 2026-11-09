@@ -55,7 +55,7 @@ options:
     hotwater_mid: "sensor.warm_water_2_mid"
 
   plan:
-    mode: "shadow"  # off | shadow. Shadow computes and logs plans, never writes to HA.
+    mode: "shadow"  # Shadow computes and logs plans, never writes to HA; active is switched on in the UI.
     # The only price source: the HA Nord Pool integration (nordpool.get_prices_for_date), for the plan and the measured days.
     price_config_entry: "01K3Y99FD3MDZYVFX2XSWR4888"
     price_area: "SE4"
@@ -90,14 +90,6 @@ options:
         thermostat_entity: "climate.lk_bibliotek_thermostat"
         temperature_entities:
           - "sensor.lk_bibliotek_temperature"
-    radiator_entities:  # radiators on the shared flow: while one calls for heat the plan does not cut
-      - "climate.vantsidan"  # salon / boutique (Netatmo)
-      - "climate.klippsidan"
-      - "climate.bedroom"  # guest house (Tado)
-      - "climate.hallway"
-      - "climate.kitchen"
-      - "climate.tv_room_gh"
-      - "climate.storage_room"
     plan_closes_valves: true  # true: the plan may close the floor loops in dear hours (LK thermostats held at the floor); false: they stay at the limit
     closed_energy_share: 0.15  # the pump energy left with the loops closed, as a share of its energy at the lowest setpoint
     regulator_active: false  # true: the regulator closes a room's valves; false: it only logs
@@ -255,7 +247,7 @@ schema:
     hotwater_top: str?
     hotwater_mid: str?
   plan:
-    mode: list(off|shadow)
+    mode: list(shadow)
     price_config_entry: str
     price_area: str?
     outdoor_entity: str
@@ -276,8 +268,6 @@ schema:
         thermostat_entity: str
         temperature_entities:
           - str
-    radiator_entities:
-      - str
     plan_closes_valves: bool?
     closed_energy_share: float?
     regulator_active: bool?

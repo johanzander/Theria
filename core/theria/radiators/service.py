@@ -15,13 +15,13 @@ from typing import Any, Protocol
 from core.theria.exceptions import PriceDataError, SensorError
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.prices import PricePeriod, hourly_prices
+from core.theria.plan.shift_rules import SalonStatus
 from core.theria.radiators.guest_plan import GuestHour, plan_guest_room
 from core.theria.radiators.salon_plan import SalonHour, SalonModel, plan_salon
 from core.theria.radiators.salon_reading import SalonReading, read_salon
 from core.theria.radiators.savings import (
     guest_saving_sek,
     salon_saving_sek,
-    would_lift_block,
 )
 from core.theria.radiators.settings import RadiatorPrefs, RadiatorSettings
 from core.theria.radiators.store import PrefsStore
@@ -67,7 +67,6 @@ class RadiatorSnapshot:
     would_write: dict[str, float]  # entity -> this hour's setpoint
     read: dict[str, float | None]  # entity -> its setpoint now
     difference: dict[str, float | None]  # would write minus current
-    would_lift_block: bool
     availability: dict[str, bool]
     guest_saving: tuple[float, str]
     outdoor_c: float
@@ -214,9 +213,6 @@ class RadiatorService:
 
         salon_view, would_write = self._salon(prefs, hours, prices, t_out, read, attrs)
         guest_plans: dict[str, list[GuestHour]] = {}
-        bounds_ok = not salon_view.unknown and self._salon_above_bound(
-            salon_view, prefs, now
-        )
         for room in prefs.guest_rooms:
             if room.entity not in attrs:
                 continue
@@ -225,10 +221,6 @@ class RadiatorService:
             plan = plan_guest_room(hours, prices, room, band, temperature_c)
             guest_plans[room.entity] = plan
             would_write[room.entity] = plan[0].setpoint_c
-            if temperature_c is not None and temperature_c < room.t_room_c - band:
-                bounds_ok = False
-        calling = {e: a.get("hvac_action") == "heating" for e, a in attrs.items()}
-        controlled = {*s.salon_thermostats, *guest_entities}
         snapshot = RadiatorSnapshot(
             computed_at=now,
             salon=salon_view,
@@ -239,7 +231,6 @@ class RadiatorService:
                 e: (None if (now_c := read[e]) is None else v - now_c)
                 for e, v in would_write.items()
             },
-            would_lift_block=would_lift_block(calling, controlled, bounds_ok),
             availability=availability,
             guest_saving=guest_saving_sek(
                 guest_plans,
@@ -288,24 +279,38 @@ class RadiatorService:
             readable, plan[0].setpoint_c
         )
 
-    def _salon_above_bound(
-        self, view: SalonPlanView, prefs: RadiatorPrefs, now: datetime
-    ) -> bool:
-        mean = view.reading.mean_c
-        if mean is None:
-            return True
-        bound = (
-            prefs.salon_open_target_c
-            if prefs.is_open(now, self._s.timezone)
+    def salon_status(self) -> SalonStatus:
+        """The salon's temperature now and the lowest the heat shift may leave it at.
+
+        Netatmo's own schedule decides when the salon is in use: the comfort floor holds while a
+        thermostat asks for at least the open target. It shows what is really set, also a hand change.
+        Without a readable thermostat the salon is unknown, which ends a sell.
+        """
+        s = self._s
+        prefs = self._store.current
+        sensors = {sp.temperature_entity for sp in s.salon_sensor_guard.sensors}
+        with self._lock:
+            reading = read_salon(self._guard.check(), sensors - set(s.salon_sensors))
+        found = (self._climate(entity) for entity in s.salon_thermostats)
+        targets = [
+            c["temperature"] for c in found if c and c["temperature"] is not None
+        ]
+        if not targets:
+            return SalonStatus(None, prefs.salon_open_floor_c)
+        floor = (
+            prefs.salon_open_floor_c
+            if max(targets) >= prefs.salon_open_target_c
             else prefs.salon_closed_floor_c
         )
-        return mean >= bound
+        return SalonStatus(reading.mean_c, floor)
 
     def _log(self, snap: RadiatorSnapshot) -> None:
         parts = [
-            f"{e}: now {snap.read[e]} would {v} ({snap.difference[e]:+.1f})"
-            if snap.difference[e] is not None
-            else f"{e}: now unreadable would {v}"
+            (
+                f"{e}: now {snap.read[e]} would {v} ({snap.difference[e]:+.1f})"
+                if snap.difference[e] is not None
+                else f"{e}: now unreadable would {v}"
+            )
             for e, v in snap.would_write.items()
         ]
         mean = snap.salon.reading.mean_c

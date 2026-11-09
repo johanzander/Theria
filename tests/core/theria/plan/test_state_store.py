@@ -40,9 +40,9 @@ def test_a_rejected_room_fit_is_stored_as_an_error_without_a_room_model(tmp_path
 
 def test_mode_and_models_survive_a_restart(tmp_path):
     path = str(tmp_path / "state.json")
-    PlanStateStore(path).save(PlanState(mode="off", models=fitted()))
+    PlanStateStore(path).save(PlanState(mode="active", models=fitted()))
     loaded = PlanStateStore(path).load()
-    assert loaded.mode == "off"
+    assert loaded.mode == "active"
     assert loaded.models == fitted()
 
 
@@ -51,7 +51,7 @@ def test_mode_and_models_survive_a_restart(tmp_path):
     [
         "{broken",
         '{"mode": "bogus", "models": null}',
-        '{"mode": "off", "models": {"pump": {}}}',
+        '{"mode": "shadow", "models": {"pump": {}}}',
     ],
 )
 def test_damaged_files_raise_instead_of_being_ignored(tmp_path, text):
@@ -96,3 +96,10 @@ def test_the_warm_up_fit_survives_a_restart(tmp_path):
     store.save(PlanState(mode="shadow", models=replace(fitted(), warmup=warmup)))
     loaded = store.load().models
     assert loaded.warmup == warmup and loaded.warmup_error is None
+
+
+def test_the_removed_off_mode_is_read_as_shadow(tmp_path):
+    """Off was removed on 2026-11-08: a plan is always made, shadow does not write."""
+    path = tmp_path / "state.json"
+    path.write_text('{"mode": "off", "models": null}')
+    assert PlanStateStore(str(path)).load().mode == "shadow"

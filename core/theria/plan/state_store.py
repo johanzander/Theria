@@ -28,6 +28,9 @@ class PlanState:
     last_trouble: str | None = None
     regulator: dict[str, Any] | None = None  # the learned rise per room
     skill: dict[str, Any] | None = None  # the evidence behind the plan's authority
+    shift_window: dict[str, Any] | None = (
+        None  # the heat shift's window that has started
+    )
 
 
 def _response_to_dict(r: DailyRoomFit) -> dict[str, Any]:
@@ -179,6 +182,10 @@ class PlanStateStore:
             with open(self._path) as f:
                 raw = json.load(f)
             mode = raw.get("mode")
+            if (
+                mode == "off"
+            ):  # removed 2026-11-08; shadow is what it did minus the plan
+                mode = "shadow"
             if mode is not None and mode not in SUPPORTED_MODES:
                 raise StateStoreError(f"unsupported mode {mode!r} in {self._path}")
             models = raw.get("models")
@@ -198,6 +205,7 @@ class PlanStateStore:
                 last_trouble=raw.get("last_trouble"),
                 regulator=raw.get("regulator"),
                 skill=raw.get("skill"),
+                shift_window=raw.get("shift_window"),
             )
         except (
             OSError,
@@ -227,6 +235,7 @@ class PlanStateStore:
             "last_trouble": state.last_trouble,
             "regulator": state.regulator,
             "skill": state.skill,
+            "shift_window": state.shift_window,
         }
         temporary = f"{self._path}.tmp"
         try:

@@ -7,7 +7,7 @@ const prefs = (over: Partial<RadiatorPrefs['salon_schedule']> = {}): RadiatorPre
     thu: { open: '09:00', close: '19:00' }, fri: { open: '09:00', close: '19:00' },
     sat: { open: '10:00', close: '16:00' }, sun: { open: '10:00', close: '16:00' }, ...over,
   },
-  salon_open_target_c: 19, salon_closed_floor_c: 17, salon_preheat_c: 20, salon_margin_c: 0.3, salon_max_setpoint_c: 22,
+  salon_open_target_c: 20, salon_open_floor_c: 19, salon_closed_floor_c: 17, salon_preheat_c: 21, salon_margin_c: 0.3, salon_max_setpoint_c: 22,
   guest_band_c: 1.5, guest_rooms: [], mode: 'shadow',
 })
 

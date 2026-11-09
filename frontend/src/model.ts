@@ -166,6 +166,10 @@ const REASONS: Record<string, string> = {
   floor: 'Held up by the comfort floor',
   ceiling: 'Held down by the comfort ceiling',
   flow_cap: 'Limited by the maximum flow temperature',
+  shift_sell: 'Lowered: dear window, the house coasts on stored heat',
+  shift_buy: 'Raised: cheap window before a dear one',
+  shift_none: 'Base setpoint: no dear or cheap window this hour',
+  shift_guard: 'Back to base: a measured limit ended this window',
   valves_closed: 'Floor loops closed: the lowest setpoint with the LK thermostats held down, so the house draws no heat',
   rts_min: 'At the lowest allowed setpoint (price high enough to cut as far as allowed)',
   rts_max: 'At the highest allowed setpoint (price low enough to heat as much as allowed)',
@@ -409,4 +413,12 @@ export function formatNumber(value: number | boolean | null): string {
   const magnitude = Math.abs(value)
   const digits = magnitude >= 100 ? 1 : magnitude >= 1 ? 2 : magnitude >= 0.01 ? 3 : 5
   return value.toFixed(digits)
+}
+
+/** What a day view says when it has nothing to draw: still loading, no plan at all (the add-on answers 404
+ * before its first plan or when planning fails), or the view's own text for a day without data. */
+export function dayStatus(loaded: boolean, hasDay: boolean, empty: string): string {
+  if (!loaded) return 'Loading...'
+  if (!hasDay) return 'No plan yet: the first one comes within a minute of a start. If it does not, the Control tab says why.'
+  return empty
 }

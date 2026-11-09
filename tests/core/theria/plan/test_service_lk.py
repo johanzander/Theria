@@ -50,7 +50,7 @@ def test_a_failed_thermostat_restore_keeps_active_mode(settings):
     run_cycle(service)
     ha.fail_lk_writes = True
     with pytest.raises(SetpointRestoreError):
-        service.set_mode("off")
+        service.set_mode("shadow")
     assert service.mode == "active"
 
 

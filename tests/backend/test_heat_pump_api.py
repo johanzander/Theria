@@ -229,6 +229,48 @@ def test_a_reversed_or_too_long_range_is_rejected(http, influx, start, stop):
     assert response.status_code == 422
 
 
+class FakeHA:
+    def __init__(self, states):
+        self.states = states
+
+    def get_state(self, entity_id):
+        if entity_id not in self.states:
+            raise ValueError(f"Entity not found: {entity_id}")
+        return {"state": self.states[entity_id]}
+
+
+def pump_now(states):
+    app = FastAPI()
+    app.include_router(heat_pump_api.router)
+    app.dependency_overrides[heat_pump_api.get_ha_client] = lambda: FakeHA(states)
+    response = TestClient(app).get("/api/heatpump/now")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_the_pump_now_is_what_home_assistant_reads(influx):
+    body = pump_now({"sensor.outdoor": "7.10", "sensor.compressor_speed_2": "30.00"})
+    assert body["values"]["outdoor"] == 7.1
+    assert body["values"]["comp"] == 30.0
+
+
+def test_an_unavailable_sensor_has_no_value_now(influx):
+    assert pump_now({"sensor.outdoor": "unavailable"})["values"]["outdoor"] is None
+
+
+def test_a_garbage_reading_is_not_shown_as_the_value_now(influx):
+    assert pump_now({"sensor.outdoor": "240.0"})["values"]["outdoor"] is None
+
+
+@pytest.mark.parametrize(("valve", "hot_water"), [("on", True), ("off", False)])
+def test_the_valve_tells_whether_the_pump_makes_hot_water(influx, valve, hot_water):
+    assert pump_now({"binary_sensor.switch_valve_1": valve})["hot_water"] is hot_water
+
+
+def test_the_pump_now_needs_home_assistant(http, influx):
+    assert http.get("/api/heatpump/now").status_code == 503
+
+
 def test_a_database_that_cannot_answer_is_a_bad_gateway(http, influx, monkeypatch):
     def fail(url, auth, params, timeout):
         raise requests.ConnectionError("down")

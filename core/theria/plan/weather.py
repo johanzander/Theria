@@ -12,7 +12,7 @@ OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 ARCHIVE_DELAY_DAYS = (
     6  # the archive lags; newer days come from the forecast API (past_days)
 )
-HOURLY_VARIABLES = "shortwave_radiation,cloud_cover,temperature_2m"
+HOURLY_VARIABLES = "shortwave_radiation,cloud_cover,temperature_2m,wind_speed_10m"
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,7 @@ class WeatherHour:
     shortwave_wm2: float
     cloud_cover_pct: float
     temperature_c: float
+    wind_kmh: float  # NaN when Open-Meteo has no value: only the energy forecast reads it
 
 
 def parse_open_meteo(payload: dict) -> list[WeatherHour]:
@@ -38,18 +39,25 @@ def parse_open_meteo(payload: dict) -> list[WeatherHour]:
             hourly["shortwave_radiation"],
             hourly["cloud_cover"],
             hourly["temperature_2m"],
+            hourly["wind_speed_10m"],
         )
     except KeyError as e:
         raise WeatherDataError(f"missing field in Open-Meteo response: {e}") from e
     if any(len(c) != len(times) for c in columns):
         raise WeatherDataError("Open-Meteo columns have different lengths")
     hours: list[WeatherHour] = []
-    for label, sw, cc, temp in zip(times, *columns, strict=True):
+    for label, sw, cc, temp, wind in zip(times, *columns, strict=True):
         if sw is None or cc is None or temp is None:
             raise WeatherDataError(f"missing value at {label}")
         end = datetime.fromisoformat(label).replace(tzinfo=UTC)
         hours.append(
-            WeatherHour(end - timedelta(hours=1), float(sw), float(cc), float(temp))
+            WeatherHour(
+                end - timedelta(hours=1),
+                float(sw),
+                float(cc),
+                float(temp),
+                float("nan") if wind is None else float(wind),
+            )
         )
     return hours
 

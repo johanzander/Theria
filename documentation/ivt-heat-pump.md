@@ -54,6 +54,9 @@ Each statement is tagged:
   seen, so they are **not used**. The house heat curve is changed **manually on the pump**. The
   values shown in HA (21 / 15) are therefore not the active curve. History of manual curve changes
   is not recorded anywhere; it has to be inferred from data (see below).
+- **[observed, pump display 2026-11-08]** Menu "Ställ in värmekurva": Slutpunkt 53 C, Baspunkt 25 C, Max. framledningstemp. 75 C, Rumsinflytande Av,
+  Rumstemperaturoffset 4K. Menu "Värmekrets 1": Värmedrift från 16 C. So the curve is the simple straight line with a base point. At room setpoint 18 it is `40.67 - 0.70 * T_out`:
+  within 0.4 C of the median `heating_setpoint` from -4 to +12 C outdoors (Feb-May 2026); above 12 C the pump stayed at 31-32 C. The slope follows from Slutpunkt minus Baspunkt (28 gives 0.70).
 - **[manual]** Husdata can emulate an RC100/CR10/TR111 room controller on Rego 2000/3100 for circuit 1
   (register 02F1), so we could feed a *real* indoor temperature and let the pump's own room influence
   work. No other room controller may run in parallel; updates must arrive at least every minute or the
@@ -77,6 +80,11 @@ Analysis of hourly means of `sensor.outdoor`, `sensor.heating_setpoint`, `sensor
   (r = -0.82) vs 1 h (-0.79), 24 h (-0.78), 72 h (-0.71). It reacts within hours, not days.
 - **[observed]** Setpoint is the heating target irrespective of the hot water valve; values are the same
   in heating and hot water periods (valve data is sparse).
+- **[observed, cause not found] Unexplained step on 2026-11-08 12:41:07 local:** `heating_setpoint` went 36 -> 39 with the room setpoint unchanged at 18.5 (since 09:30:40) and 7.1-7.3 C
+  outdoors, and no write in the Home Assistant logbook 12:30-12:50. The hot water valve was on (12:22:29-13:12:00), but hot water is not the cause: the block at 10:10-10:50 the same day, same room setpoint and
+  outdoor temperature, had a lower flow and a larger deficit (25.8 C, 315 K min under 36) and no step, and the higher level stayed after hot water ended. Median of `heating_setpoint + 0.709 * T_out` (6 h mean, 15-min
+  values, 1-8 Nov) before / after the step: room setpoint 18: 40.5 (n = 339) / 42.1 (n = 41); 18.5: 40.7 (n = 12) / 43.9 (n = 4). Over 2025-09..2026-11 the target rose 1.5 C or more inside 16 of 1684 hot-water blocks with a flat room setpoint.
+  **[per Johan]** He was at the pump at about that time (the cellar door sensor shows open 12:38-12:41 and 12:43-12:45) and changed `Min. utetemperatur` (Anläggningsdata) from -30 to -20. On 2026-11-09 at about 17:25 local he set it back to -30, and the flow target fell from 39 to 37 C within seconds at unchanged room setpoint 18.5 and 6.9 C outdoors, back on the curve from before 8 Nov (36.5 C). The step in both directions shows this setting caused it. Pump menu settings are not logged, so such a change can only be seen as a step in the target.
 - **[observed]** The curve level has been changed several times (steps in weekly residual vs the
   2025/26 reference curve): about +6 C in winter 2023/24, +3 C in Oct-Dec 2024, about 0 / -1.5 C from
   Jan 2025, +1..+3 C in Nov-Dec 2025, and a steady **-1.2 to -1.5 C since Feb 2026**. The current curve
@@ -108,6 +116,13 @@ Analysis of hourly means of `sensor.outdoor`, `sensor.heating_setpoint`, `sensor
   only 0.68 C, so a +1 C room setpoint equals about -2.8 C outdoors.
 - Meaning for Theria: the room setpoint is a strong, fast, predictable lever on flow temperature. How fast
   the floor and rooms respond (thermal lag of the concrete) is not yet measured.
+- **[observed]** November 2026, hourly `heating_setpoint` against the 6 h mean of `sensor.outdoor`, narrow range and
+  one week only: room setpoint 18 (2026-11-01..04, 3.6-11 C outdoors, n = 75) `38.3 - 0.48 * T_out`; room setpoint 17
+  (2026-11-05..08, n = 81) `34.8 - 0.42 * T_out`. The flow is about 3 C lower for the degree in this week.
+- **[observed]** The step per degree is not constant. Median of `heating_setpoint + 0.709 * T_out` since January 2026, below 12 C outdoors: setpoint 16: 34.7, 17: 37.2, 18: 40.7, 18.5: 41.4, 19: 42.8.
+- **[observed]** Salon, 09-15 UTC, Netatmo valves at or near 100 % and target 21: at room setpoint 18 (flow 32.1-33.9 C,
+  8.8-10.4 C outdoors) Vantsidan read 20.3-20.6 C; at 17 (flow 29.9-30.8 C, 8.1-9.9 C outdoors) 18.4-19.5 C. The room
+  did not reach 21 at either setting: with the valves open, the flow temperature limits the salon.
 
 ## Data quality notes
 
@@ -200,10 +215,6 @@ Sources: `documentation/private/Reviderad beräkning 3 LK023393.pdf` (LK calcula
 - **[manual]** Heat demand at DUT -9.6 C and 20 C indoors: 7889 W, 63.2 W/m2 for the whole ground floor; kitchen 74.5,
   dining/living 70.6, hall #1 53.6, hall #2 92.4, guest room 53.5, library 53.9 W/m2. [Heat demand analysis]
   The kitchen and hall #1 circuits (1:4, 1:6) are not in the revised LK calculation.
-- **[per Johan, superseded 2026-10-14] 45 C as the maximum flow temperature.** This was the rule before the shunts
-  were set (nothing above LK's design value for the floor; earlier drafts used 50 C from an assumed 27 C surface
-  limit). The floor is now protected in hardware by the shunts at 40 C (see below); the planner's `max_flow_c`
-  (45) is kept only as a sanity bound on the pump's own flow target.
 - **[derived]** At 45 C flow the parquet surface is 25.1 C at 20 C room temperature and about 25.9 C at 21 C, so
   neither a 26 C nor a 27 C surface limit is reached (general guidance for solid wood is 27 C: Bauhaus guide
   https://www.bauhaus.no/media/pdf/4005461A.pdf; the manufacturer's warranty is binding and is not in the
@@ -217,8 +228,8 @@ Sources: `documentation/private/Reviderad beräkning 3 LK023393.pdf` (LK calcula
   20 C room temperature), so by LK's own figures 40 C leaves some headroom; the cost is floor capacity in cold
   weather (LK already shows the living room 573 W short at 45 C). With the fitted flow curve the cap is reached
   below about +1 C outdoors at room setpoint 18 (about +6 C at setpoint 20). The zone-control design carries it
-  as the setting `floor_mix_max_c` (40). The radiators in the guest house and the boutique/salon take the pump's
-  full flow.
+  as the setting `floor_mix_max_c` (40); the planner's `max_flow_c` (45) is only a sanity bound on the pump's own flow
+  target. The radiators in the guest house and the boutique/salon take the pump's full flow.
   While any of those radiators calls for heat the pump plan may not cut below its base setpoint, so on
   2026-11-01 (both salon thermostats at 100 % power request) they blocked every cut. The salon's thermal
   numbers (Dec 2025: C 2.33 MJ/K, U 51.7 W/K, tau about 12.5 h, cooling 0.65-0.70 C/h, heating net 0.25-0.30 C/h)
@@ -249,10 +260,18 @@ shortfall over 35.85 m2). Demand scales with (20 C - outdoor) / 29.6 K. Linear m
   below -1.6 C: 66, 201, 51, 259 hours (seasons starting 2022-2025); below -2.8 C: 35, 137, 28, 132 hours; below
   -5 C: 4, 72, 7, 16 hours; nothing below -9.6 C (coldest hour -8.8 C, 2024-01-07). That is 0.4-3 % of the heating
   season for the living room, and at most about 570 W short at the design extreme: a tile stove covers it.
-- **[derived]** Flow temperature the living room needs: `42.4 - 0.98 * T_out` C (20 C indoors). The pump curve at room
-  setpoint 18 C gives `40.8 - 0.68 * T_out`. They agree at +5 C, the pump is 1.6 C short at 0 C, 2.5 C at -3 C and
-  4.5 C at -9.6 C. This matches the winter undershoot in the living room: a higher room setpoint (about +1) or a
-  steeper curve is needed, and above -2.9 C the 45 C cap is not the limit. Below it, the cap is.
+- **[derived]** Flow temperature the living room needs by LK's figures: `42.4 - 0.98 * T_out` C (20 C indoors). The mixing
+  valves let at most 40 C through to the floor, reached at about +2.4 C outdoors. Below that neither a higher room setpoint
+  nor a steeper curve gives the floor rooms more heat.
+- **[observed] Winter 2025/26, floor rooms, measured `radiator_forward` (daily means, LK target at 19.25 C or more):** 7.0 C outdoors: 35.6, vardagsrum 19.0,
+  bibliotek 19.6 (n = 27); 5.1 C: 37.0, 18.5, 19.5 (19); 2.8 C: 38.8, 17.5, 18.8 (11); 0.9 C: 39.2, 17.1, 18.7 (18); -1.3 C: 40.2, 16.8, 18.3 (25). These means include
+  hot-water time.
+- **[observed] Measured flow against `heating_setpoint`, 2025-11..2026-11, hourly, hot-water time and 15 min after it left out:** the flow is 1.2 C under the target below
+  -2 C outdoors (n = 201), 0.8 C under at -2..+1 C (733), and at or above it from +1 C. With hot-water time included the gap looks like 2.1-2.3 C in the cold: that part is hot water, not the pump falling short.
+- **[observed + fit] Salon flow for 20 C (radiators, full pump flow, no shunt):** days 2025-12..2026-11 at 09-15 UTC with the Netatmo target at 20.5 C or more and the valve at
+  90 % or more; mean of the two thermostat sensors against the 24 h flow without hot-water time, with an assumed room gain of 0.3-0.45 C per C of flow (0.3 from 2026-11-02..07; 0.45 is the floor-room model, not measured for the salon).
+  20 C needs about `44 - 1.05 * T_out`: 36.8-37.4 at +7 C, 39.7-40.6 at +4 C, 43.5-44.8 at 0 C, 46.4-48.0 at -3 C. 2025-11-27 is left out (a heat-up in progress). Floor and ceiling points read about 1 C lower than the thermostats.
+- **[observed] Limit of the salon in hard cold:** 2026-02-01 18 UTC to 02-03 06 UTC, both valves at 100 % for over 30 h, 42-44 C flow, -4 to -5 C outdoors: thermostats about 17 C, ceiling point 14 C. The line above does not capture this, and the data does not show why.
 - **[per Johan] Planned change: kitchen and large hall.** Today the kitchen has only one small radiator and is
   under-dimensioned (the kitchen and hall #1 circuits 1:4/1:6 are not in the revised LK calculation). The plan is tile
   in the whole kitchen and the large hall with water-borne underfloor heating, and Johan hopes the kitchen's heat will
@@ -260,8 +279,8 @@ shortfall over 35.85 m2). Demand scales with (20 C - outdoor) / 29.6 K. Linear m
   it. Tile has a much lower floor resistance than parquet (Mtot 0.020 vs 0.200 m2K/W, LK calculation), so the
   kitchen should reach its demand with a lower flow temperature and may stop being the limiting room; the open
   plan could also lower the living-room deficit. Re-calculate after the work.
-- **Implication for the planner:** the pump's flow target at room setpoint 18 C reaches 45 C at about -6 C outdoors,
-  so in normal Malmo weather the cap leaves room for pre-heating; in cold snaps it is what limits the plan.
+- **Implication for the planner:** the pump's flow target at room setpoint 18 C reaches the mixing valves' 40 C at about
+  +1 C outdoors; below that, pre-heating with a higher flow adds nothing to the floor and reaches only the radiators.
 
 ## Fitted models (calibration, 2026-10-11)
 
@@ -269,6 +288,7 @@ Fitted by `core/theria/plan/calibration.py` on 1095 days of history from the loc
 by the share of each hour the valve was on, H60 spikes removed). `scripts/calibration_report.py` reruns it; the add-on
 refits every 24 hours and keeps the previous models if a fit is rejected. All values **[observed]**.
 
+- **Setpoint levels (2026-11-09, `PumpParams.rts_levels`):** the flow does not move 1.9 C per degree of setpoint at every setpoint. The fit keeps, per 0.5 C setpoint with at least 5 heating hours in the last 240 days, the median of what it adds to the curve; between those it interpolates, and outside them it uses 1.9 C per degree. Fitted 2026-11-08 (1143 hours, RMSE 0.59 C): 15: -8.35, 15.5: -7.16, 16: -5.56, 17: -3.20, 17.5: -0.96, 18: +0.37, 18.5: +1.53. A lower setpoint never gets more than a higher one. Setpoint 15 at 7.5 C outdoors is thus about 27 C of flow, where the straight line gave 30 C. The energy model is still a straight line in the setpoint.
 - **Heat curve (good):** `flow target = 40.67 - 0.709 * T_out` at room setpoint 18.0 C (+1.9 C per C of room setpoint),
   fitted on 1287 heating hours below 12 C in the last 240 days, RMSE 0.52 C. Agrees with the earlier winter estimate
   (`40.8 - 0.68`).
@@ -356,7 +376,7 @@ own 3-day median, sometimes more). All values **[observed]**; the sample for dee
   setpoint 2-3 C below its median (31 h) and in the 12 hours after setpoint drops of 2-3 C (537 h), 3-4 C (215 h) and over 4 C
   (37 h). The fear that a deep cut makes the pump shut down is not supported by this data (but drops longer than a few hours
   and deeper than -3 C are rare in it).
-- **The electric heater (aux) is a cold-weather, high-flow-target effect, not a rebound effect:**
+- **In these years the electric heater (aux) was a cold-weather, high-flow-target effect, not a rebound effect:**
 
   | Flow target (heating_setpoint) | Hours with aux > 0 | Mean aux |
   |---|---|---|
@@ -368,12 +388,15 @@ own 3-day median, sometimes more). All values **[observed]**; the sample for dee
   65 % (0.94 kWh/h). At 3-12 C outdoors the heater is almost never on, whatever the setpoint (0-2 %). After a setpoint rise of
   2 C or more aux use is 2.5 times the quiet-period level, but that is largely the high setpoint that follows the rise.
   The heater cost is not in the compressor energy counter that the plan's energy model is fitted to.
+- **[observed] November 2026: the heater also starts just after hot water, at flow targets below 40 C.** `sensor.add_heat_status` went above 0 on 2026-11-04 07:25 local (2.6 min after the valve left hot water, target 36, 4.3 C outdoors), 11-06 18:36 (10.9 min, target 31, 8.1 C) and 11-08 13:14 (2.2 min, target 39, 7.4 C; running for 31 min, 100 % from 13:22 to 13:29). On 11-08 the compressor stood still 13:12:10-13:29:51, and in 13:18-13:28 the heat carrier went out at 32.4 C and back at 29.6 C, so the heater really heated.
+- **[manual] The start of the heater is set in degree minutes:** `Tillskott fördröjt på`, 0-900 K x min ("degrees under the setpoint multiplied by minutes"), and it has an outdoor limit, `Gränsvärde utetemp.` [AirBox install section 14.2]. In this pump it was 600 K x min and Johan set it to 700 on 2026-11-09 (about 17:30 local). It is not in the H60 register map.
+- **[observed] A simple degree-minute threshold does not separate the November starts.** 175 hot-water blocks of 5 min to 4 h, 2026-10-20..11-08, degrees under `heating_setpoint` x minutes on `radiator_forward` inside the block: the three blocks followed by the heater had 281, 365 and 500 K min; five blocks with 322-422 K min at or below 8.1 C outdoors had no heater. The pump's own counter is not visible and may be defined otherwise, so this does not rule out the setting; only reading it from the service menu does. A larger gap makes it more likely but is not shown to cause it: the 36 -> 39 step (see "Heat curve - empirical") took the 11-08 block from 374 to 500 K min.
 - **Consequence for the plan:** a boost of the flow temperature into the 44+ C range in cold weather is what triggers the
   heater, and it removes the saving (aux has COP 1). The plan therefore (a) keeps the setpoint within +/- 2 C of the base
   (was 16-20 C, like the manual control; widened to 12-22 C on 2026-10-16 after the savings study, the flow
   limit in (c) below still guards the heater), (b) may raise it by at most 1 C per hour (lowering is not limited), and (c) does not ask
   for a flow target above `boost_flow_limit_c` = 42 C unless the baseline flow already is higher (cold weather): then it
-  may only cut. The floor limit of 45 C stays.
+  may only cut.
 
 ## Capacity, COP and maximum input (AirX 170, datasheet, 2026-10-16)
 
@@ -471,8 +494,8 @@ The H60 gateway answers with garbage now and then. What was found in the stored 
 
 - **[observed] Energy counters (`compr_cons_heating`, `aux_cons_heating`, `compr_cons_hotwat`):** in 14 days 154 of 541 readings
   were low garbage (0-16) on all three at the same moments, for the heater counter more than half of all readings.
-  `aux_cons_heating` really reads **938 kWh and has not moved since at least 23 Sept**: the electric heater has not run. An
-  earlier note here called the counter "16 kWh"; that was a garbage reading.
+  `aux_cons_heating` really reads **938 kWh and has not risen since at least 23 Sept** (brief 939-940 readings fall back to 938), also not after the heater starts on 4, 6 and 8 Nov that `add_heat_status` shows, so this counter
+  cannot be used to confirm heater use.
 - **Filter (`series.clean_counter`, used for both counters in the plan's calibration and in the measured savings):** a cumulative
   meter only goes up, so the real readings are the longest non-decreasing run, found per 14 days (a unit change in an old window
   cannot erase a newer one), trimmed and extended by what a possible consumption can connect (`MAX_ENERGY_KWH_PER_HOUR` 5.0 for
@@ -498,14 +521,52 @@ The H60 gateway answers with garbage now and then. What was found in the stored 
   a month back it still can) has no price rather than another source's. The Värmepump tab is the one exception: it reads the stored `sensor.nord_pool_se4_current_price` (InfluxDB, from 2025-08-30), the same
   integration (2026-11-08: 672 quarters, all within 0.01 kr of the feed), so that it can show more than a month back.
 
+## Room heat balance from the design documents, checked against the winter (2026-11-09)
+
+`C dR/dt = emitter(flow, valve) - H (R - T)`. H from the heat demand analysis (demand at -9.6 C / 29.6 K), the floor emitter from the LK calculation, the salon's radiators from their rating.
+
+| Zone | H, W/K | Emitter | H / emitter, design | H / emitter, measured |
+|---|---|---|---|---|
+| Vardagsrum/Matsal | 85.5 | 78 W/K of flow minus room (1958 W at 45 C flow, 20 C room) | 1.10; 1.37 with hot water taking 20 % of the time | 1.28-1.45 |
+| Bibliotek | 31.6 | 38 W/K (54 W/m2, 17 m2) | 0.83; 1.04 with hot water | 1.11-1.27 |
+| Salon | about 70 (66-73) if the radiators deliver what the flow line implies; not confirmed by the heat balance below | 2 x 1060 W at 30 K, exponent 1.3 assumed, 4 K drop assumed | - | - |
+
+- **[derived]** Measured column: `(flow - room) / (room - outdoor)` on the winter's daily means above (5 outdoor bands, 7.0 to -1.3 C, flow including hot-water time, rooms under their LK target so loops open). In steady state this ratio is H over the emitter. It stays constant across the bands, which is what the heat balance predicts.
+- **[derived]** Salon H: radiator output at the flow the salon needs for 20 C (`44 - 1.05 T`, above) divided by 20 - T, at +7, 0 and -3 C. Also fits 2026-02-01..03 (42-44 C flow, -4 to -5 C outdoors, thermostats about 17 C).
+- **[derived]** Flow needed for 20 C: Vardagsrum `20 + 1.37 (20 - T)`, Bibliotek `20 + 1.2 (20 - T)`. The 40 C shunt is reached at about +5 C and +3 C outdoors.
+- **[manual, 2026-01-01 list] Loop flows are about half of LK's design:** Vardagsrum 2.8 l/min against 5.6, Bibliotek 0.8 against 2.2. The conditions of that reading are not recorded.
+- **[per Johan, 2026-11-09] The Bibliotek thermostat also controls the small hall and the WC** (circuits 1:5 and 1:3), besides the library and the guest room, five actuators in all. **[per Johan] The guest room has 2 loops**, which leaves 1 for the library; the LK calculation lists the opposite (1:1 guest room, 1:2a-b library), so its labels and the actual loops differ for one of them. The sensor stands in the library alone, so closing these loops cools the guest room, hall and WC unobserved. The Vardagsrum thermostat has 3 actuators (1:7a-c). Kitchen (72 W/K) and large hall (33 W/K) have no floor circuits in the LK calculation and open onto the living room.
+- **[observed + derived] Measured heat against the design, 78 days Oct-Apr with complete data (Dec 2025 - Nov 2026):** the heat counter (`supp_energy_heating`, daily) gives `9.5 - 0.585 T` kW, 585 W/K, zero at about +16 C (606 W/K below 8 C). Against that, the heat the floor rooms should be drawing from the design figures (`H (room - outdoor)`, with Vardagsrum 85.5 and the Bibliotek thermostat's rooms 76 W/K, measured room temperatures) and what their emitters give at the measured flow and valve state (79 and 89 W/K, from the LK calculation) agree within 3 % at -2.8 and 0.7 C outdoors (2.74 kW and 2.80 kW at 0.7 C): 1.64 and 1.57 kW at -2.8 C against 1.63 and 1.56. At 7 C the emitters give 1.72 kW against a demand of 1.97, as sun and people cover the difference.
+- **[observed + derived] The salon does not close the same way.** Radiator heat from the rating, the flow and `heating_power_request` is 0.89 kW at -2.8 C outdoors, 0.33 kW at 0.7 C and 0.10 kW at 7 C; 70 W/K asks for 1.4, 1.25 and 0.85 kW. Either the request is not the heat delivered, or heat comes from elsewhere (the salon joins the main house). **The thermostats did not report from about April to 1 Nov 2026** (no rows in InfluxDB for `climate.vantsidan`; Klippsidan 2 rows in May): [per Johan] the batteries were out in the autumn, so the valves stood open and the radiators ran on the flow. Any request or valve figure for that period is a carried-forward value, not a measurement.
+- **[per Johan, 2026-11-09] Salon construction:** one wall joins the house, two walls of single-leaf brick with an air gap, large windows and a door, the roof extra insulated. An air-to-air heat pump can add heat in cold weather; it is not logged, so its heat is not in any salon figure here.
+- **[observed + derived] Salon loss from nights with the valves known open** (22-06, radiators by rating, floor and ceiling points): Oct 2026 without batteries, 30 nights, flow 32.9 C, outdoor 11.2 C, heat about 495 W: H about 58 W/K (weeks 33-80). Winter nights with both thermostats at 90 % or more, 16 nights, flow 41.7 C, outdoor -0.5 C, heat about 1390 W: H about 85 W/K (79-95). The loss per kelvin is higher in the cold, or the radiators give less than their rating; the house is 2.2 C warmer than the salon in those winter nights and about equal in October, so heat from the house does not explain it. The earlier 8 h salon night fits used carried-forward valve values for Apr-Oct and are not valid for those months.
+- **[estimate, 2026-11-09] Salon heat demand, worked out as for the house** (`documentation/private/VÄRMEBEHOVSANALYS - SALONGEN.xlsx`): 32 m2 and 2.5 m inside, 16 m of outer wall (front 8 m, two ends 4 m; the 8 m to the house is left out), about 9 m2 of glass and door from a street photo. At -9.6 C and 20 C inside: walls 1331 W (U 1.45, assumed), glass and door 480 W (U 1.8, as the house), floor 142 W (0.15, assumed), roof 142 W (0.15, extra insulated, value assumed), ventilation 398 W (as the house) = **2492 W, 77.9 W/m2, 84.2 W/K**. Winter nights with the valves open measured about 85 W/K; the U-values are assumptions, so the agreement is support and not proof.
+
+  | Outdoor C | Demand W | Flow needed C | Pump flow at setpoint 18, C | Radiators give W | Left for the air-to-air pump W |
+  |---|---|---|---|---|---|
+  | 10 | 842 | 36.7 | 33.5 | 612 | 230 |
+  | 7 | 1095 | 40.0 | 35.7 | 762 | 333 |
+  | 5 | 1263 | 42.1 | 37.1 | 866 | 397 |
+  | 2 | 1516 | 45.2 | 39.2 | 1028 | 487 |
+  | 0 | 1684 | 47.1 | 40.6 | 1140 | 544 |
+  | -3 | 1937 | 50.0 | 42.7 | 1311 | 625 |
+  | -5 | 2105 | 51.8 | 44.1 | 1429 | 676 |
+  | -9.6 | 2492 | 56.0 | 47.4 | 1708 | 784 |
+
+  Radiators 2 x 1060 W at 30 K, exponent 1.3 and a 4 K drop assumed, 20 C inside, valves open, without hot-water time and defrost, so the real shortfall is larger.
+- **[observed, 2026-11-09] The pump's flow target stands about 2 C above the fitted curve since the afternoon of 8 Nov.** `heating_setpoint + 0.708 * T_out` at setpoint 18: 39.3-41.2 on 31 Oct - 4 Nov, 42.2 on 8 Nov afternoon, 42.6 on 9 Nov morning. The table's pump flow is the fitted curve from before that. Cause: `Min. utetemperatur` stood at -20 in that period (see "Heat curve - empirical").
+- **[manual + observed, 2026-11-09] What moves the curve.** The Airbox manual (service menu, Anläggningsdata) has `Min. utetemperatur` (-35...-10...10 C), which "påverkar värmekurvan": the curve runs from 25 C flow at +20 C outdoors to the system temperature at that minimum. Moving it from -30 to -20 steepens the curve by `(Tsys - 25) (20 - T) (1/40 - 1/50)`: about +2.3 C at 7 C outdoors with the default Tsys 60, against the +2.3 to +3 C observed. This pump is set to -30 (Johan, 2026-11-09); it stood at -20 from 8 Nov 12:41 to 9 Nov 17:25, so targets in that window are about 2.6 C above the normal curve. `Rumstemperaturoffset` (-10...10 K) would instead shift the curve in parallel.
+- **[observed, 2026-11-09] The table is without internal gains, and these cover the shortfall at about 10 C by day.** 2-7 Nov, opening hours, valves at 90 % or more, flow 30.5-34.7 C, outdoor 7.6-10.2 C: the four-point mean held 18.9-19.8 C and was rising 0.04-0.14 C/h, with the radiators at 495-740 W against 790-980 W of loss at 84 W/K. So 200-380 W comes from people, lighting and sun. The thermostat sensors read about 1 C above the floor and ceiling points.
+- **[observed] The dynamics are not settled.** Nights 22-06, Oct-Apr, 153-174 per zone, heat balance run 8 h from the measured start with H, C and the emitter scaled on other weeks: RMSE 0.45 C Vardagsrum, 0.44 Bibliotek, 0.55 salon (no change: 0.76, 0.66, 0.74; `house_model`: 0.60, 0.81, 0.80). H and C trade against each other and the best values sit at the edge of the search (time constants of 90-200 h), so C cannot be read from this. 8-9 Nov in the salon is still missed (17.2 C against 17.95 C).
+
 ## Heating vs hot water
 
 - **[manual]** By default hot water has higher priority and interrupts a heating demand. With
   "VV-vaxeldrift" (DHW alternating mode) both have equal priority and take turns in the configured time
   windows. [HMC300 OM section 5.7]
 - **[observed]** `binary_sensor.switch_valve_1` (reg 1A07): off = heating circuit, on = hot water. Over
-  the last ~32 h it was on 3.7 h (11 %), in 23 short blocks of 10-45 min. Heating is therefore blocked
-  ~11 % of the time at 11-15 C outdoors. Expect this to rise when it gets colder.
+  2025-11-09..2026-04-30 it was on 3.9 h per day on Sundays and 4.4-5.4 h on the other days, about 5 blocks a day of median 29 min. Share of the time at 09-19 local:
+  25 % Monday to Friday, 31 % Saturday, 17 % Sunday; 36-37 % at 17-18 on weekdays; 8-10 % at night (00-05, whole year). The hairdresser works every day, so weekdays cannot separate the salon's use from the household's. From May to October the valve can stand on for hours, so those months do not measure hot water.
 - **[unverified]** The hourly sawtooth in `radiator_forward` (about 26 C to 39 C) probably follows these hot
   water cycles (residual heat leaving through the heating circuit, see FAQ in HMC300 OM section 8). Not
   confirmed.
@@ -530,8 +591,7 @@ The H60 gateway answers with garbage now and then. What was found in the stored 
   `external_control_2` exist in HA; not yet identified.
 - **[per Johan]** `sensor.limit_compressor` and `sensor.limit_auxiliary_heat` are external inputs to limit
   or disable compressor and electric heater. They are not wired up.
-- **[observed]** `sensor.add_heat_status` is 0 right now. `aux_cons_heating` reads 938 kWh (16 was a garbage reading, see "H60 glitches"), so the
-  heater is not driving the heating bill.
+- **[observed]** `sensor.add_heat_status` shows the heater's level. It was above 0 only briefly in autumn 2026 (see "Electric heater and compressor"); `aux_cons_heating` does not follow it (see "H60 glitches").
 
 ## First floor control chain (LK)
 
@@ -650,5 +710,31 @@ loops = share of the eight actuators open, flow capped at 40 C and left out whil
 - **Still open:** nine mild days only (k rises in the cold, see above), the profile may count the plan's sun swing twice,
   a stove-warmed room is still forecast about 1 C too warm, and a replan from the measured room is what corrects that.
 - **In the planner since then:** `with_measured_response` replaces `k_slab` and `k_out`, the anchored drift and the night
-  pattern are gone, `day_heat_c_per_h` is the day profile. The daily fit and the night model are kept for reports and the
+  pattern are gone, `day_heat_c_per_h` is the day profile (the median of 30 Oct-8 Nov since 2026-11-09, see below). The daily fit and the night model are kept for reports and the
   morning margin but no longer set the forecast. Refits do not move these values: they are constants until they are measured again.
+
+## The day profile is a median, and the salon sets a lowest flow (2026-11-09)
+
+- **[observed] Day heat per local hour block**, 30 Oct-8 Nov (10 days), residual of the hourly room model with the real loop state, heating-only flow capped at 40 C and the sun swing taken out, one mean per day and block, C/h:
+
+  | Block | Median of the days | Mean of the days | In the plan before |
+  |---|---|---|---|
+  | 06-12 | 0.026 | 0.054 | 0.093 |
+  | 12-18 | 0.105 | 0.140 | 0.126 |
+  | 18-24 | 0.047 | 0.142 | 0.028 |
+
+  The means are pulled up by fires (18-24: 0.664 on 4 Nov, 0.483 on 6 Nov; 12-18: 0.427 on 8 Nov), so the plan uses the median. A fire is seen in the next plan's measured start, while heat that was counted on and does not come leaves the room cold.
+- **[observed] Backtest, from 06:00 with the measured flow and loops, leave one day out, planned minus measured:** the five days with no block over 0.2 C/h gave +0.31 C after 8 h and +0.52 C after 16 h with the old profile, -0.02 and +0.26 with the median. On the two days the loops stood fully open (1 and 2 Nov), the mode the plan assumes, the old profile was +0.70 and +0.95 after 16 h, the median +0.55 and +0.80. On fire days every profile is too low, by up to about 4 C after 8 h.
+
+## How much heat can be moved, and the plan that moves it (2026-11-09)
+
+The fixed curves are in `core/theria/plan/house_model.py`, one per zone: `d(room)/dt = gain * (flow - room) - loss * (room - outdoor)`. They are not fitted by the running system; when we learn more they are changed there and the plan follows.
+
+- **[observed] Salon, valves closed, dark hours, Oct 2025-Nov 2026 (mean of the four points), C/h by outdoor temperature, median / 90th percentile:** -4..0 C: 0.13 / 0.29 (n = 8 runs); 0..4 C: 0.08 / 0.17 (22); 4..8 C: 0.03 / 0.10 (58); 8..12 C: 0.01 / 0.11 (32). Curve: loss 0.0115/h. The whole-room sensors with the valves open give a gain of 0.0053/h of the gap to the flow (974 hours, RMSE 0.42 C/h).
+- **[observed, 2026-11-09] The salon does not follow one gain and one loss.** Night of 8-9 Nov, 22-06, both thermostats requesting 100 %, flow 38.1 C, outdoor 6.5 C: mean of the floor and ceiling points 17.2 -> 17.95 C; the curve (gain 0.0053, loss 0.0115) gives 17.03. Thirteen winter nights with the same request (Dec 2025 - Feb 2026, flow 39-43 C, outdoor -5 to 2 C, room 14-17 C) moved -0.4 to +0.3 C in 8 h. No constant pair fits both, so a term is missing; what it is has not been measured. `heating_power_request` is the demand, not the valve position.
+- **[observed, 2026-11-09] Ground floor, what opens the loops (29 Oct - 8 Nov, HA actuators):** the thermostat target minus the room decides, not the flow. Target at least 0.5 C above the room: 96-98 % of the loops open; at least 0.5 C below: 9-12 %. With the loop state known, per room, `dR = a * open * (flow - room) + k * (outdoor - room)` gives a = 0.0058-0.0078/h (+/-0.0015) and k = 0.0083-0.0139/h; residual per 3 h block 0.08-0.09 C at night, 0.20-0.23 C over all hours. The actuators are not in InfluxDB; the LK thermostats' `hvac_action` is, and agrees with them 87-89 % of the time.
+- **[observed, 2026-11-09] The electricity per setpoint degree is not the same both ways:** 0.23-0.25 kWh/h below setpoint 18 and 0.35-0.37 above it (+/-0.04; 3, 4 and 6 h blocks, 11 Oct - 9 Nov, 3-14 C outdoors; only 13-25 blocks above 18). A shift that sells one degree and buys one degree earns a median of 0.69 kr/day on 44 days instead of 2.06.
+- **[observed, 2026-11-09] How open the floor loops are depends on who sets the thermostats:** 0.71 of the loops open on 30 Oct - 4 Nov while the targets moved between 17.7 and 22, 0.42 since they stand at 19-19.5 by hand (15:00 0.21, 16:00 0.27, 17:00 0.32).
+- **[observed] Ground floor, closed loops, nights 30 Oct-8 Nov:** 0.09-0.27 C/h at 7-11 C outdoors, median 0.13. Curve: loss 0.016/h (0.19 C/h at 7.5 C), gain 0.0065/h.
+- **The plan (`heat_shift.py`, after PowerSaver, see `related-work.md`):** a window lasts as long as the zone that cools fastest takes to go from +swing to -swing (`shift_room_swing_c`, 0.5 C). At swing 0.5 C: 2 h at -10 C, 3 h at -5..0 C, 4 h at 5 C, 5 h at 7.5 C, 8 h at 12 C. The dear windows and the cheap ones before them are the local maxima and minima of the sliding mean price from local midnight; pairs under `shift_min_gain_sek_per_kwh` (0.5) are dropped. The setpoint goes `shift_rts_c` (1) down in a dear window and up in the cheap one, and is otherwise at the base; the floor loops are not closed.
+- **Replay for 2026-11-09 (mean 7.1 C outdoors, window 5 h):** setpoint 19 at 23-03, 17 at 15-19 (prices 5.56-7.44 kr), otherwise 18. Curves: ground floor at most +0.09 / -0.05 C and salon +0.07 / -0.04 C against the flat setpoint. Modelled saving 4.8 kr that day.

@@ -4,7 +4,9 @@
 
 Theria is a Home Assistant add-on that optimizes heating costs using electricity price-based control. It monitors Nordpool day-ahead prices and learns thermal characteristics of heating zones to minimize energy costs while maintaining comfort.
 
-**Current Status:** MVP development - basic thermal learning and simple price optimization implemented.
+**Current Status:** the plan runs in shadow mode. It moves the pump setpoint from dear to cheap windows and closes or opens the floor loops per room; the rest of the closed-loop shift is designed and not built.
+
+**Canonical documents:** `docs/SOFTWARE_DESIGN.md` (how the code is built) and `docs/ALGORITHM_EXPLAINED.md` (how the plan decides, heat demand and energy calculations). Keep them current when the code changes.
 
 ## Core Strategy
 
@@ -43,33 +45,16 @@ Theria is a Home Assistant add-on that optimizes heating costs using electricity
    - `/api/price/forecast` - 24h price forecast
    - `/api/thermal/characteristics` - Learned thermal rates
 
-### What's Planned (Architecture Designed, Not Implemented) 📋
+### What's Planned (Designed, Not Implemented) 📋
 
-1. **Full Heat Capacitor Strategy**:
-
-   - 96-period scheduling (24h at 15-min resolution)
-   - Forward-looking optimization (not just reactive)
-   - Buy-sell pair matching (cheap before expensive)
-   - Use comfort_target ± allowed_deviation for temperature ranges
-
-2. **Zone-Specific Schedules**:
-
-   - Each zone creates its own optimal heating schedule
-   - Different thermal characteristics (radiators vs floor heating)
-   - Independent savings tracking per zone
-
-3. **Thermal Model Integration**:
-
-   - Use learned characteristics for temperature prediction
-   - Calculate time needed to heat/cool zones
-   - Optimize pre-heat timing based on thermal response
+The rest of the closed-loop heat shift: window length from measured cooling, the energy limit, deviation handling. See `docs/superpowers/specs/2026-11-09-closed-loop-shift-design.md` and `2026-11-09-part1-floor-heating-design.md`.
 
 ## Key Design Decisions
 
-1. **No MPC Yet** - Current implementation uses simple price-based adjustments, not full Model Predictive Control
-2. **Learning First** - System learns thermal characteristics before optimization
+1. **Heat shift, not MPC** - The default plan moves a fixed setpoint step between price windows; the dynamic programme is kept as an alternative strategy
+2. **Measured state wins** - Each plan starts from the measured room; the models only say what a change would do
 3. **Home Assistant Integration** - Deployed as HA add-on, not standalone
-4. **Multi-Zone from Day 1** - Architecture supports multiple zones with shared heating source
+4. **Algorithm apart from temperatures** - Temperatures and limits are settings
 
 ## Configuration
 
@@ -101,6 +86,10 @@ zones:
 
 ### Optimization & Learning
 
+- `core/theria/plan/heat_shift.py` - the plan: moves heat from dear to cheap windows (after PowerSaver)
+- `core/theria/plan/shift_rules.py` - the rules around it: heat moved not cut, a started window runs to its end, measured guards end it
+- `core/theria/plan/house_model.py` - fixed cooling and response curves for the ground floor and the salon
+- `core/theria/plan/energy_forecast.py` - the pump's electricity for the next day, kept as forecast and shown against the measured
 - `core/theria/plan/price_feed.py` - Nord Pool prices from Home Assistant (plan, charts, measured days)
 - `core/theria/radiators/` - salon (Netatmo) and guest house (Tado) radiator plan, shadow mode only (design: `docs/superpowers/specs/2026-11-01-radiator-zones-design.md`)
 - `core/theria/thermal_learning_service.py` - Background learning service
@@ -111,7 +100,8 @@ zones:
 
 - `config.yaml` - HA add-on configuration
 - `README.md` - Project overview, heat capacitor concept
-- `architecture.md` - Detailed architecture (96-period scheduling design)
+- `docs/SOFTWARE_DESIGN.md` - Components, data flow, storage and API
+- `docs/ALGORITHM_EXPLAINED.md` - How the plan decides, heat demand and energy calculations
 - `SYSTEM_SETUP.md` - Reference implementation (Johan's house)
 
 ### Infrastructure
@@ -158,19 +148,6 @@ and the plan runs as usual; `[TEST MODE] Would call ...` in the log shows what w
 - Outdoor sensor: `sensor.outdoor`
 - System identification shows: Boutique has 2.33 MJ/K thermal mass, 51.7 W/K heat loss
 
-## Current Simplification vs Design
-
-**Current:** Simple reactive price-based adjustment (±0.5°C based on current hour)
-
-**Design:** Forward-looking heat capacitor with:
-
-- 24-hour schedule creation when prices published
-- Multiple pre-heat/coast cycles per day
-- Thermal model predictions
-- Savings calculation vs baseline
-
-**Next Step:** Implement full heat capacitor scheduler using learned thermal characteristics.
-
 ## Code Style & Quality Standards
 
 **See [CODING_STANDARDS.md](../CODING_STANDARDS.md) for complete coding guidelines.**
@@ -185,8 +162,8 @@ Key highlights:
 
 ## Important Notes
 
-1. **comfort_target and allowed_deviation** - Configured but not yet used in optimization logic
-2. **Thermal characteristics** - Being learned continuously but not yet used for predictions
+1. **comfort_target and allowed_deviation** - Belong to the older zone services; the plan uses `PlanSettings`
+2. **Thermal characteristics** - The older learning service feeds the zone views, not the plan
 3. **Port 8081** - Consistent across all configs (Dockerfile, config.yaml, docker-compose)
-4. **Frontend** - React/Vite UI in `frontend/` (tabs: Overview, Värmepump, Plan, Savings, Models, Settings, Sensors, Control, Radiators)
-5. **Observation mode** - System is learning, not actively controlling thermostats yet
+4. **Frontend** - React/Vite UI in `frontend/` (tabs: Overview, Värmepump, Plan, Savings, Energy, Models, Settings, Sensors, Control, Radiators)
+5. **Shadow mode** - The add-on plans and records without writing; salon and guest house are shadow only in every mode

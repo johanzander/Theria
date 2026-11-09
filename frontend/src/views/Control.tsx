@@ -114,7 +114,6 @@ export function Control() {
           setpoints back.
         </p>
         <div className="buttons">
-          <button onClick={() => change('off', false)} disabled={mode === 'off'}>Off</button>
           <button onClick={() => change('shadow', false)} disabled={mode === 'shadow'}>Shadow</button>
           {!armed ? (
             <button className="danger" onClick={() => setArmed(true)} disabled={mode === 'active' || !canActivate}>

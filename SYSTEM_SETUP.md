@@ -101,13 +101,25 @@ Netatmo thermostats stand in `auto` with a schedule (`select.salong` = "Mitt sch
 is the salon's water shut-off and is never touched. Wanted: the mean of all points about 19 C weekdays 09-19 and
 weekends 10-16, cooler outside those hours; a schedule editable in Theria.
 
+Salon schedule "Mitt schema" (selected), read from the Netatmo API (`homesdata`) 2026-11-08, local time, the same for both rooms.
+Home Assistant's Netatmo diagnostics redact the timetable; `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET` and `NETATMO_REFRESH_TOKEN`
+in `.env` give read-only access (scope `read_thermostat`). A manual setpoint lasts at most 8 h (`therm_setpoint_default_duration` 480 min).
+
+| Day | Setpoints (C) |
+|---|---|
+| Monday-Friday | 04-06: 23 (Komfort +), 06-19: 21 (Komfort), 19-04: 19 (Natt) |
+| Saturday | 05-07: 23, 07-18: 21, from 18: 19 |
+| Sunday | 08-10: 21, 10-17: 16 (Ekoläge), 17-19: 21, from 19: 19 |
+
+A second stored schedule, "manuellt", is not selected: Komfort 22 from 04 to 19:30 every day except Sunday (07-17), Natt 19.5.
+
 **Guest house (Tado):** `climate.bedroom`, `hallway`, `kitchen`, `tv_room_gh`, `storage_room`: modes off/auto/heat,
 step 0.5, range 5-25 C, `hvac_action` available; setpoints 2026-11-01: 18.0 / 19.5 / 20.0 / 19.5 / 17.0. Wanted: a
 temperature per room that may vary about +/-1.5 C with the price.
 
 Radiator control is in shadow mode (`core/theria/radiators/`): it logs what it would set, it writes nothing.
 
-### Zone 1: Boutique (35 sqm)
+### Zone 1: Boutique (32 sqm inside, 2.5 m high, per Johan 2026-11-09)
 
 **Heating Type:** 2× water radiators (Netatmo)
 **Radiator Specs:** 2 × 1060W at ΔT=30°C

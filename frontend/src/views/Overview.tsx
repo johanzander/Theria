@@ -2,11 +2,12 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, T
 import { useState } from 'react'
 import { fetchDay, fetchExecution, fetchPlan, fetchPreflight, fetchSavings, fetchSettings } from '../api'
 import {
-  outlookText, planSaving, savingsTotals, statusTone, timelineRows, tooltipFormatter, UNITS,
+  dayStatus, outlookText, planSaving, savingsTotals, statusTone, timelineRows, tooltipFormatter, UNITS,
   type Execution, type PlanResponse, type Preflight, type SavingsResponse, type SettingEntry,
 } from '../model'
 import { Card, DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
 import { DayCharts } from './DayCharts'
+import { PumpDiagram } from './PumpDiagram'
 
 function Status({ plan, execution, totals, roomNow }: {
   plan: PlanResponse | null
@@ -133,11 +134,12 @@ export function Overview() {
       {execution.data?.plan_error && <p className="bad">The last plan could not be computed: {execution.data.plan_error}</p>}
       <Attention preflight={preflight.data} />
       <Status plan={plan.data} execution={execution.data} totals={savingsTotals(rows)} roomNow={roomNow} />
+      <PumpDiagram />
       <DayNav day={day} onChange={setDay} />
       {rows.length > 0 ? (
         <DayCharts rows={rows} views={views} loopsTotal={first.data?.loops_total ?? {}} limits={limitsOf(settings.data)} />
       ) : (
-        <p>{first.data ? 'Nothing to show for this day yet.' : 'Loading...'}</p>
+        <p>{dayStatus(first.loaded, first.data !== null, 'Nothing to show for this day yet.')}</p>
       )}
       {savings.data && savings.data.days.length > 0 && <SavingsChart savings={savings.data} />}
     </>

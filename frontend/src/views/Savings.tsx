@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fetchDay, fetchSavings } from '../api'
-import { timelineRows, tooltipFormatter, UNITS } from '../model'
+import { dayStatus, timelineRows, tooltipFormatter, UNITS } from '../model'
 import { dailyRows, dailyTotals, shiftRows, shiftTotals, type DailyRow, type ShiftRow } from '../savings'
 import { Card, DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
 import { axisFor, Chart, guides } from './DayCharts'
@@ -231,7 +231,7 @@ export function Savings() {
       {error && <p className="bad">{error}</p>}
       <DayNav day={day} onChange={setDay} />
       {rows.length === 0 ? (
-        <p>{first.data ? 'Nothing to compare for this day yet.' : 'Loading...'}</p>
+        <p>{dayStatus(first.loaded, first.data !== null, 'Nothing to compare for this day yet.')}</p>
       ) : (
         <>
           <Summary rows={rows} />

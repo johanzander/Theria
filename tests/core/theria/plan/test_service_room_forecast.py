@@ -44,7 +44,7 @@ def test_a_warmer_room_falls_faster(settings):
 
 def test_the_measured_extra_heat_comes_by_day_and_not_at_night():
     assert day_heat_c_per_h(3) == 0.0
-    assert [day_heat_c_per_h(h) for h in (9, 15, 21)] == [0.093, 0.126, 0.028]
+    assert [day_heat_c_per_h(h) for h in (9, 15, 21)] == [0.026, 0.105, 0.047]
 
 
 def test_the_disturbance_is_not_fed_the_extra_heat_the_forecast_already_has(settings):

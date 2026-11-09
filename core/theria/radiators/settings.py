@@ -65,9 +65,12 @@ class RadiatorPrefs:
     salon_schedule: dict[str, DaySchedule | None] = field(
         default_factory=_default_schedule
     )
-    salon_open_target_c: float = 19.0  # mean of all points while open
+    salon_open_target_c: float = 20.0  # mean of all points while open
+    salon_open_floor_c: float = (
+        19.0  # below this, while open, the heat shift stops lowering
+    )
     salon_closed_floor_c: float = 17.0  # the mean may cool this far when closed
-    salon_preheat_c: float = 20.0
+    salon_preheat_c: float = 21.0
     salon_margin_c: float = 0.3  # above the target in the prediction
     salon_max_setpoint_c: float = 22.0
     guest_band_c: float = 1.5
@@ -77,6 +80,7 @@ class RadiatorPrefs:
     def __post_init__(self) -> None:
         numbers = (
             self.salon_open_target_c,
+            self.salon_open_floor_c,
             self.salon_closed_floor_c,
             self.salon_preheat_c,
             self.salon_margin_c,
@@ -91,8 +95,14 @@ class RadiatorPrefs:
             raise ConfigurationError(
                 f"radiator mode must be one of {SUPPORTED_MODES}, got {self.mode!r}"
             )
-        if self.salon_closed_floor_c > self.salon_open_target_c:
-            raise ConfigurationError("the closed floor must not exceed the open target")
+        if not (
+            self.salon_closed_floor_c
+            <= self.salon_open_floor_c
+            <= self.salon_open_target_c
+        ):
+            raise ConfigurationError(
+                "salon temperatures must satisfy closed_floor <= open_floor <= open_target"
+            )
         if not (
             self.salon_open_target_c + self.salon_margin_c
             <= self.salon_preheat_c
@@ -136,6 +146,7 @@ class RadiatorPrefs:
                 for day, s in self.salon_schedule.items()
             },
             "salon_open_target_c": self.salon_open_target_c,
+            "salon_open_floor_c": self.salon_open_floor_c,
             "salon_closed_floor_c": self.salon_closed_floor_c,
             "salon_preheat_c": self.salon_preheat_c,
             "salon_margin_c": self.salon_margin_c,
@@ -189,7 +200,9 @@ class RadiatorSettings:
     timezone: str = "Europe/Stockholm"
     salon_c_j_per_k: float = 2.33e6
     salon_u_w_per_k: float = 51.7
-    salon_heat_power_w: float = 1800.0  # the highest power seen (1830 W); an estimate to check against the shadow log
+    salon_heat_power_w: float = (
+        1800.0  # the highest power seen (1830 W); an estimate to check against the shadow log
+    )
     salon_baseline_c: float = (
         20.0  # the mean the thermostats at 21 C give today (estimate)
     )

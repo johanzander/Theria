@@ -9,13 +9,18 @@ from core.theria.exceptions import ModelFitError
 Array = float | np.ndarray  # scalars and numpy arrays are both accepted
 
 DEFAULT_FLOW_PER_RTS = 1.9  # measured median, 227 steps 2022-2025
+MIN_RTS_LEVEL_ROWS = 5  # heating hours at one setpoint needed to trust what it gave
+RTS_LEVEL_STEP_C = 0.5  # the pump's setpoint is set in these steps
 
 
 @dataclass(frozen=True)
 class PumpParams:
     """Parameters of the pump model.
 
-    flow_target = flow_intercept + flow_slope * t_out + flow_per_rts * (rts - rts_ref)
+    flow_target = flow_intercept + flow_slope * t_out + what the setpoint adds
+
+    What the setpoint adds is measured per setpoint (`rts_levels`); between those it is
+    interpolated, outside them, and when nothing is measured, it is `flow_per_rts` per degree.
     energy      = energy_intercept + energy_per_outdoor * t_out + energy_per_rts * rts
     """
 
@@ -30,6 +35,15 @@ class PumpParams:
     # history); its energy then grows roughly linearly with the flow target. Zero = not fitted.
     aux_onset_c: float = 44.0
     aux_per_flow_c: float = 0.0
+    # (setpoint, what it adds to the curve), lowest setpoint first. The pump does not move the flow
+    # the same amount for every degree of setpoint: about 3 C per degree below 18.
+    rts_levels: tuple[tuple[float, float], ...] = ()
+
+    def __post_init__(self) -> None:
+        # a JSON file gives lists back
+        object.__setattr__(
+            self, "rts_levels", tuple((float(r), float(a)) for r, a in self.rts_levels)
+        )
 
 
 # Priors from the measured winter 2025/26 curve and the rough counter regression
@@ -45,12 +59,24 @@ PRIOR_PUMP_PARAMS = PumpParams(
 )
 
 
+def _setpoint_adds(params: PumpParams, rts_c: Array) -> Array:
+    """What the room setpoint adds to the heat curve (C of flow)."""
+    if not params.rts_levels:
+        return params.flow_per_rts * (rts_c - params.rts_ref)
+    setpoints = [rts for rts, _ in params.rts_levels]
+    adds = [add for _, add in params.rts_levels]
+    outside = (
+        rts_c - np.clip(rts_c, setpoints[0], setpoints[-1])
+    ) * params.flow_per_rts
+    return np.interp(rts_c, setpoints, adds) + outside
+
+
 def flow_target(params: PumpParams, t_out_c: Array, rts_c: Array) -> Array:
     """Pump flow temperature target (C). Works on scalars and numpy arrays."""
     return (
         params.flow_intercept
         + params.flow_slope * t_out_c
-        + params.flow_per_rts * (rts_c - params.rts_ref)
+        + _setpoint_adds(params, rts_c)
     )
 
 
@@ -117,6 +143,39 @@ def fit_flow_curve(
     adjusted = flow_target_c - flow_per_rts * (rts_c - rts_ref)
     slope, intercept = np.polyfit(t_out_c, adjusted, 1)
     return float(intercept), float(slope), rts_ref
+
+
+def fit_rts_levels(
+    t_out_c: np.ndarray,
+    flow_target_c: np.ndarray,
+    rts_c: np.ndarray,
+    flow_intercept: float,
+    flow_slope: float,
+) -> tuple[tuple[float, float], ...]:
+    """What each setpoint added to the heat curve: the median over its hours, lowest first.
+
+    An hour counts only at a setpoint the pump can be set to; other values are hours the setpoint
+    changed in. A lower setpoint never adds more than a higher one: where the data says so, the
+    lower one takes the higher one's value at most, which errs towards less flow.
+    """
+    steps = np.round(rts_c / RTS_LEVEL_STEP_C) * RTS_LEVEL_STEP_C
+    on_step = np.isclose(rts_c, steps, atol=1e-6)
+    measured = sorted(
+        (float(rts), float(np.median(added)))
+        for rts in np.unique(steps[on_step])
+        if len(
+            added := (flow_target_c - flow_intercept - flow_slope * t_out_c)[
+                on_step & (steps == rts)
+            ]
+        )
+        >= MIN_RTS_LEVEL_ROWS
+    )
+    if not measured:
+        return ()
+    capped = np.minimum.accumulate([add for _, add in reversed(measured)])[::-1]
+    return tuple(
+        (rts, float(add)) for (rts, _), add in zip(measured, capped, strict=True)
+    )
 
 
 def fit_energy_model(

@@ -12,12 +12,8 @@ expensive, and the climate entity is never switched off. Each cheap hour ("buy")
 hour ("sell"), and pairs whose price difference is below `minSavings` are dropped. The thermal model is two numbers
 you enter by hand (minutes per degree up and down) plus a maximum offset and a short boost.
 
-- **Taken:** the heat-capacitor idea, and the minimum-saving threshold (`min_saving_sek`: a plan that does not beat
-  the flat setpoint by that much is not run).
-- **Left out:** pairing of hours and hand-entered minutes per degree. Theria plans the whole day with dynamic
-  programming over room and floor-slab temperature, with a pump energy model and a room model learned from the
-  house's own history, comfort floor/target by time of day, and measured savings against a flat-setpoint baseline.
-  PowerSaver has no knowledge of the pump's energy per degree and no feedback from the result.
+- **Taken (`core/theria/plan/heat_shift.py`):** the sliding-window buy and sell search, local minima and maxima, dropping pairs whose price difference is too small, and the idea that the window follows from minutes per degree.
+- **Changed:** the minutes per degree are fixed curves per zone by outdoor temperature (`house_model.py`), not hand-entered numbers. The setpoint returns to the base after a window, because the pump has no room sensor: a setpoint held high keeps costing energy, while PowerSaver's climate entity stops at the raised temperature.
 
 ## node-red-smart-thermostat (compared, not used)
 

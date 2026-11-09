@@ -34,6 +34,7 @@ def settings() -> PlanSettings:
         rts_min_c=16.0,  # the planner's mechanics are tested on the old +/- 2 C range, whatever the production defaults are
         rts_max_c=20.0,
         floor_c=18.0,
+        plan_strategy="optimizer",  # the dynamic programme's own tests; test_heat_shift covers the shift
         plan_closes_valves=False,  # the thermostat limit, the regulator and the pump setpoint are tested on their own; closing the loops has its own tests
     )
 

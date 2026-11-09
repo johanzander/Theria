@@ -12,11 +12,13 @@ from typing import Any
 
 import numpy as np
 
-from core.theria.plan.planner import Plan, PlanInputs, plan
+from core.theria.plan.heat_shift import make_plan
+from core.theria.plan.planner import Plan, PlanInputs
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.recent_log import RecentLines
 from core.theria.plan.room_model import RoomParams, RoomState
 from core.theria.plan.settings import PlanSettings
+from core.theria.plan.shift_rules import ShiftReadings
 
 KEEP = timedelta(days=7)
 
@@ -63,6 +65,8 @@ def run_to_dict(run: PlanRun) -> dict[str, Any]:
             "previous_rts_c": i.previous_rts_c,
             "previous_closed": i.previous_closed,
             "extra_drift_c_per_h": _array(i.extra_drift_c_per_h),
+            "past_prices_sek_per_kwh": _array(i.past_prices_sek_per_kwh),
+            "shift": None if i.shift is None else i.shift.to_dict(),
         },
         "settings": _settings_to_dict(run.settings),
         "pump": asdict(run.pump),
@@ -75,6 +79,7 @@ def run_to_dict(run: PlanRun) -> dict[str, Any]:
 def run_from_dict(body: dict[str, Any]) -> PlanRun:
     i = body["inputs"]
     drift = i["extra_drift_c_per_h"]
+    past = i.get("past_prices_sek_per_kwh")  # absent in runs kept before 2026-11-09
     return PlanRun(
         computed_at=datetime.fromisoformat(body["computed_at"]),
         mode=body["mode"],
@@ -86,10 +91,19 @@ def run_from_dict(body: dict[str, Any]) -> PlanRun:
             sun_wm2=np.array(i["sun_wm2"]),
             initial=RoomState(**i["initial"]),
             previous_rts_c=i["previous_rts_c"],
-            previous_closed=i.get("previous_closed", False),  # absent in runs kept before 2026-11-04
+            previous_closed=i.get(
+                "previous_closed", False
+            ),  # absent in runs kept before 2026-11-04
             extra_drift_c_per_h=None if drift is None else np.array(drift),
+            past_prices_sek_per_kwh=None if past is None else np.array(past),
+            shift=(
+                None if i.get("shift") is None else ShiftReadings.from_dict(i["shift"])
+            ),
         ),
-        settings=PlanSettings.from_dict(body["settings"]),
+        # runs kept before 2026-11-09 were made by the optimizer
+        settings=PlanSettings.from_dict(
+            {"plan_strategy": "optimizer", **body["settings"]}
+        ),
         pump=PumpParams(**body["pump"]),
         room=RoomParams(**body["room"]),
         decided=body["decided"],
@@ -118,6 +132,7 @@ def make_run(
                 "start": h.start.isoformat(),
                 "rts_c": h.rts_c,
                 "valves_closed": h.valves_closed,
+                "thermostat": h.thermostat,
                 "energy_kwh": h.energy_kwh,
                 # what the room was expected to read at the end of the hour, and the flow target
                 "room_c": h.room_c_end + h.sun_swing_c,
@@ -134,7 +149,7 @@ def make_run(
 
 def replay(run: PlanRun, settings: PlanSettings | None = None) -> Plan:
     """The plan again from what the run kept; `settings` replaces the ones it ran on."""
-    return plan(run.inputs, settings or run.settings, run.pump, run.room)
+    return make_plan(run.inputs, settings or run.settings, run.pump, run.room)
 
 
 class PlanRunStore(RecentLines):

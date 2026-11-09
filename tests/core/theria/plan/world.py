@@ -173,6 +173,9 @@ class FakeSource:
             return self._world.valve_events
         return self._world.points(self._series[(entity_id, field)])
 
+    def hourly_means(self, entity_id, start, stop):
+        return self.series(entity_id, start, stop)
+
 
 class FakeWeatherHistory:
     def __init__(self, world: World):
@@ -182,7 +185,7 @@ class FakeWeatherHistory:
         w = self._world
         return [
             WeatherHour(
-                w.start + timedelta(hours=i), float(w.sun[i]), 50.0, float(w.t_out[i])
+                w.start + timedelta(hours=i), float(w.sun[i]), 50.0, float(w.t_out[i]), 10.0
             )
             for i in range(len(w.sun))
         ]
