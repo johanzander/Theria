@@ -58,6 +58,8 @@ class ShiftReadings:
     room_c: float
     salon: SalonStatus | None = None  # None: the house has no salon to look after
     window: ShiftWindow | None = None
+    # each LK room against the mean of them: a mean hides a cold room next to a warm one
+    room_offsets_c: tuple[float, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +70,7 @@ class ShiftReadings:
                 else {"mean_c": self.salon.mean_c, "floor_c": self.salon.floor_c}
             ),
             "window": None if self.window is None else self.window.to_dict(),
+            "room_offsets_c": list(self.room_offsets_c),
         }
 
     @staticmethod
@@ -76,6 +79,7 @@ class ShiftReadings:
             float(body["room_c"]),
             None if body["salon"] is None else SalonStatus(**body["salon"]),
             None if body["window"] is None else ShiftWindow.from_dict(body["window"]),
+            tuple(body.get("room_offsets_c", ())),  # absent in older runs
         )
 
 

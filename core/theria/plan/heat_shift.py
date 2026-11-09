@@ -18,21 +18,24 @@ from core.theria.plan.house_model import (
     MAIN,
     SALON,
     ZONES,
+    ZoneCurve,
     cooling_c_per_h,
     next_delta_c,
     next_delta_closed_c,
 )
-from core.theria.plan.planner import Plan, PlanInputs, _Problem, plan
+from core.theria.plan.planner import HourPlan, Plan, PlanInputs, _Problem, plan
 from core.theria.plan.pump_model import PumpParams, flow_target
 from core.theria.plan.room_model import RoomParams, valve_open
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.shift_rules import (
     CLOSING,
     NORMAL,
+    OPENING,
     ShiftWindow,
     balanced,
     hold_window,
     thermostat_modes,
+    thermostat_target,
 )
 
 MIN_WINDOW_H = 1
@@ -106,10 +109,131 @@ def _adjustments(n: int, trades: list[Trade], window: int, step_c: float) -> np.
     return adjust
 
 
+def _runs(values: np.ndarray) -> list[tuple[int, int]]:
+    """(start, end) of each run of True."""
+    edges = np.flatnonzero(np.diff(np.concatenate([[0], values.astype(int), [0]])))
+    return list(zip(edges[::2].tolist(), edges[1::2].tolist(), strict=True))
+
+
+def _forecast_deltas(
+    problem: _Problem,
+    baseline: list[HourPlan],
+    adjust: np.ndarray,
+    modes: list[str],
+) -> dict[ZoneCurve, list[float]]:
+    """What the setpoint and the thermostats do to each zone against the flat setpoint, per hour."""
+    s = problem.settings
+    deltas = dict.fromkeys(ZONES, 0.0)
+    out: dict[ZoneCurve, list[float]] = {zone: [] for zone in ZONES}
+    for t, flat in enumerate(baseline):
+        rts = _setpoint(s, adjust[t])
+        t_out = problem.inputs.t_out_c[t]
+        pump_delta = float(
+            flow_target(problem.pump, t_out, rts)
+            - flow_target(problem.pump, t_out, s.rts_base_c)
+        )
+        base_flow = problem.floor_flow(t, s.rts_base_c)
+        target = s.lk_upper_c if modes[t] == OPENING else s.lk_setpoint_c
+        open_share = float(valve_open(flat.room_c_end, target))
+        deltas[MAIN] = (
+            next_delta_closed_c(
+                MAIN,
+                deltas[MAIN],
+                float(valve_open(flat.room_c_end, s.lk_setpoint_c)),
+                base_flow - flat.room_c_end,
+            )
+            if modes[t] == CLOSING
+            else next_delta_c(
+                MAIN,
+                deltas[MAIN],
+                problem.floor_flow(t, rts) - base_flow,
+                open_share,
+            )
+        )
+        deltas[SALON] = next_delta_c(SALON, deltas[SALON], pump_delta)
+        for zone in ZONES:
+            out[zone].append(deltas[zone])
+    return out
+
+
+def _setpoint(settings: PlanSettings, adjustment: float) -> float:
+    return float(
+        np.clip(
+            settings.rts_base_c + adjustment, settings.rts_min_c, settings.rts_max_c
+        )
+    )
+
+
+def _worth_storing(
+    problem: _Problem,
+    baseline: list[HourPlan],
+    adjust: np.ndarray,
+    window: int,
+) -> np.ndarray:
+    """The adjustments with only the buys whose heat is needed at the sell.
+
+    A buy stands only if it ends just before a sell, some room would end that sell under its closing
+    target without the buy, that room can be opened, and the raise reaches the floor. A sell that has
+    lost its buy must still beat the price the heat is bought back at afterwards.
+    """
+    s = problem.settings
+    inputs = problem.inputs
+    offsets = (
+        inputs.shift.room_offsets_c
+        if inputs.shift is not None and inputs.shift.room_offsets_c
+        else (0.0,)
+    )
+    sells = _runs(adjust < 0)
+    no_buys = np.minimum(adjust, 0.0)
+    modes = thermostat_modes(no_buys, inputs.hour_starts, None, s.shift_buy_max_gap_h)
+    rooms = [
+        flat.room_c_end + delta
+        for flat, delta in zip(
+            baseline,
+            _forecast_deltas(problem, baseline, no_buys, modes)[MAIN],
+            strict=True,
+        )
+    ]
+    out = no_buys.copy()
+    served: set[int] = set()
+    for start, end in _runs(adjust > 0):
+        following = next((k for k, sell in enumerate(sells) if sell[0] >= end), None)
+        if following is None or sells[following][0] - end > s.shift_buy_max_gap_h:
+            continue
+        last = sells[following][1] - 1
+        night = s.in_night(inputs.hour_starts[last])
+        closing_target = thermostat_target(CLOSING, night, None, s)
+        hour_night = s.in_night(inputs.hour_starts[start])
+        needed = any(
+            rooms[last] + offset < closing_target
+            and thermostat_target(OPENING, hour_night, rooms[start] + offset, s)
+            == s.lk_upper_c
+            for offset in offsets
+        )
+        if not needed:
+            continue
+        for t in range(start, end):
+            raised = _setpoint(s, adjust[t])
+            if problem.floor_flow(t, raised) > problem.floor_flow(t, s.rts_base_c):
+                out[t] = adjust[t]
+                served.add(following)
+    prices = inputs.price_sek_per_kwh
+    for k, (start, end) in enumerate(sells):
+        after = prices[end : end + window]
+        if k in served or len(after) == 0:
+            continue
+        if (
+            float(prices[start:end].mean() - after.mean())
+            <= s.shift_min_gain_sek_per_kwh
+        ):
+            out[start:end] = 0.0
+    return np.asarray(out)
+
+
 def plan_shift(
     inputs: PlanInputs, settings: PlanSettings, pump: PumpParams, room: RoomParams
 ) -> Plan:
-    """The base setpoint, lowered in the dearest windows and raised in the cheap ones before them."""
+    """The base setpoint, lowered in the dearest windows, raised before them where the heat is needed."""
     problem = _Problem(inputs, settings, pump, room)
     past = (
         np.zeros(0)
@@ -126,6 +250,9 @@ def plan_shift(
     adjust = balanced(
         _adjustments(len(series), trades, window, settings.shift_rts_c), series
     )[len(past) :]
+    baseline = problem.flat_plan(settings.rts_base_c)
+    if settings.plan_closes_valves:
+        adjust = _worth_storing(problem, baseline, adjust, window)
     committed: ShiftWindow | None = None
     if inputs.shift is not None:
         adjust, committed = hold_window(adjust, inputs.hour_starts, inputs.shift)
@@ -136,35 +263,11 @@ def plan_shift(
         if settings.plan_closes_valves
         else [NORMAL] * len(adjust)
     )
-    baseline = problem.flat_plan(settings.rts_base_c)
-    deltas = dict.fromkeys(ZONES, 0.0)
+    deltas = _forecast_deltas(problem, baseline, adjust, modes)
     hours = []
     for t, flat in enumerate(baseline):
-        rts = float(
-            np.clip(
-                settings.rts_base_c + adjust[t], settings.rts_min_c, settings.rts_max_c
-            )
-        )
-        t_out = inputs.t_out_c[t]
-        pump_delta = float(
-            flow_target(pump, t_out, rts)
-            - flow_target(pump, t_out, settings.rts_base_c)
-        )
-        floor_delta = problem.floor_flow(t, rts) - problem.floor_flow(
-            t, settings.rts_base_c
-        )
+        rts = _setpoint(settings, adjust[t])
         closed = modes[t] == CLOSING
-        deltas[MAIN] = (
-            next_delta_closed_c(
-                MAIN,
-                deltas[MAIN],
-                float(valve_open(flat.room_c_end, settings.lk_setpoint_c)),
-                problem.floor_flow(t, settings.rts_base_c) - flat.room_c_end,
-            )
-            if closed
-            else next_delta_c(MAIN, deltas[MAIN], floor_delta)
-        )
-        deltas[SALON] = next_delta_c(SALON, deltas[SALON], pump_delta)
         guard = (
             committed.ended_by
             if committed is not None and flat.start < committed.end
@@ -184,20 +287,30 @@ def plan_shift(
         }
         if guard is not None:
             reason["guard"] = guard
+        hour = problem.hour_plan(
+            t,
+            rts,
+            flat.room_c_end + deltas[MAIN][t],
+            flat.slab_c_end,
+            reason,
+            tail=False,
+            closed=closed,
+        )
+        energy = hour.energy_kwh
+        if closed:
+            # closing saves nothing on loops that would have been closed anyway
+            share = float(valve_open(flat.room_c_end, settings.lk_setpoint_c))
+            energy = problem.energy_kwh(t, rts) * (
+                1.0 - (1.0 - settings.closed_share) * share
+            )
         hours.append(
             replace(
-                problem.hour_plan(
-                    t,
-                    rts,
-                    flat.room_c_end + deltas[MAIN],
-                    flat.slab_c_end,
-                    reason,
-                    tail=False,
-                    closed=closed,
-                ),
+                hour,
+                energy_kwh=energy,
+                energy_cost_sek=hour.price_sek_per_kwh * energy,
                 thermostat=modes[t],
-                main_delta_c=deltas[MAIN],
-                salon_delta_c=deltas[SALON],
+                main_delta_c=deltas[MAIN][t],
+                salon_delta_c=deltas[SALON][t],
             )
         )
     violations = sum(

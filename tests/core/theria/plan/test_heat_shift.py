@@ -197,7 +197,7 @@ def test_a_finished_window_no_longer_holds(settings):
 
 
 def test_the_thermostat_is_the_guard_of_a_cold_room_so_the_sell_goes_on(settings):
-    result, rts = planned(settings, at_three_pm(ShiftReadings(17.9)))
+    _, rts = planned(settings, at_three_pm(ShiftReadings(17.9)))
     assert rts[:5] == [17.0] * 5
 
 
@@ -247,7 +247,9 @@ def test_a_cut_is_paid_for_by_as_much_buying_before_it(settings):
 
 
 def closed_energy(settings, closes):
-    result, _ = planned(replace(settings, plan_closes_valves=closes), inputs_for(MONDAY))
+    result, _ = planned(
+        replace(settings, plan_closes_valves=closes), inputs_for(MONDAY)
+    )
     return next(
         h.energy_kwh for h in result.hours if h.reason["binding"] == "shift_sell"
     )
@@ -257,3 +259,102 @@ def test_a_closed_sell_hour_still_uses_the_measured_share_of_the_energy(settings
     assert closed_energy(settings, True) == pytest.approx(
         0.6 * closed_energy(settings, False)
     )
+
+
+# A buy only where the heat will be needed at the sell
+
+
+CHEAP_THEN_DEAR = [1.0] * 5 + [6.0] * 5 + [3.0] * 10
+
+
+def closing(settings):
+    return replace(settings, plan_closes_valves=True)
+
+
+def with_room(inputs, room_c, offsets=()):
+    return replace(
+        inputs,
+        initial=RoomState(room_c, room_c + 8.0, 0.0),
+        shift=ShiftReadings(room_c, None, None, offsets),
+    )
+
+
+def buys(result):
+    return [h.reason["binding"] == "shift_buy" for h in result.hours]
+
+
+def test_a_buy_far_from_its_sell_is_dropped_and_the_sell_stays(settings):
+    result, _ = planned(closing(settings), with_room(inputs_for(MONDAY), 19.0))
+    assert not any(buys(result))
+    assert any(h.reason["binding"] == "shift_sell" for h in result.hours)
+
+
+def test_a_buy_right_before_a_sell_stands_when_the_room_needs_it(settings):
+    result, _ = planned(closing(settings), with_room(inputs_for(CHEAP_THEN_DEAR), 18.6))
+    assert all(buys(result)[:5])
+    assert result.hours[0].thermostat == "opening"
+
+
+def test_a_warm_house_needs_no_buy_but_still_sells(settings):
+    result, rts = planned(
+        closing(settings), with_room(inputs_for(CHEAP_THEN_DEAR), 21.5)
+    )
+    assert not any(buys(result))
+    assert min(rts) == 17.0
+
+
+def test_one_cold_room_is_enough_to_buy(settings):
+    result, _ = planned(
+        closing(settings),
+        with_room(inputs_for(CHEAP_THEN_DEAR), 19.6, (-1.0, 1.0)),
+    )
+    assert all(buys(result)[:5])
+
+
+def test_a_room_too_close_to_the_upper_limit_cannot_be_opened(settings):
+    result, _ = planned(
+        closing(replace(settings, lk_upper_c=19.0, lk_opening_margin_c=0.5)),
+        with_room(inputs_for(CHEAP_THEN_DEAR), 18.6),
+    )
+    assert not any(buys(result))
+
+
+def test_a_raise_that_cannot_reach_the_floor_is_dropped(settings):
+    result, _ = planned(
+        closing(settings), with_room(inputs_for(CHEAP_THEN_DEAR, t_out=-12.0), 17.5)
+    )
+    assert not any(buys(result))
+
+
+def test_a_sell_without_its_buy_must_beat_the_rebound_price(settings):
+    prices = [1.0] * 5 + [6.0] * 5 + [5.8] * 10
+    _, rts = planned(closing(settings), with_room(inputs_for(prices), 21.5))
+    assert 17.0 not in rts
+
+
+def closed_energy_at(settings, room):
+    closes = planned(closing(settings), with_room(inputs_for(MONDAY), room))[0]
+    open_ = planned(settings, with_room(inputs_for(MONDAY), room))[0]
+
+    def pick(result):
+        return next(
+            h.energy_kwh for h in result.hours if h.reason["binding"] == "shift_sell"
+        )
+
+    return pick(closes), pick(open_)
+
+
+def test_a_warm_house_shows_no_saving_from_closing_loops_that_are_closed(settings):
+    closed, open_ = closed_energy_at(settings, 21.5)
+    assert closed == pytest.approx(open_)
+
+
+def test_a_cool_house_shows_the_measured_saving_from_closing(settings):
+    closed, open_ = closed_energy_at(settings, 18.0)
+    assert closed == pytest.approx(0.6 * open_, rel=0.15)
+
+
+def test_a_raise_does_not_warm_a_room_whose_loops_are_closed(settings):
+    result, _ = planned(settings, with_room(inputs_for(CHEAP_THEN_DEAR), 21.5))
+    assert result.hours[4].main_delta_c == pytest.approx(0.0, abs=1e-6)
+    assert result.hours[4].salon_delta_c > 0

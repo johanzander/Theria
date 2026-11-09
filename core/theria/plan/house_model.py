@@ -34,13 +34,15 @@ def cooling_c_per_h(zone: ZoneCurve, room_c: float, t_out_c: float) -> float:
     return max(0.0, zone.loss_per_h * (room_c - t_out_c))
 
 
-def next_delta_c(zone: ZoneCurve, delta_c: float, flow_delta_c: float) -> float:
-    """The zone's difference from the flat setpoint one hour on, given the flow's difference from it."""
-    return (
-        delta_c
-        + zone.gain_per_h * flow_delta_c
-        - (zone.gain_per_h + zone.loss_per_h) * delta_c
-    )
+def next_delta_c(
+    zone: ZoneCurve, delta_c: float, flow_delta_c: float, open_share: float = 1.0
+) -> float:
+    """The zone's difference from the flat setpoint one hour on, given the flow's difference from it.
+
+    The flow reaches the room only through what is open: `open_share` of the loops.
+    """
+    gain = zone.gain_per_h * open_share
+    return delta_c + gain * flow_delta_c - (gain + zone.loss_per_h) * delta_c
 
 
 def next_delta_closed_c(

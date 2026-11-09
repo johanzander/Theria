@@ -46,11 +46,14 @@ The plan has one value per hour. Replanning every 15 minutes corrects it from fr
 3. **Balance.** Unmatched hours are given up, the least valuable first, until at most 10 % of the moved hours are unmatched.
    Heat is moved, not cut.
 4. **Setpoint per hour.** Base, base minus `shift_rts_c` in a sell, base plus `shift_rts_c` in a buy. A sell wins an overlap.
-5. **Thermostat per hour.** A sell is `closing`: the thermostat stands at the room's lower limit plus `lk_close_offset_c`, so the
+5. **A buy only where the heat is needed.** Moving heat to cheaper hours is not a goal in itself. A buy stands only if it ends just before a sell and some room would
+   otherwise end the sell under its closing target ([design and review](superpowers/specs/2026-11-09-buy-only-when-heat-can-be-stored.md)). A sell left without a buy must
+   beat the price of the hours after it. On most days this leaves a sell with nothing before it.
+6. **Thermostat per hour.** A sell is `closing`: the thermostat stands at the room's lower limit plus `lk_close_offset_c`, so the
    loops close and reopen by themselves if the room falls that far. A buy that ends at most `shift_buy_max_gap_h` before a sell is
    `opening`: the thermostat stands at `lk_upper_c`, unless the room is within `lk_opening_margin_c` of it. A buy further from its sell
-   leaves the thermostat alone: the heat is gone before the sell. Otherwise `normal`, at `lk_base_c`.
-6. **Consequences for each zone** are worked out against the flat setpoint:
+   does not stand (step 5). Otherwise `normal`, at `lk_base_c`.
+7. **Consequences for each zone** are worked out against the flat setpoint:
 
    ```text
    delta(next) = delta + gain * flow_delta - (gain + loss) * delta

@@ -104,13 +104,13 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
 
       <Panel
         title="Room temperature"
-        description="Dark: the measured mean of the ground-floor rooms. Blue: what the plan expected the room to be, from the plan that was applied (solid), and what it expects from now on (dashed, in the shaded area). Dashed grey: what the model expects with the flat setpoint. Thin coloured lines: each room. Dashed red: the comfort floor. Orange: the room limit, where the LK valves close. Green: the comfort target. Plan and measurement close together means the model is right."
+        description="Dark: the measured mean of the ground-floor rooms. Blue: what the plan expected the room to be, from the plan that was applied (solid), and what it expects from now on (dashed, in the shaded area). Dashed grey: what the model expects with the flat setpoint. Thin coloured lines: each room. Dashed red: the comfort floor. Orange: the normal thermostat target, where the LK loops close. Green: the comfort target. Plan and measurement close together means the model is right."
       >
         <Chart rows={roomRows} axisRows={rows} height={260} unitFor={() => UNITS.temp}>
           <YAxis domain={[low, high]} unit="°" />
           {predictedArea(rows)}
           <Line type="stepAfter" dataKey="floor" name="Floor" stroke={C.floor} strokeDasharray="4 3" dot={false} />
-          {limits.ceiling !== null && <ReferenceLine y={limits.ceiling} stroke={C.limit} strokeDasharray="6 3" label="limit" />}
+          {limits.ceiling !== null && <ReferenceLine y={limits.ceiling} stroke={C.limit} strokeDasharray="6 3" label="thermostat" />}
           {limits.target !== null && <ReferenceLine y={limits.target} stroke={C.target} strokeDasharray="2 4" label="target" />}
           {thermostats.map((n, i) => (
             <Line key={n} type="monotone" dataKey={`room_${n}`} name={n.replace(/^lk_/, '')} stroke={ROOM_COLOURS[i % ROOM_COLOURS.length]} strokeWidth={1} dot={false} />

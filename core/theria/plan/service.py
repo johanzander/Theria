@@ -854,7 +854,13 @@ class PlanService:
     def _shift_readings(self, room_c: float) -> ShiftReadings | None:
         if self._settings.plan_strategy != "heat_shift":
             return None
-        return ShiftReadings(room_c, self._salon_reading(), self._shift_window)
+        rooms = [
+            r
+            for r in (self._room_c(e) for e in self._settings.room_thermostat_entities)
+            if r is not None
+        ]
+        offsets = tuple(r - float(np.mean(rooms)) for r in rooms)
+        return ShiftReadings(room_c, self._salon_reading(), self._shift_window, offsets)
 
     def _keep_shift_window(self, window: ShiftWindow | None) -> None:
         if window == self._shift_window:
