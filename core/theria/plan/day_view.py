@@ -170,7 +170,9 @@ def build_day_view(
                 flow_planned_c=hour_plan.flow_target_c,
                 flow_baseline_c=baseline.flow_target_c,
                 reason=hour_plan.reason.get("binding"),
-                decision={
+                decision=None
+                if hour_plan.reason.get("alternatives") is None
+                else {
                     "alternatives": hour_plan.reason["alternatives"],
                     "held_by_commitment": hour_plan.reason["held_by_commitment"],
                 },

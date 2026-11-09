@@ -1135,8 +1135,9 @@ class PlanService:
                     flow_c=hour.flow_target_c,
                     baseline_flow_c=flat.flow_target_c,
                     binding=hour.reason.get("binding"),
-                    alternatives=hour.reason["alternatives"],
-                    held_by_commitment=hour.reason["held_by_commitment"],
+                    # only the optimizer weighs alternatives
+                    alternatives=hour.reason.get("alternatives"),
+                    held_by_commitment=hour.reason.get("held_by_commitment"),
                 )
             )
         except OSError:

@@ -91,3 +91,18 @@ def test_a_run_replays_with_what_the_guards_read(settings):
     assert [h.rts_c for h in replay(run).hours] == [
         h.rts_c for h in snapshot.plan.hours
     ]
+
+
+def test_a_shift_plan_is_recorded_and_shown_for_the_day(settings, tmp_path):
+    from core.theria.plan.plan_record import PlanRecordStore
+
+    service = make_service(
+        shifting(settings),
+        prices=feed_periods(days=3),
+        clock=lambda: EVENING,
+    )
+    service._plan_record = PlanRecordStore(str(tmp_path / "record.jsonl"))
+    service.run_once()
+    view = service.day_view(EVENING.date())
+    later = [h for h in view["hours"] if h.get("rts_planned") is not None]
+    assert later
