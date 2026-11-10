@@ -27,6 +27,9 @@ MAX_ENERGY_KWH_PER_HOUR = 5.0  # AirX 170 draws about 4.4-5.8 kW at full speed (
 FLOW_PLAUSIBLE_C = (15.0, 65.0)
 OUTDOOR_PLAUSIBLE_C = (-35.0, 45.0)  # the H60 outdoor sensor has read 59.2 C
 MAX_AUX_KWH_PER_HOUR = 9.0  # the electric heater (AirBox E9) is at most 9 kW
+MAX_HEAT_KWH_PER_HOUR = (
+    30.0  # compressor heat plus the heater at most; anything above is a counter spike
+)
 SETPOINT_FFILL_HOURS = 24 * 60  # setpoints are only logged when they change
 SMALL_GAP_HOURS = 3
 MIN_OVERLAP_HOURS = 168  # a week of both sensors to know their usual difference
@@ -119,6 +122,9 @@ class CalibrationInputs:
     flow_c: FloatArray
     lk_setpoint_c: FloatArray
     sun_wm2: FloatArray
+    heat_kwh: (
+        FloatArray  # heat the pump supplied to the heating per hour (its own counter)
+    )
 
     def tail(self, n_hours: int) -> "CalibrationInputs":
         """The last `n_hours` hours."""
@@ -135,6 +141,7 @@ class CalibrationInputs:
             flow_c=self.flow_c[-n_hours:],
             lk_setpoint_c=self.lk_setpoint_c[-n_hours:],
             sun_wm2=self.sun_wm2[-n_hours:],
+            heat_kwh=self.heat_kwh[-n_hours:],
         )
 
 
@@ -267,6 +274,13 @@ def load_calibration_inputs(
         MAX_AUX_KWH_PER_HOUR,
         SMALL_GAP_HOURS,
     )
+    heat_kwh = hourly_counter_energy(
+        source.series(settings.heat_counter_entity, start, end),
+        start,
+        n,
+        MAX_HEAT_KWH_PER_HOUR,
+        SMALL_GAP_HOURS,
+    )
     room_c = _mean_of(rooms)
     history = (
         _mean_of(
@@ -317,4 +331,5 @@ def load_calibration_inputs(
         ),
         lk_setpoint_c=_mean_of(lk),
         sun_wm2=sun,
+        heat_kwh=heat_kwh,
     )

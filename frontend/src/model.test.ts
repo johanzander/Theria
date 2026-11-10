@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   planRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, planSaving, tabHref,
-  timelineRows, quarterRows, hasData, dayStatus, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted, shiftWindows, combinedNeed, roomColour,
+  timelineRows, quarterRows, hasData, dayStatus, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted, shiftWindows, roomColour,
   type PlanResponse, type DayHour, type DayView, type HourRow,
 } from './model'
 
@@ -186,13 +186,13 @@ describe('tooltip formatting', () => {
 
 const dayHour = (start: string, extra: Partial<DayHour> = {}): DayHour => ({
   start, past: false, price_sek_per_kwh: 1, price_quarters: [1, 1, 1, 1], floor_c: 18,
-  salon_measured: null, salon_planned: null, need_ground_kw: null, need_salon_kw: null, delivered_ground_kw: null, flow_measured_c: null, flow_target_c: null, thermostat: null, thermostat_target_c: null, loops_expected: null,
+  salon_measured: null, salon_planned: null, need_ground_kw: null, need_salon_kw: null, delivered_ground_kw: null, flow_measured_c: null, flow_target_c: null, thermostat: null, thermostat_target_c: null, loops_expected: null, sections: {}, need_house_kw: null, house_pump_kw: null, heat_measured_kw: null,
   rts_measured: null, rts_planned: 18, rts_baseline: 18, room_measured: null, room_planned: 19.5, room_baseline: 19.5,
   energy_measured_kwh: null, energy_planned_kwh: 1.5, energy_baseline_kwh: 2, saving_planned_sek: 0.5, saving_measured_sek: null,
   flow_planned_c: 35, flow_baseline_c: 36, reason: 'price_trade_off', loops_open: {}, thermostats: {}, ...extra,
 })
 
-const day = (date: string, now: string, hours: DayHour[]): DayView => ({ day: date, now, loops_total: {}, hours })
+const day = (date: string, now: string, hours: DayHour[]): DayView => ({ day: date, now, loops_total: {}, sections: [], house: null, hours })
 
 describe('timelineRows', () => {
   const today = day('2026-10-14', '2026-10-14T01:00:00+00:00', [
@@ -342,15 +342,6 @@ describe('shift windows', () => {
   })
   it('runs to the last hour', () => {
     expect(shiftWindows([row('a', 'shift_sell'), row('b', 'shift_sell')])).toEqual([{ kind: 'sell', x1: 'a', x2: 'b' }])
-  })
-})
-
-describe('combined need', () => {
-  it('adds the zones', () => {
-    expect(combinedNeed(1.5, 0.5)).toBe(2)
-  })
-  it('is unknown when a zone is unknown', () => {
-    expect(combinedNeed(null, 0.5)).toBeNull()
   })
 })
 

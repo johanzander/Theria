@@ -137,7 +137,7 @@ export function Overview() {
       <PumpDiagram />
       <DayNav day={day} onChange={setDay} />
       {rows.length > 0 ? (
-        <DayCharts rows={rows} views={views} loopsTotal={first.data?.loops_total ?? {}} limits={limitsOf(settings.data)} />
+        <DayCharts rows={rows} views={views} loopsTotal={first.data?.loops_total ?? {}} sections={first.data?.sections ?? []} house={first.data?.house ?? null} limits={limitsOf(settings.data)} />
       ) : (
         <p>{dayStatus(first.loaded, first.data !== null, 'Nothing to show for this day yet.')}</p>
       )}

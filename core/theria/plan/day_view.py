@@ -5,16 +5,19 @@ have passed carry the measured setpoint and room temperature, the hours from now
 plan; prices come from the price feed for both, hourly and per quarter.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import numpy as np
 
+from core.theria.plan.house_loss import HouseLoss, house_need_kw, house_pump_kw
 from core.theria.plan.outcomes import OutcomeInputs
 from core.theria.plan.plan_model import HourPlan, Plan
 from core.theria.plan.plan_record import PlanRecord
 from core.theria.plan.prices import QUARTERS_PER_HOUR, PricePeriod
+from core.theria.plan.room_sections import RoomSection, sections_meta
 from core.theria.plan.series import hour_floor
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.shift_rules import thermostat_target
@@ -70,6 +73,16 @@ def _saving(
     return float(price * (baseline_kwh - kwh))
 
 
+def _house(house: HouseLoss | None, room_c: float, t_out_c: float) -> dict[str, Any]:
+    """The whole house's loss and what the pump should supply for it; None without a fit."""
+    if house is None:
+        return {"need_house_kw": None, "house_pump_kw": None}
+    return {
+        "need_house_kw": house_need_kw(house, room_c, t_out_c),
+        "house_pump_kw": house_pump_kw(house, room_c, t_out_c),
+    }
+
+
 def _expected_zones(
     hour: HourPlan, settings: PlanSettings, night: bool, salon_now_c: float | None
 ) -> dict[str, Any]:
@@ -105,6 +118,8 @@ def build_day_view(
     records: dict[datetime, PlanRecord] | None = None,
     zones: ZoneMeasured | None = None,
     salon_now_c: float | None = None,
+    sections: Sequence[RoomSection] = (),
+    house: HouseLoss | None = None,
 ) -> dict[str, Any]:
     """`measured` covers the hours before now; None when it could not be read.
 
@@ -161,6 +176,10 @@ def build_day_view(
             "thermostat": None,
             "thermostat_target_c": None,
             "loops_expected": None,
+            "sections": {},
+            "need_house_kw": None,
+            "house_pump_kw": None,
+            "heat_measured_kw": None,
         }
         if past and hour in records:
             row["thermostat"] = records[hour].thermostat
@@ -190,9 +209,19 @@ def build_day_view(
             )
             t_out = float(measured.t_out_c[i])
             row["need_ground_kw"] = ground_need_kw(float(measured.room_c[i]), t_out)
+            row.update(_house(house, float(measured.room_c[i]), t_out))
             if zones is not None and hour in zone_index:
                 j = zone_index[hour]
+                row["sections"] = {
+                    sid: {
+                        "rooms": {n: _known(v[j]) for n, v in m.rooms.items()},
+                        "setpoints": {n: _known(v[j]) for n, v in m.setpoints.items()},
+                        "demand": {n: _known(v[j]) for n, v in m.demand.items()},
+                    }
+                    for sid, m in zones.sections.items()
+                }
                 row["salon_measured"] = _known(zones.salon_c[j])
+                row["heat_measured_kw"] = _known(zones.heat_kwh[j])
                 row["flow_measured_c"] = _known(zones.flow_c[j])
                 row["flow_target_c"] = _known(zones.flow_target_c[j])
                 row["need_salon_kw"] = salon_need_kw(float(zones.salon_c[j]), t_out)
@@ -237,6 +266,11 @@ def build_day_view(
                 flow_baseline_c=baseline.flow_target_c,
                 reason=hour_plan.reason.get("binding"),
                 **_expected_zones(hour_plan, settings, night, salon_now_c),
+                **_house(
+                    house,
+                    hour_plan.room_c_end + hour_plan.sun_swing_c,
+                    hour_plan.t_out_c,
+                ),
             )
         row["saving_planned_sek"] = _saving(
             price, row["energy_baseline_kwh"], row["energy_planned_kwh"]
@@ -251,5 +285,7 @@ def build_day_view(
         "loops_total": {
             room: len(entities) for room, entities in settings.room_actuators.items()
         },
+        "sections": sections_meta(sections),
+        "house": None if house is None else house.__dict__,
         "hours": rows,
     }

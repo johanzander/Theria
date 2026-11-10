@@ -61,3 +61,10 @@ input.setting { width: 7em; padding: 3px 6px; border: 1px solid #b8c1cc; border-
 input.setting.changed { border-color: #b54708; background: #fffbeb; }
 tr.group td { background: #f1f3f5; font-weight: 600; font-size: .8rem; color: #3e4c59; text-transform: uppercase; }
 td.desc { color: #52606d; max-width: 60ch; }
+
+.chart-heading {
+  margin: 14px 0 2px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334e68;
+}

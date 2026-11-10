@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
+from core.theria.plan.day_view import day_hours
 from core.theria.plan.outcomes import OutcomeInputs
+from core.theria.plan.room_sections import SectionMeasured
 from core.theria.plan.series import hourly_grid
 from core.theria.plan.zone_heat import (
     ZoneMeasured,
@@ -107,6 +109,7 @@ def test_the_salon_is_the_mean_of_its_points(settings):
         source,
         settings,
         (("climate.vantsidan", "current_temperature"), ("sensor.floor", None)),
+        (),
         START,
         START + timedelta(hours=2),
     )
@@ -130,7 +133,7 @@ def flow_with_valve(settings, flow, valve, hours=2):
         {settings.flow_measured_entity: flow, settings.heating_mode_entity: valve}
     )
     return load_zone_measurements(
-        source, settings, (), START, START + timedelta(hours=hours)
+        source, settings, (), (), START, START + timedelta(hours=hours)
     )
 
 
@@ -154,7 +157,7 @@ def test_the_pumps_own_target_is_kept_between_reports(settings):
         {settings.flow_setpoint_entity: [(10, 38.0), (130, 36.0), (140, 0.0)]}
     )
     target = load_zone_measurements(
-        source, settings, (), START, START + timedelta(hours=3)
+        source, settings, (), (), START, START + timedelta(hours=3)
     ).flow_target_c
     assert target == pytest.approx([38.0, 38.0, 36.0])
 
@@ -181,14 +184,16 @@ def measured(start, stop):
 def zones(start, stop):
     n = int((stop - start).total_seconds() // 3600)
     return ZoneMeasured(
-        hourly_grid(start, n), np.full(n, 37.0), np.full(n, 19.8), np.full(n, 38.0)
+        hourly_grid(start, n),
+        np.full(n, 37.0),
+        np.full(n, 19.8),
+        np.full(n, 38.0),
+        np.full(n, 6.0),
     )
 
 
 def shifting(settings):
-    return replace(
-        settings, rts_base_c=18.0, plan_closes_valves=True
-    )
+    return replace(settings, rts_base_c=18.0, plan_closes_valves=True)
 
 
 def view(settings):
@@ -214,6 +219,58 @@ def test_a_past_hour_shows_the_salon_and_the_flow_as_measured(settings):
     # no actuators are configured in this test, so nothing is known to be open
     assert past["delivered_ground_kw"] is None
     assert past["thermostat_target_c"] == 19.5
+
+
+def test_a_past_hour_shows_each_sections_rooms_and_thermostats(settings):
+    def with_sections(start, stop):
+        base = zones(start, stop)
+        n = len(base.hours)
+        guest = SectionMeasured(
+            rooms={"Kök": np.full(n, 20.1)},
+            setpoints={"Kök": np.full(n, 20.0)},
+            demand={"Kök": np.full(n, np.nan)},
+        )
+        return replace(base, sections={"guest": guest})
+
+    service, *_ = make(
+        shifting(settings), actuals_loader=measured, zone_loader=with_sections
+    )
+    run_cycle(service)
+    hours = service.day_view(LOCAL_DAY)["hours"]
+    past = next(h for h in hours if h["past"])
+    assert past["sections"] == {
+        "guest": {
+            "rooms": {"Kök": 20.1},
+            "setpoints": {"Kök": 20.0},
+            "demand": {"Kök": None},
+        }
+    }
+    assert next(h for h in hours if not h["past"])["sections"] == {}
+
+
+def test_the_whole_house_is_shown_from_its_fit_and_the_heat_counter(settings):
+    from core.theria.plan.day_view import build_day_view
+    from core.theria.plan.house_loss import HouseLoss
+
+    house = HouseLoss(w_per_k=700.0, free_kw=3.0, days=160, rmse_kw=1.1)
+    first = day_hours(LOCAL_DAY, settings.timezone)[0]
+    now = first + timedelta(hours=6)
+    view = build_day_view(
+        LOCAL_DAY,
+        now,
+        settings,
+        [],
+        None,
+        measured(first, now),
+        zones=zones(first, now),
+        house=house,
+    )
+    past = view["hours"][0]
+    assert past["need_house_kw"] == pytest.approx(0.7 * (19.2 - 5.0))
+    assert past["house_pump_kw"] == pytest.approx(0.7 * (19.2 - 5.0) - 3.0)
+    assert past["heat_measured_kw"] == 6.0
+    assert view["house"]["w_per_k"] == 700.0
+    assert build_day_view(LOCAL_DAY, now, settings, [], None, None)["house"] is None
 
 
 def test_a_coming_hour_shows_what_the_plan_expects(settings):

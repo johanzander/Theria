@@ -19,6 +19,7 @@ from core.theria.plan.daily_room import (
     fit_daily_room,
     room_params_from_fit,
 )
+from core.theria.plan.house_loss import HouseLoss, fit_house_loss
 from core.theria.plan.night_drift import NightDrift, fit_night_drift
 from core.theria.plan.pump_model import (
     DEFAULT_FLOW_PER_RTS,
@@ -91,6 +92,10 @@ class FittedModels:
     night_drift_error: str | None = None
     warmup: WarmupFit | None = None  # measured warm-up speed against the model
     warmup_error: str | None = None
+    house: HouseLoss | None = (
+        None  # the whole house's loss, from the pump's heat counter
+    )
+    house_error: str | None = None
 
 
 def fit_pump(inputs: CalibrationInputs) -> PumpFit:
@@ -280,8 +285,19 @@ class Calibrator:
             )
         except ModelFitError as e:
             warmup, warmup_error = None, f"{type(e).__name__}: {e}"
+        try:
+            house, house_error = (
+                fit_house_loss(
+                    inputs.hours, inputs.heat_kwh, inputs.room_c, inputs.t_out_c
+                ),
+                None,
+            )
+        except ModelFitError as e:  # the dashboard then shows the zones only
+            house, house_error = None, f"{type(e).__name__}: {e}"
         return FittedModels(
             pump=pump,
+            house=house,
+            house_error=house_error,
             room=room,
             warmup=warmup,
             warmup_error=warmup_error,

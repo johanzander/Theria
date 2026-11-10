@@ -2,8 +2,9 @@ import {
   Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import {
-  axisLabel, axisTicks, firstPredicted, MODE_LABEL, quarterRows, rangeLabel, roomColour, shiftWindows, splitPredicted, tooltipFormatter, UNITS,
-  type DayView, type HourRow, type ShiftWindow, type Unit,
+  axisLabel, axisTicks, firstPredicted, MODE_LABEL, quarterRows, rangeLabel, roomColour, sectionColour, sectionRows, shiftWindows, splitPredicted,
+  tooltipFormatter, UNITS,
+  type DayView, type HouseLoss, type HourRow, type Section, type ShiftWindow, type Unit,
 } from '../model'
 import { Panel } from '../ui'
 
@@ -66,8 +67,104 @@ export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows 
   )
 }
 
-export function DayCharts({ rows, views, loopsTotal, limits }: {
-  rows: HourRow[]; views: (DayView | null)[]; loopsTotal: Record<string, number>
+/** The plan's own zones always get a chart, even when the room sections are not configured. */
+export function withPlanZones(sections: Section[]): Section[] {
+  const out = [...sections]
+  if (!out.some((s) => s.id === 'salon')) out.unshift({ id: 'salon', name: 'Salong', rooms: [], thermostats: [] })
+  if (!out.some((s) => s.id === 'ground')) out.splice(1, 0, { id: 'ground', name: 'Bottenvåning', rooms: [], thermostats: [] })
+  return out
+}
+
+function yRange(values: (number | null | undefined)[]): [number, number] {
+  const known = values.filter((v): v is number => typeof v === 'number')
+  if (known.length === 0) return [18, 22]
+  return [Math.floor(Math.min(...known)), Math.ceil(Math.max(...known))]
+}
+
+/** One section's rooms, measured, with its thermostats' setpoints; the ground floor and the salon also carry the plan. */
+function SectionRoomChart({ section, rows, windows, now, dayStarts, limits }: {
+  section: Section; rows: HourRow[]; windows: ShiftWindow[]; now: string | undefined; dayStarts: string[]; limits: { target: number | null }
+}) {
+  const ground = section.id === 'ground'
+  const salon = section.id === 'salon'
+  // Without configured rooms the ground floor falls back to the LK thermostats' own readings.
+  const lkRooms = ground && section.rooms.length === 0
+    ? Object.keys(rows.find((r) => Object.keys(r.thermostats).length > 0)?.thermostats ?? {})
+    : []
+  const data = splitPredicted(
+    sectionRows(rows, section).map((r) => ({
+      ...r,
+      ...Object.fromEntries(lkRooms.map((n) => [`lk_${n}`, r.thermostats[n]?.room_c ?? null])),
+    })),
+    ['roomPlanned'],
+  )
+  const planValues = rows.flatMap((r) => ground
+    ? [r.roomMeasured, r.roomPlanned, r.floor, r.thermostatTarget]
+    : salon ? [r.salonMeasured, r.salonPlanned] : [])
+  const [low, high] = yRange([
+    ...planValues,
+    ...data.flatMap((r) => [...section.rooms.map((n) => r[`room_${n}`]), ...section.thermostats.map((n) => r[`set_${n}`])]),
+    ...data.flatMap((r) => lkRooms.map((n) => r[`lk_${n}`] as number | null)),
+  ])
+  return (
+    <>
+      <h3 className="chart-heading">{section.name}</h3>
+      <Chart rows={data} axisRows={rows} height={240} unitFor={() => UNITS.temp}>
+        <YAxis domain={[low, high]} tickCount={high - low + 1} allowDecimals={false} unit="°" />
+        {predictedArea(rows)}
+        {windowAreas(windows)}
+        {ground && <Line type="stepAfter" dataKey="floor" name="Floor" stroke={C.floor} strokeDasharray="4 3" dot={false} />}
+        {ground && <Line type="stepAfter" dataKey="thermostatTarget" name="LK target" stroke={C.limit} strokeWidth={1.5} dot={false} connectNulls />}
+        {ground && limits.target !== null && <ReferenceLine y={limits.target} stroke={C.target} strokeDasharray="2 4" label="target" />}
+        {section.thermostats.map((n) => (
+          <Line key={`set-${n}`} type="stepAfter" dataKey={`set_${n}`} name={`${n}, setpoint`} stroke={sectionColour(section, n)} strokeWidth={1}
+            strokeDasharray="2 3" dot={false} />
+        ))}
+        {section.rooms.map((n) => (
+          <Line key={n} type="monotone" dataKey={`room_${n}`} name={n} stroke={sectionColour(section, n)} strokeWidth={1.25} dot={false} />
+        ))}
+        {lkRooms.map((n) => (
+          <Line key={n} type="monotone" dataKey={`lk_${n}`} name={n.replace(/^lk_/, '')} stroke={roomColour(n)} strokeWidth={1} dot={false} />
+        ))}
+        {ground && <Line type="monotone" dataKey="roomMeasured" name="LK rooms, measured" stroke={C.measured} strokeWidth={2.5} dot={false} />}
+        {ground && <Line type="monotone" dataKey="roomPlanned" name="LK rooms, expected (applied)" stroke={C.plan} strokeWidth={2} dot={false} />}
+        {ground && <Line type="monotone" dataKey="roomPlannedPredicted" name="LK rooms, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />}
+        {salon && <Line type="monotone" dataKey="salonMeasured" name="Salon, measured" stroke={C.measured} strokeWidth={2.5} dot={false} />}
+        {salon && <Line type="monotone" dataKey="salonPlanned" name="Salon, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />}
+        {guides(now, dayStarts)}
+      </Chart>
+    </>
+  )
+}
+
+/** Each radiator thermostat's heat demand in a section, in percent. */
+function SectionDemandChart({ section, rows, windows, now, dayStarts }: {
+  section: Section; rows: HourRow[]; windows: ShiftWindow[]; now: string | undefined; dayStarts: string[]
+}) {
+  return (
+    <>
+      <h3 className="chart-heading">{section.name}, heat demand</h3>
+      <Chart rows={sectionRows(rows, section)} axisRows={rows} height={150} unitFor={() => UNITS.percent}>
+        <YAxis domain={[0, 100]} unit=" %" />
+        {predictedArea(rows)}
+        {windowAreas(windows)}
+        {section.thermostats.map((n) => (
+          <Line key={n} type="stepAfter" dataKey={`demand_${n}`} name={n} stroke={sectionColour(section, n)} strokeWidth={1.5} dot={false} />
+        ))}
+        {guides(now, dayStarts)}
+      </Chart>
+    </>
+  )
+}
+
+/** What the heating need chart says about the whole-house line, with the fit's own numbers. */
+export function houseNote(house: HouseLoss | null): string {
+  if (house === null) return 'The whole house is not shown: its fit to the heat counter is missing or was rejected (see Models).'
+  return `Dark: the whole house's loss, ${house.w_per_k.toFixed(0)} W/K times the LK rooms' temperature above the outdoor, fitted to the pump's own heat counter (hot water left out) on ${house.days} whole days below 12 °C. The same fit puts the free heat at ${house.free_kw.toFixed(1)} kW (household electricity, people, sun, the stove), so dashed grey is what the pump should give, the loss less that; grey bars are what its heat counter shows each hour. A day's mean is about ${house.rmse_kw.toFixed(1)} kW off the fit. Between the zones and the whole house are the rooms without a heat demand analysis: the upper floor, the kitchen and large hall, and the guest house if the pump heats it.`
+}
+
+export function DayCharts({ rows, views, loopsTotal, sections, house, limits }: {
+  rows: HourRow[]; views: (DayView | null)[]; loopsTotal: Record<string, number>; sections: Section[]; house: HouseLoss | null
   limits: { target: number | null }
 }) {
   const quarters = splitPredicted(quarterRows(views), ['rtsPlanned'])
@@ -76,14 +173,6 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
   const dayStarts = axisFor(rows).dayStarts
   const quarterDayStarts = axisFor(quarters).dayStarts
   const windows = shiftWindows(rows)
-  const thermostats = Object.keys(rows.find((r) => Object.keys(r.thermostats).length > 0)?.thermostats ?? {})
-  const roomRows = splitPredicted(
-    rows.map((r) => ({
-      ...r,
-      ...Object.fromEntries(thermostats.map((n) => [`room_${n}`, r.thermostats[n]?.room_c ?? null])),
-    })),
-    ['roomPlanned'],
-  )
   const energyRows = splitPredicted(rows, ['energyPlanned'])
   const flowRows = splitPredicted(rows, ['flowPlanned'])
   const rooms = Object.keys(loopsTotal)
@@ -95,56 +184,41 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
       return [room, open === null || open === undefined ? null : (100 * open) / loopsTotal[room]]
     })),
   }))
-  const temps = rows
-    .flatMap((r) => [r.roomMeasured, r.roomPlanned, r.floor, r.salonMeasured, r.salonPlanned, r.thermostatTarget, ...Object.values(r.thermostats).map((t) => t.room_c)])
-    .filter((v): v is number => v !== null)
-  const low = Math.floor(Math.min(...temps, 18))
-  const high = Math.ceil(Math.max(...temps))
+  const shown = withPlanZones(sections)
+  const withThermostats = shown.filter((s) => s.thermostats.length > 0)
   const priceOrTemp = (name: string) => (name.includes('Price') ? UNITS.price : UNITS.temp)
   return (
     <>
       <Panel
         title="Room temperature"
-        description={`Each area we optimise, read top down: rooms, what they need, what the pump sends, and why. Dark: the measured mean of the ground-floor rooms, thin coloured lines each room. Blue: what the plan expected for the ground floor, dashed in the shaded future. Purple: the salon, measured, and dashed its expected temperature. The expected salon is where it is now plus what the plan changes, because its forecast does not beat that. Orange: the thermostat target; the ground-floor loops close when a room is above it. Dashed red: the comfort floor. ${WINDOW_NOTE}`}
+        description={`The house part by part, as on the Home Assistant climate view; read the page top down: rooms, what they need, what the pump sends, and why. Thin coloured lines: each room, measured; dotted in the same colour: its thermostat's setpoint. Salon: dark is the mean the plan uses, dashed blue its expected temperature (where it is now plus what the plan changes, because its forecast does not beat that). Ground floor: dark is the mean of the two LK rooms, blue what the plan expected, dashed in the shaded future; orange the LK target, the loops close when a room is above it; dashed red the comfort floor. The upper floor and the guest house are only measured: the plan does not move them. ${WINDOW_NOTE}`}
       >
-        <Chart rows={roomRows} axisRows={rows} height={280} unitFor={() => UNITS.temp}>
-          <YAxis domain={[low, high]} tickCount={high - low + 1} allowDecimals={false} unit="°" />
-          {predictedArea(rows)}
-          {windowAreas(windows)}
-          <Line type="stepAfter" dataKey="floor" name="Floor" stroke={C.floor} strokeDasharray="4 3" dot={false} />
-          <Line type="stepAfter" dataKey="thermostatTarget" name="Thermostat target" stroke={C.limit} strokeWidth={1.5} dot={false} connectNulls />
-          {limits.target !== null && <ReferenceLine y={limits.target} stroke={C.target} strokeDasharray="2 4" label="target" />}
-          {thermostats.map((n) => (
-            <Line key={n} type="monotone" dataKey={`room_${n}`} name={n.replace(/^lk_/, '')} stroke={roomColour(n)} strokeWidth={1} dot={false} />
-          ))}
-          <Line type="monotone" dataKey="roomMeasured" name="Ground floor, measured" stroke={C.measured} strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="roomPlanned" name="Ground floor, expected (applied)" stroke={C.plan} strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="roomPlannedPredicted" name="Ground floor, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
-          <Line type="monotone" dataKey="salonMeasured" name="Salon, measured" stroke={C.salon} strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="salonPlanned" name="Salon, expected" stroke={C.salon} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
-          {guides(now, dayStarts)}
-        </Chart>
+        {shown.map((section) => (
+          <SectionRoomChart key={section.id} section={section} rows={rows} windows={windows} now={now} dayStarts={dayStarts} limits={limits} />
+        ))}
       </Panel>
 
       <Panel
         title="Heating need"
-        description={`The heat each zone loses at its temperature and the outdoor temperature, in kW, calculated from the heat demand analysis: the rooms behind the LK thermostats (161.5 W/K) and the salon (84.2 W/K, less 250 W of measured other heat). The need exists whether the pump, heat stored in the floor or the stove meets it. Green, dotted: what the ground-floor loops give, from the LK figures (167 W/K of flow above the room, at most 40 °C, through the loops that are open). Green under blue means the rooms are living on stored heat, the stove or the sun; green over blue means the floor is storing heat. The upper floor and guest house are not included, so "combined" is the zones we optimise and not the whole house. Sun and people are not counted for the ground floor. ${WINDOW_NOTE}`}
+        description={`The heat lost at the room and outdoor temperature, in kW, whatever meets it: the pump, heat stored in the floor, the stove or the sun. Blue and purple are the two zones the plan moves, calculated from the heat demand analysis: the rooms behind the LK thermostats (161.5 W/K) and the salon (84.2 W/K, less 250 W of measured other heat); sun and people are not counted for them. Green, dotted: what the ground-floor loops give, from the LK figures (167 W/K of flow above the room, at most 40 °C, through the loops that are open); green under blue means the rooms are living on stored heat, the stove or the sun, green over blue that the floor is storing heat. ${houseNote(house)} ${WINDOW_NOTE}`}
       >
-        <Chart rows={rows} axisRows={rows} height={220} unitFor={() => UNITS.kw}>
+        <Chart rows={rows} axisRows={rows} height={260} unitFor={() => UNITS.kw}>
           <YAxis unit=" kW" width={72} />
           {predictedArea(rows)}
           {windowAreas(windows)}
-          <Line type="stepAfter" dataKey="needGround" name="Ground floor" stroke={C.plan} strokeWidth={2} dot={false} />
-          <Line type="stepAfter" dataKey="deliveredGround" name="Ground floor, delivered by the loops" stroke={C.delivered} strokeWidth={2} strokeDasharray="3 2" dot={false} />
-          <Line type="stepAfter" dataKey="needSalon" name="Salon" stroke={C.salon} strokeWidth={2} dot={false} />
-          <Line type="stepAfter" dataKey="needCombined" name="Combined" stroke={C.measured} strokeWidth={2.5} dot={false} />
+          <Bar dataKey="heatMeasured" name="Whole house, pump heat measured" fill={C.price} />
+          <Line type="stepAfter" dataKey="needHouse" name="Whole house, loss (fitted)" stroke={C.measured} strokeWidth={2.5} dot={false} />
+          <Line type="stepAfter" dataKey="housePump" name="Whole house, pump heat expected" stroke={C.flat} strokeWidth={2} strokeDasharray="4 3" dot={false} />
+          <Line type="stepAfter" dataKey="needGround" name="LK rooms (analysis)" stroke={C.plan} strokeWidth={2} dot={false} />
+          <Line type="stepAfter" dataKey="deliveredGround" name="LK rooms, delivered by the loops" stroke={C.delivered} strokeWidth={2} strokeDasharray="3 2" dot={false} />
+          <Line type="stepAfter" dataKey="needSalon" name="Salon (analysis)" stroke={C.salon} strokeWidth={2} dot={false} />
           {guides(now, dayStarts)}
         </Chart>
       </Panel>
 
       <Panel
         title="Flow temperature and thermostats"
-        description={`Top: the flow to the heating. Dark: the pump's own flow target; blue, dashed: the target the plan expects, which continues it. Grey: the measured flow, without hot water and the quarter of an hour after it; it runs above the target while the pump catches up after hot water. The floor gets at most 40 °C. Bottom: the share of each room's floor loops that were open, and dashed what the thermostats are expected to do. ${WINDOW_NOTE}`}
+        description={`Top: the flow to the heating. Dark: the pump's own flow target; blue, dashed: the target the plan expects, which continues it. Grey: the measured flow, without hot water and the quarter of an hour after it; it runs above the target while the pump catches up after hot water. The floor gets at most 40 °C. Below it, per zone: on the ground floor the share of each room's floor loops that were open, and dashed what the LK thermostats are expected to do; in the salon (Netatmo) and the guest house (Tado) each radiator thermostat's heat demand, 0 to 100 %, measured. ${WINDOW_NOTE}`}
       >
         <Chart rows={flowRows} axisRows={rows} height={200} unitFor={() => UNITS.temp}>
           <YAxis domain={['auto', 'auto']} unit="°" />
@@ -156,6 +230,7 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
           <Line type="stepAfter" dataKey="flowPlannedPredicted" name="Flow, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
           {guides(now, dayStarts)}
         </Chart>
+        <h3 className="chart-heading">Bottenvåning, LK floor loops</h3>
         <Chart rows={loopRows} axisRows={rows} height={170} unitFor={() => UNITS.percent}>
           <YAxis domain={[0, 100]} unit=" %" />
           {predictedArea(rows)}
@@ -166,6 +241,9 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
           <Line type="stepAfter" dataKey="expectedOpen" name="Loops open, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
           {guides(now, dayStarts)}
         </Chart>
+        {withThermostats.map((section) => (
+          <SectionDemandChart key={section.id} section={section} rows={rows} windows={windows} now={now} dayStarts={dayStarts} />
+        ))}
       </Panel>
 
       <Panel

@@ -266,3 +266,15 @@ def test_the_fit_uses_what_each_setpoint_really_gave(settings):
     pump = fit_pump(replace(inputs, rts_c=rts, heating_setpoint_c=steeper)).params
     drop = float(flow_target(pump, 5.0, 16.0) - flow_target(pump, 5.0, 18.0))
     assert drop == pytest.approx(-6.0, abs=0.3)
+
+
+def test_the_calibration_fits_the_whole_house_from_the_heat_counter(settings):
+    from .world import HOUSE_FREE_KW, HOUSE_W_PER_K
+
+    world = World(days=120)
+    models = Calibrator(
+        FakeSource(world), FakeWeatherHistory(world), settings, days=120
+    ).run(END)
+    assert models.house_error is None
+    assert models.house.w_per_k == pytest.approx(HOUSE_W_PER_K, rel=0.05)
+    assert models.house.free_kw == pytest.approx(HOUSE_FREE_KW, abs=0.3)

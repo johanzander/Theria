@@ -104,6 +104,7 @@ options:
     # Watches the comfort sensors (silence, battery, signal, agreement) and tells the plan
     # which ones to trust. Problems become Home Assistant notifications (the bell).
     notify: true
+    # The Sonoff comparison sensors are left out while their batteries are flat (2026-11-10).
     sensors:
       - name: "Vardagsrum LK"
         room: "vardagsrum"
@@ -113,12 +114,6 @@ options:
         reference: true  # the sensor LK regulates on
         silent_warn_minutes: 480
         silent_fault_minutes: 960
-      - name: "Vardagsrum Sonoff"
-        room: "vardagsrum"
-        temperature_entity: "sensor.sonoff_a480045bf5_temperature"
-        battery_entity: "sensor.sonoff_a480045bf5_battery"
-        silent_warn_minutes: 360
-        silent_fault_minutes: 720
       - name: "Bibliotek LK"
         room: "bibliotek"
         temperature_entity: "sensor.lk_bibliotek_temperature"
@@ -127,12 +122,6 @@ options:
         reference: true
         silent_warn_minutes: 480
         silent_fault_minutes: 960
-      - name: "Bibliotek Sonoff"
-        room: "bibliotek"
-        temperature_entity: "sensor.sonoff_a480050818_temperature"
-        battery_entity: "sensor.sonoff_a480050818_battery"
-        silent_warn_minutes: 360
-        silent_fault_minutes: 720
 
   radiators:
     # Salon (Netatmo) and guest house (Tado) radiator control. Shadow only: it computes and logs what it
@@ -175,6 +164,51 @@ options:
         - entity: "climate.storage_room"
           t_room_c: 17.0
 
+  room_sections:
+    # The house as the dashboard shows it (the HA climate view): each section's rooms on a chart of their
+    # own, and its thermostats' setpoints and heat demand. Display only, the plan does not read these.
+    # The charts draw the plan's own lines on the sections with id "ground" (the LK rooms) and "salon".
+    - id: "salon"
+      name: "Salong"
+      rooms:
+        - { name: "Klippsidan", entity: "sensor.klippsidan_temperature" }
+        - { name: "Väntsidan", entity: "sensor.vantsidan_temperature" }
+        - { name: "Brandvarnare", entity: "sensor.butik_temperature_2" }
+        - { name: "Vattenlarm", entity: "sensor.schamponeringstolen_temperature" }
+      thermostats:  # Netatmo: heat demand is the climate entity's heating_power_request
+        - { name: "Klippsidan", entity: "climate.klippsidan", demand_entity: "climate.klippsidan", demand_field: "heating_power_request" }
+        - { name: "Väntsidan", entity: "climate.vantsidan", demand_entity: "climate.vantsidan", demand_field: "heating_power_request" }
+    - id: "ground"
+      name: "Bottenvåning"
+      rooms:
+        - { name: "Hallen", entity: "sensor.hallen_temperature_2" }
+        - { name: "Kök", entity: "sensor.kok_temperature" }
+        - { name: "Gästrum", entity: "sensor.gastrum_temperature_2" }
+        - { name: "Bibliotek", entity: "sensor.lk_bibliotek_temperature" }
+        - { name: "Vardagsrum", entity: "sensor.lk_vardagsrum_temperature" }
+      thermostats: []
+    - id: "guest"
+      name: "Gårdshus"
+      rooms:
+        - { name: "Sovrum", entity: "sensor.bedroom_temperature" }
+        - { name: "Hall", entity: "sensor.hallway_temperature" }
+        - { name: "Vardagsrum", entity: "sensor.tv_room_gh_temperature" }
+        - { name: "Kök", entity: "sensor.kitchen_temperature" }
+        - { name: "Tvättstuga", entity: "sensor.storage_room_temperature" }
+      thermostats:  # Tado: heat demand is the zone's heating sensor (%)
+        - { name: "Sovrum", entity: "climate.bedroom", demand_entity: "sensor.bedroom_heating" }
+        - { name: "Hall", entity: "climate.hallway", demand_entity: "sensor.hallway_heating" }
+        - { name: "Vardagsrum", entity: "climate.tv_room_gh", demand_entity: "sensor.tv_room_gh_heating" }
+        - { name: "Kök", entity: "climate.kitchen", demand_entity: "sensor.kitchen_heating" }
+        - { name: "Tvättstuga", entity: "climate.storage_room", demand_entity: "sensor.storage_room_heating" }
+    - id: "upper"
+      name: "Ovanvåning"
+      rooms:
+        - { name: "Sovrum", entity: "sensor.master_sovrum_temperature_2" }
+        - { name: "Tages rum", entity: "sensor.tages_rum_temperature_2" }
+        - { name: "Egons rum", entity: "sensor.egons_rum_temperature_2" }
+        - { name: "Korridor", entity: "sensor.korridor_vaning_2_temperature_2" }
+      thermostats: []
   zones:
     - id: "butik"
       name: "Butik"
@@ -200,7 +234,6 @@ options:
       temp_sensors:
         - "sensor.lk_bibliotek_temperature"
         - "sensor.lk_vardagsrum_temperature"
-        - "sensor.sonoff_a480045bf5_temperature"
         - "sensor.gastrum_temperature_2"
       comfort_target: 22.0  # Target comfort temperature (°C)
       allowed_deviation: 1.0  # Allowed temperature variation for savings (±°C)
@@ -305,6 +338,17 @@ schema:
     salon_heat_power_w: float?
     salon_baseline_c: float?
     guest_loss_w_per_k: float?
+  room_sections:
+    - id: str
+      name: str
+      rooms:
+        - name: str
+          entity: str
+      thermostats:
+        - name: str
+          entity: str
+          demand_entity: str
+          demand_field: str?
   zones:
     - id: str
       name: str

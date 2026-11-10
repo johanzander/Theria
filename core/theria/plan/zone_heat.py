@@ -6,17 +6,28 @@ sun, people and the stove are not measured. See docs/ALGORITHM_EXPLAINED.md.
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 import numpy as np
 
-from core.theria.plan.calibration_data import FLOW_PLAUSIBLE_C, HistorySource
+from core.theria.plan.calibration_data import (
+    FLOW_PLAUSIBLE_C,
+    MAX_HEAT_KWH_PER_HOUR,
+    SMALL_GAP_HOURS,
+    HistorySource,
+)
 from core.theria.plan.room_model import valve_open
+from core.theria.plan.room_sections import (
+    RoomSection,
+    SectionMeasured,
+    load_section_measurements,
+)
 from core.theria.plan.series import (
     FloatArray,
     Point,
     hour_floor,
+    hourly_counter_energy,
     hourly_grid,
     to_hourly,
 )
@@ -40,6 +51,8 @@ class ZoneMeasured:
     flow_c: FloatArray
     salon_c: FloatArray
     flow_target_c: FloatArray
+    heat_kwh: FloatArray  # heat the pump supplied to the heating, from its counter
+    sections: dict[str, SectionMeasured] = field(default_factory=dict)
 
 
 def ground_need_kw(room_c: float, t_out_c: float) -> float | None:
@@ -124,10 +137,12 @@ def load_zone_measurements(
     source: HistorySource,
     settings: PlanSettings,
     salon_points: Sequence[tuple[str, str | None]],
+    sections: Sequence[RoomSection],
     start: datetime,
     stop: datetime,
 ) -> ZoneMeasured:
-    """The flow to the heating, the pump's own target for it, and the mean of the salon's points."""
+    """The flow to the heating, the pump's own target for it, the mean of the salon's points and
+    every section's rooms and thermostats."""
     first = hour_floor(start)
     n = int((hour_floor(stop) - first) / timedelta(hours=1))
     flow = to_hourly(
@@ -158,4 +173,17 @@ def load_zone_measurements(
         )
     else:
         salon = np.full(n, np.nan)
-    return ZoneMeasured(hourly_grid(first, n), flow, salon, target)
+    return ZoneMeasured(
+        hourly_grid(first, n),
+        flow,
+        salon,
+        target,
+        hourly_counter_energy(
+            source.series(settings.heat_counter_entity, first, stop),
+            first,
+            n,
+            MAX_HEAT_KWH_PER_HOUR,
+            SMALL_GAP_HOURS,
+        ),
+        load_section_measurements(source, sections, first, stop, n),
+    )

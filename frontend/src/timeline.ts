@@ -35,12 +35,42 @@ export interface DayHour {
   thermostat: string | null
   thermostat_target_c: number | null
   loops_expected: number | null
+  /** per section id: the rooms' temperatures, the thermostats' setpoints and their heat demand (%), measured */
+  sections: Record<string, SectionHour>
+  /** the whole house: its loss, what the pump should give for it, and what the pump's heat counter shows */
+  need_house_kw: number | null
+  house_pump_kw: number | null
+  heat_measured_kw: number | null
+}
+
+/** The whole house's loss fitted to the pump's heat counter. */
+export interface HouseLoss {
+  w_per_k: number
+  free_kw: number
+  days: number
+  rmse_kw: number
+}
+
+export interface SectionHour {
+  rooms: Record<string, number | null>
+  setpoints: Record<string, number | null>
+  demand: Record<string, number | null>
+}
+
+/** A part of the house as the dashboard shows it: a floor, the salon, the guest house. */
+export interface Section {
+  id: string
+  name: string
+  rooms: string[]
+  thermostats: string[]
 }
 
 export interface DayView {
   day: string
   now: string
   loops_total: Record<string, number>
+  sections: Section[]
+  house: HouseLoss | null
   hours: DayHour[]
 }
 
@@ -77,13 +107,16 @@ export interface HourRow {
   salonPlanned: number | null
   needGround: number | null
   needSalon: number | null
-  needCombined: number | null
   deliveredGround: number | null
   flowMeasured: number | null
   flowTarget: number | null
   thermostat: string | null
   thermostatTarget: number | null
   loopsExpected: number | null
+  sections: Record<string, SectionHour>
+  needHouse: number | null
+  housePump: number | null
+  heatMeasured: number | null
 }
 
 const localKey = (iso: string, extraMinutes = 0) => {
@@ -115,11 +148,6 @@ const ROOM_COLOURS: Record<string, string> = { bibliotek: '#2f855a', vardagsrum:
 /** A room keeps its colour on every chart, whichever way its name is written. */
 export function roomColour(name: string): string {
   return ROOM_COLOURS[name.replace(/^lk_/, '')] ?? '#0e7490'
-}
-
-/** The zones' heat need together; unknown when one of them is. */
-export function combinedNeed(ground: number | null, salon: number | null): number | null {
-  return ground === null || salon === null ? null : ground + salon
 }
 
 export interface ShiftWindow {
@@ -184,13 +212,16 @@ export function timelineRows(views: (DayView | null)[]): HourRow[] {
         salonPlanned: h.salon_planned,
         needGround: h.need_ground_kw,
         needSalon: h.need_salon_kw,
-        needCombined: combinedNeed(h.need_ground_kw, h.need_salon_kw),
         deliveredGround: h.delivered_ground_kw,
         flowMeasured: h.flow_measured_c,
         flowTarget: h.flow_target_c,
         thermostat: h.thermostat,
         thermostatTarget: h.thermostat_target_c,
         loopsExpected: h.loops_expected,
+        sections: h.sections,
+        needHouse: h.need_house_kw,
+        housePump: h.house_pump_kw,
+        heatMeasured: h.heat_measured_kw,
       })
     })
   }
@@ -281,4 +312,29 @@ export function splitPredicted<T extends { past: boolean }>(rows: T[], keys: (ke
 /** The first row that is not history, for shading the prediction. */
 export function firstPredicted(rows: { key: string; past: boolean }[]): string | undefined {
   return rows.find((r) => !r.past)?.key
+}
+
+// Clear of the plan's own colours (dark, blue, orange, red, green) and of the two LK rooms' colours.
+const SECTION_PALETTE = ['#0e7490', '#be185d', '#7c3aed', '#a16207', '#64748b', '#0f766e', '#9d174d']
+
+/** A room's colour within its section; a thermostat with the room's name gets the same colour. The LK rooms keep theirs. */
+export function sectionColour(section: Section, name: string): string {
+  const known = section.id === 'ground' ? ROOM_COLOURS[name.toLowerCase()] : undefined
+  if (known !== undefined) return known
+  const names = [...section.rooms, ...section.thermostats.filter((t) => !section.rooms.includes(t))]
+    .filter((n) => section.id !== 'ground' || ROOM_COLOURS[n.toLowerCase()] === undefined)
+  return SECTION_PALETTE[Math.max(0, names.indexOf(name)) % SECTION_PALETTE.length]
+}
+
+/** A section's measured values per hour, flattened for a chart: room_<name>, set_<name>, demand_<name>. */
+export function sectionRows<T extends { sections: Record<string, SectionHour> }>(rows: T[], section: Section): (T & Record<string, number | null>)[] {
+  return rows.map((r) => {
+    const m = r.sections[section.id]
+    return {
+      ...r,
+      ...Object.fromEntries(section.rooms.map((n) => [`room_${n}`, m?.rooms[n] ?? null])),
+      ...Object.fromEntries(section.thermostats.map((n) => [`set_${n}`, m?.setpoints[n] ?? null])),
+      ...Object.fromEntries(section.thermostats.map((n) => [`demand_${n}`, m?.demand[n] ?? null])),
+    } as T & Record<string, number | null>
+  })
 }

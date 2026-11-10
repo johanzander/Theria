@@ -47,7 +47,10 @@ ENTITIES = {
     "flow": "sensor.radiator_forward",
     "counter": "sensor.compr_cons_heating",
     "aux_counter": "sensor.aux_cons_heating",
+    "heat_counter": "sensor.supp_energy_heating",
 }
+HOUSE_W_PER_K = 650.0  # the whole house's loss behind the heat counter
+HOUSE_FREE_KW = 2.5
 
 
 class World:
@@ -135,6 +138,10 @@ class World:
                 smoothed[i] = value
                 value += (s - value) * k
             self.room = self.room + sun_swing * smoothed
+        self.heat = np.maximum(
+            0.0, HOUSE_W_PER_K * (self.room - self.t_out) / 1000.0 - HOUSE_FREE_KW
+        )
+        self.heat_counter = 5000.0 + np.cumsum(self.heat)
 
     def hours_list(self) -> list[datetime]:
         return [self.start + timedelta(hours=i) for i in range(len(self.t_out))]
@@ -165,6 +172,7 @@ class FakeSource:
             (ENTITIES["flow"], None): w.flow,
             (ENTITIES["counter"], None): w.counter,
             (ENTITIES["aux_counter"], None): w.aux_counter,
+            (ENTITIES["heat_counter"], None): w.heat_counter,
         }
         self._series.update(overrides or {})
 

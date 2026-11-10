@@ -9,6 +9,7 @@ from typing import Any
 from core.theria.exceptions import StateStoreError
 from core.theria.plan.calibration import FittedModels, PumpFit, RoomFit
 from core.theria.plan.daily_room import DailyRoomFit, SeasonFit
+from core.theria.plan.house_loss import HouseLoss
 from core.theria.plan.night_drift import NightDrift, NightObservation
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.room_model import RoomParams
@@ -130,6 +131,8 @@ def _models_to_dict(m: FittedModels) -> dict[str, Any]:
         "night_drift_error": m.night_drift_error,
         "warmup": None if m.warmup is None else m.warmup.__dict__,
         "warmup_error": m.warmup_error,
+        "house": None if m.house is None else m.house.__dict__,
+        "house_error": m.house_error,
         "fitted_at": m.fitted_at.isoformat(),
         "window_start": m.window_start.isoformat(),
         "window_end": m.window_end.isoformat(),
@@ -162,6 +165,8 @@ def _models_from_dict(d: dict[str, Any]) -> FittedModels:
         night_drift_error=d.get("night_drift_error"),
         warmup=None if d.get("warmup") is None else _warmup_from_dict(d["warmup"]),
         warmup_error=d.get("warmup_error"),
+        house=None if d.get("house") is None else HouseLoss(**d["house"]),
+        house_error=d.get("house_error"),  # absent in older state files
         fitted_at=datetime.fromisoformat(d["fitted_at"]),
         window_start=datetime.fromisoformat(d["window_start"]),
         window_end=datetime.fromisoformat(d["window_end"]),

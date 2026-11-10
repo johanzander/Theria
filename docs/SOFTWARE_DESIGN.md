@@ -247,6 +247,17 @@ expected, with the thermostat target), heating need per zone and combined (`plan
 is each zone's heat loss, calculated from the heat demand analysis, whatever meets it, and cannot be checked per zone: only the whole house has a heat meter. The expected salon is its temperature now plus what the plan
 changes, because its forecast does not beat that.
 
+The room temperature and the thermostats are shown per part of the house, as on the Home Assistant climate view: the add-on option
+`room_sections` lists each section (Salong, Bottenvåning, Gårdshus, Ovanvåning) with its room sensors and its radiator thermostats
+(setpoint from the climate entity, heat demand in percent from Netatmo's `heating_power_request` or Tado's heating sensor).
+`plan/room_sections.py` reads them hourly from InfluxDB with the zone measurements; they are display only and the plan does not read
+them. The sections with id `ground` and `salon` also carry the plan's own lines, and always get a chart.
+
+The heating need chart also shows the whole house: its loss `H (room - outdoor)` and the pump heat it should take (the loss less
+the free heat F), both from `plan/house_loss.py`, fitted with the other models (`FittedModels.house`) to the pump's heat counter
+(`heat_counter_entity`), and that counter's hourly heat as bars (`ZoneMeasured.heat_kwh`). The gap between the two analysed zones
+and the whole house is the part of the house without a heat demand analysis.
+
 ## Development and Testing
 
 `./dev-start.sh` copies the add-on's settings and state and runs on port 8081 against the real Home Assistant and InfluxDB

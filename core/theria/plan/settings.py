@@ -65,6 +65,8 @@ class PlanSettings:
     plan_closes_valves: bool = True
     # cumulative compressor electricity for hot water (kWh), for the energy forecast
     hot_water_energy_entity: str = "sensor.compr_cons_hotwat"
+    # cumulative heat the pump supplied to the heating, hot water excluded (kWh): the whole house's heat need
+    heat_counter_entity: str = "sensor.supp_energy_heating"
     price_area: str = "SE4"
     mode: str = "shadow"
     floor_c: float = (

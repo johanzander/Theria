@@ -134,20 +134,37 @@ C dR/dt = emitter(flow, valve) + other heat - H (R - T)
 
 ### Demand by outdoor temperature
 
-Ground floor and salon are `H (20 - T)`. The whole house is the pump's own heat counter, days below 12 C, 226 days,
-Oct 2025 - Nov 2026: `9.64 - 0.606 T` kW, zero at about 16 C **[observed]**.
+Ground floor and salon are `H (20 - T)`, gross losses from the heat demand analysis. The whole house is fitted to the pump's own
+heat counter (`supp_energy_heating`, hot water excluded) on whole days below 12 C, against the LK rooms' temperature above the
+outdoor (`plan/house_loss.py`, refitted with the other models):
 
-| Outdoor C | Ground floor kW | Salon kW | Whole house, measured kW | Rest kW |
-|---|---|---|---|---|
-| 12 | 2.1 | 0.7 | 2.4 | -0.4 |
-| 10 | 2.7 | 0.8 | 3.6 | 0.1 |
-| 7 | 3.5 | 1.1 | 5.4 | 0.8 |
-| 5 | 4.0 | 1.3 | 6.6 | 1.3 |
-| 2 | 4.8 | 1.5 | 8.4 | 2.1 |
-| 0 | 5.3 | 1.7 | 9.6 | 2.6 |
-| -3 | 6.1 | 1.9 | 11.5 | 3.4 |
-| -5 | 6.7 | 2.1 | 12.7 | 3.9 |
-| -9.6 | 7.9 | 2.5 | 15.5, extrapolated | 5.1 |
+```text
+pump heat = H (room - outdoor) - F        H = 711 W/K, F = 3.4 kW (162 days, Oct 2025 - Nov 2026, a day's mean 1.1 kW off)
+```
+
+F is the free heat as a mean: household electricity, people, sun and the stove. The pump's heat is therefore not the house's
+loss: it is the loss less F. Fitted against the outdoor alone, the same counter gives `9.64 - 0.606 T` kW, zero at about
+16 C **[observed]**, because the free heat moves the balance point down from 20 C.
+
+An earlier version of this table compared that measured heat with the zones' gross losses and left only 1-2 kW for the rest of
+the house, which cannot be right: the upper floor is as large as the ground floor and the guest house is 65 m2. Compared gross
+with gross, at 20 C inside **[derived]**:
+
+| Outdoor C | Ground floor kW | Salon kW | Whole house loss kW | Rest kW | Pump heat kW |
+|---|---|---|---|---|---|
+| 12 | 2.1 | 0.7 | 5.7 | 2.9 | 2.3 |
+| 10 | 2.7 | 0.8 | 7.1 | 3.6 | 3.7 |
+| 7 | 3.5 | 1.1 | 9.2 | 4.7 | 5.9 |
+| 5 | 4.0 | 1.3 | 10.7 | 5.4 | 7.3 |
+| 2 | 4.8 | 1.5 | 12.8 | 6.5 | 9.4 |
+| 0 | 5.3 | 1.7 | 14.2 | 7.2 | 10.8 |
+| -3 | 6.1 | 1.9 | 16.4 | 8.3 | 13.0 |
+| -5 | 6.7 | 2.1 | 17.8 | 9.0 | 14.4 |
+| -9.6 | 7.9 | 2.5 | 21.0, extrapolated | 10.7 | 17.7 |
+
+The rest, about 360 W/K, is the upper floor and the guest house if the pump heats it (no analysis exists for either). The fit
+is uncertain in its split between H and F, since cold days are also the days with the most free heat from the stove and lights,
+and the LK rooms stand in for the whole house's indoor temperature; the whole-house slope is the firmer number.
 
 "Rest" is the measured whole house minus the two calculated zones: upper floor and guest house, less sun, people, the stove
 and the air-to-air pump in the salon, none of which is metered. Below 12 C the coldest days are few, and nothing below -4 C
@@ -244,7 +261,7 @@ measured), and monthly savings below about 6 % are inside its error.
 
 | Change | Effect | Source |
 |---|---|---|
-| Whole house one degree warmer | 606 W/K = 14.5 kWh heat/day = about 4 kWh electricity/day at COP 3.5, about 12 % at 7 C | [derived]; the savings study got 14 % |
+| Whole house one degree warmer | 606-711 W/K = 14.5-17 kWh heat/day = about 4-5 kWh electricity/day at COP 3.5, about 12-14 % at 7 C | [derived], against the outdoor alone and with the room; the savings study got 14 % |
 | Setpoint one degree, as it happened | below 18: 0.23-0.25 kWh/h; above 18: 0.35-0.37 kWh/h, +/-0.04 | [observed], 11 Oct - 9 Nov, 3-14 C, loops as they happened to be |
 | Flow +1 C with the same heat delivered | about 2.4 % worse COP at 7 C | [manual], datasheet 35 to 45 C |
 | Flow +3 C (one setpoint degree), other rooms throttled | about 7 % of 34 kWh/day, 2-3 kWh/day | [derived] |

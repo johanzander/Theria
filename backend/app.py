@@ -30,6 +30,7 @@ from core.theria.exceptions import TheriaError
 from core.theria.ha_client import HANotifier
 from core.theria.health_monitor import HealthMonitorService
 from core.theria.heat_pump_monitor import HeatPumpMonitorService
+from core.theria.options import load_options
 from core.theria.plan.calibration import Calibrator
 from core.theria.plan.calibration_data import InfluxHistorySource
 from core.theria.plan.energy_forecast import (
@@ -56,6 +57,7 @@ from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.plan_record import PlanRecordStore
 from core.theria.plan.plan_run import PlanRunStore
 from core.theria.plan.price_feed import NordpoolFeed
+from core.theria.plan.room_sections import room_sections_from_options
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.settings_manager import SettingsManager
@@ -236,6 +238,14 @@ async def lifespan(app: FastAPI):
                     ]
                 )
 
+                room_sections = room_sections_from_options(
+                    load_options(
+                        os.path.join(DATA_DIR, "options.json"),
+                        os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
+                    )
+                    or {}
+                )
+
                 def actuals_loader(start: datetime, stop: datetime) -> OutcomeInputs:
                     return load_outcome_inputs(
                         history_source,
@@ -315,8 +325,14 @@ async def lifespan(app: FastAPI):
                     forecast_check=forecast_check,
                     energy_forecast=energy_forecaster,
                     zone_loader=lambda start, stop: load_zone_measurements(
-                        history_source, plan_settings, salon_points, start, stop
+                        history_source,
+                        plan_settings,
+                        salon_points,
+                        room_sections,
+                        start,
+                        stop,
                     ),
+                    room_sections=room_sections,
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service

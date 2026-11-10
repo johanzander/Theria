@@ -10,7 +10,7 @@ import os
 import re
 import threading
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
@@ -74,6 +74,7 @@ from core.theria.plan.room_model import (
     day_heat_c_per_h,
     with_measured_response,
 )
+from core.theria.plan.room_sections import RoomSection
 from core.theria.plan.scoring import LeadScore, ScoreBoard
 from core.theria.plan.settings import SUPPORTED_MODES, PlanSettings
 from core.theria.plan.settings_manager import SettingsManager
@@ -211,6 +212,7 @@ class PlanService:
         forecast_check: ForecastCheck | None = None,
         energy_forecast: EnergyForecast | None = None,
         zone_loader: ZoneLoader | None = None,
+        room_sections: Sequence[RoomSection] = (),
     ):
         self._ha = ha_client
         self._settings = settings
@@ -271,6 +273,7 @@ class PlanService:
         self._forecast_check = forecast_check
         self._energy_forecast = energy_forecast
         self._zone_loader = zone_loader
+        self._room_sections = tuple(room_sections)
         self._restore_failed = (
             False  # leaving active mode failed: no window may be reapplied
         )
@@ -997,6 +1000,8 @@ class PlanService:
             records,
             zones,
             None if salon is None else salon.mean_c,
+            self._room_sections,
+            None if self._models is None else self._models.house,
         )
 
     def history(self, hours: int) -> list[PlanSnapshot]:
