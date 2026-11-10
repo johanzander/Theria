@@ -7,9 +7,9 @@ the code), `derived` (computed from the others).
 
 from typing import Any
 
-from core.theria.plan import disturbance, planner, regulator, skill, trim
+from core.theria.plan import disturbance, skill, trim
 from core.theria.plan.night_drift import NightDrift
-from core.theria.plan.planner import Plan
+from core.theria.plan.plan_model import Plan
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.room_model import RoomParams
 from core.theria.plan.settings import PlanSettings
@@ -49,7 +49,6 @@ def build_catalog(
     disturbance_c_per_h: float,
     authority: float,
     skill_error_c_per_h: float | None,
-    regulator_rise_c: dict[str, float],
     plan: Plan | None,
 ) -> list[dict[str, Any]]:
     p_src = "fitted" if pump_fitted else "prior"
@@ -316,114 +315,6 @@ def build_catalog(
             "The mean of six-hour average errors in the hours without sun; none until enough evidence.",
         ),
     ]
-    for room_name, rise in sorted(regulator_rise_c.items()):
-        e.append(
-            _entry(
-                g,
-                f"regulator_rise_{room_name}",
-                f"Rise after the valves close: {room_name}",
-                rise,
-                "°C",
-                "learned",
-                "How far the room keeps rising after its valves close; the plan aims this far under the limit.",
-            )
-        )
-    g = "Cost weights (what the plan trades)"
-    e += [
-        _entry(
-            g,
-            "comfort_cost_sek_per_c_hour",
-            "Comfort cost",
-            settings.comfort_cost_sek_per_c_hour,
-            "kr per °C·h",
-            "setting",
-            "What an hour one degree below the target costs. Lower: the plan accepts a cooler room for savings.",
-        ),
-        _entry(
-            g,
-            "setpoint_deviation_cost_sek_per_c_hour",
-            "Cost of moving the setpoint",
-            settings.setpoint_deviation_cost_sek_per_c_hour,
-            "kr per °C·h",
-            "setting",
-            "Stands in for the rooms that react faster than the floor (salon, guest house): every hour away from the base costs this.",
-        ),
-        _entry(
-            g,
-            "floor_violation_cost_sek_per_c_hour",
-            "Floor violation",
-            settings.floor_violation_cost_sek_per_c_hour,
-            "kr per °C·h",
-            "setting",
-            "An hour one degree under the floor costs this. Higher: the plan heats harder to hold the floor, whatever the price.",
-        ),
-        _entry(
-            g,
-            "ceiling_violation_cost_sek_per_c_hour",
-            "Ceiling violation",
-            planner.CEILING_VIOLATION_COST_SEK_PER_C_HOUR,
-            "kr per °C·h",
-            "constant",
-            "Going over the ceiling costs this: effectively a hard limit, because the valves close.",
-        ),
-        _entry(
-            g,
-            "switch_cost_sek_per_c",
-            "Cost of changing the setpoint",
-            planner.SWITCH_COST_SEK_PER_C,
-            "kr per °C",
-            "constant",
-            "A small tie-breaker that prefers smooth plans.",
-        ),
-        _entry(
-            g,
-            "min_saving_sek",
-            "Minimum saving",
-            settings.min_saving_sek,
-            "kr",
-            "setting",
-            "A plan that saves less than this over the horizon is replaced by the flat setpoint (0 switches it off).",
-        ),
-        _entry(
-            g,
-            "end_credit_c",
-            "Credit for stored heat",
-            planner.END_CREDIT_C,
-            "°C",
-            "constant",
-            "Heat left in the room above the end level is credited up to this many degrees.",
-        ),
-        _entry(
-            g,
-            "max_terminal_hours",
-            "Longest payback",
-            planner.MAX_TERMINAL_HOURS,
-            "h",
-            "constant",
-            "The most hours a degree given up at the end is charged for.",
-        ),
-    ]
-    if plan is not None:
-        e += [
-            _entry(
-                g,
-                "end_reference_c",
-                "End level the plan is judged against",
-                plan.end_reference_c,
-                "°C",
-                "derived",
-                "Where the flat setpoint would leave the room at the end of the horizon (never above the target).",
-            ),
-            _entry(
-                g,
-                "end_cost_sek_per_c",
-                "Price of a degree given up at the end",
-                plan.end_cost_sek_per_c,
-                "kr per °C",
-                "derived",
-                "kWh needed to hold the room a degree higher, over the room's time constant, at the horizon's average price.",
-            ),
-        ]
     g = "Comfort and limits"
     for key, label, value, unit, text in (
         (
@@ -438,7 +329,7 @@ def build_catalog(
             "Comfort target (day)",
             settings.target_c,
             "°C",
-            "Below this the comfort cost applies.",
+            "Where the dashboard and the morning check expect the room.",
         ),
         (
             "night_floor_c",
@@ -453,27 +344,6 @@ def build_catalog(
             settings.night_target_c,
             "°C",
             "The target at night.",
-        ),
-        (
-            "extreme_floor_c",
-            "Floor at extreme prices",
-            settings.extreme_floor_c,
-            "°C",
-            "The lower floor allowed in the dearest hours.",
-        ),
-        (
-            "ceiling_c",
-            "Room limit",
-            settings.ceiling_c,
-            "°C",
-            "The plan may store heat up to this; the LK thermostats are held here.",
-        ),
-        (
-            "lk_limit_c",
-            "LK thermostat setpoint (active)",
-            settings.lk_limit_c,
-            "°C",
-            "Where the LK thermostats are held in active mode.",
         ),
         (
             "lk_base_c",
@@ -572,24 +442,6 @@ def build_catalog(
             "°C/h",
             "constant",
             "At or above this the plan has only its least share of the range.",
-        ),
-        _entry(
-            g,
-            "regulator_hysteresis_c",
-            "Regulator hysteresis",
-            regulator.HYSTERESIS_C,
-            "°C",
-            "constant",
-            "A closed room reopens this far below its closing level.",
-        ),
-        _entry(
-            g,
-            "regulator_max_rise_c",
-            "Largest learned rise",
-            regulator.MAX_RISE_C,
-            "°C",
-            "constant",
-            "Bound on the learned overshoot.",
         ),
         _entry(
             g,

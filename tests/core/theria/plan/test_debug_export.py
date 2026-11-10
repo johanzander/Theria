@@ -5,11 +5,11 @@ from fastapi.testclient import TestClient
 
 from backend import plan_api
 from core.theria.plan.debug_export import (
+    first_hour_flips,
     key_findings,
     log_anomalies,
     redact,
     thermostat_mismatches,
-    first_hour_flips,
 )
 from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.plan_run import PlanRunStore

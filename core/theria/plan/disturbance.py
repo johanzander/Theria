@@ -71,7 +71,7 @@ class DisturbanceEstimator:
         return self.drift_c_per_h * 0.5 ** (max(hours, 0.0) / HALF_LIFE_H)
 
     def update(
-        self, sample: Sample, params: RoomParams, lk_limit_c: float
+        self, sample: Sample, params: RoomParams, lk_setpoint_c: float
     ) -> Innovation | None:
         """Take in a sample; returns the innovation when the step could be judged."""
         previous = self._last
@@ -82,7 +82,7 @@ class DisturbanceEstimator:
         if hours < MIN_STEP_H:
             return None
         if previous.valve is None:
-            setpoint, scale = lk_limit_c, 1.0
+            setpoint, scale = lk_setpoint_c, 1.0
         else:  # the measured valves replace the model's: it sees them as fully open
             setpoint, scale = previous.room_c + 10.0, previous.valve
         predicted, slab, sun_filtered = step(

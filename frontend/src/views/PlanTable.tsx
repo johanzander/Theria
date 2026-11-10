@@ -66,9 +66,9 @@ export function PlanTable() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.key} className={r.extreme ? 'extreme' : undefined} style={r.current ? { outline: '2px solid #1f2933' } : undefined}>
+                  <tr key={r.key} style={r.current ? { outline: '2px solid #1f2933' } : undefined}>
                     <td>{r.key.slice(5)}</td>
-                    <td className="num">{fix(r.price, 2)}{r.extreme ? ' !' : ''}</td>
+                    <td className="num">{fix(r.price, 2)}</td>
                     <td>{r.mode ? MODE_LABEL[r.mode] : '-'}</td>
                     <td className="num"><b>{fix(r.rtsPlanned, 1)}</b></td>
                     <td className="num">{fix(r.rtsBaseline, 1)}</td>

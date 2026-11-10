@@ -23,18 +23,18 @@ def test_every_editable_setting_is_a_real_setting_with_a_description(settings):
 
 def test_the_catalog_shows_value_default_and_where_the_value_comes_from(settings, tmp_path):
     m, _ = manager(settings, tmp_path)
-    entry = {e["key"]: e for e in m.catalog()}["comfort_cost_sek_per_c_hour"]
-    assert entry["value"] == entry["default"] == settings.comfort_cost_sek_per_c_hour
+    entry = {e["key"]: e for e in m.catalog()}["shift_min_gain_sek_per_kwh"]
+    assert entry["value"] == entry["default"] == settings.shift_min_gain_sek_per_kwh
     assert entry["source"] == "default" and entry["kind"] == "float"
 
 
 def test_a_change_is_applied_saved_and_marked_as_changed(settings, tmp_path):
     m, path = manager(settings, tmp_path)
-    new = m.update({"comfort_cost_sek_per_c_hour": 0.4, "ceiling_c": 21.5})
-    assert new.comfort_cost_sek_per_c_hour == 0.4 and new.ceiling_c == 21.5
-    assert json.loads(path.read_text()) == {"comfort_cost_sek_per_c_hour": 0.4, "ceiling_c": 21.5}
-    entry = {e["key"]: e for e in m.catalog()}["ceiling_c"]
-    assert entry["source"] == "override" and entry["default"] == settings.ceiling_c
+    new = m.update({"shift_min_gain_sek_per_kwh": 0.4, "lk_upper_c": 21.0})
+    assert new.shift_min_gain_sek_per_kwh == 0.4 and new.lk_upper_c == 21.0
+    assert json.loads(path.read_text()) == {"shift_min_gain_sek_per_kwh": 0.4, "lk_upper_c": 21.0}
+    entry = {e["key"]: e for e in m.catalog()}["lk_upper_c"]
+    assert entry["source"] == "override" and entry["default"] == settings.lk_upper_c
 
 
 def test_a_saved_change_is_there_after_a_restart(settings, tmp_path):
@@ -60,11 +60,11 @@ def test_an_unknown_setting_is_refused(settings, tmp_path):
 def test_a_value_out_of_range_or_of_the_wrong_kind_is_refused_and_nothing_is_saved(settings, tmp_path):
     m, path = manager(settings, tmp_path)
     with pytest.raises(ConfigurationError):
-        m.update({"comfort_cost_sek_per_c_hour": -1})
+        m.update({"shift_min_gain_sek_per_kwh": -1})
     with pytest.raises(ConfigurationError):
-        m.update({"regulator_active": "yes"})
+        m.update({"plan_closes_valves": "yes"})
     with pytest.raises(ConfigurationError):
-        m.update({"ceiling_c": 50})
+        m.update({"lk_upper_c": 50})
     assert not path.exists() or json.loads(path.read_text()) == {}
 
 
@@ -75,8 +75,8 @@ def test_a_combination_the_plan_cannot_use_is_refused(settings, tmp_path):
 
 
 def test_an_invalid_saved_override_is_ignored_at_start(settings, tmp_path):
-    m, _ = manager(settings, tmp_path, overrides={"floor_c": 99.0, "ceiling_c": 21.0})
-    assert m.current.floor_c == settings.floor_c and m.current.ceiling_c == 21.0
+    m, _ = manager(settings, tmp_path, overrides={"floor_c": 99.0, "lk_upper_c": 21.0})
+    assert m.current.floor_c == settings.floor_c and m.current.lk_upper_c == 21.0
 
 
 def test_a_whole_numbers_setting_takes_whole_numbers(settings, tmp_path):

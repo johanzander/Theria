@@ -2,15 +2,12 @@ export interface HourPlan {
   start: string
   rts_c: number
   price_sek_per_kwh: number
-  extreme: boolean
   floor_c: number
   flow_target_c: number
   energy_kwh: number
   room_c_end: number
   slab_c_end: number
   energy_cost_sek: number
-  comfort_cost_sek: number
-  tail: boolean
   reason: { binding?: string }
 }
 
@@ -41,8 +38,6 @@ export interface PlanResponse {
     objective_sek: number
     baseline_objective_sek: number
     floor_violation_hours: number
-    /** what a degree of room at the end of the horizon is worth (SEK) */
-    end_cost_sek_per_c: number
   }
 }
 
@@ -65,20 +60,8 @@ export interface SavingsResponse {
   total_baseline_cost_sek: number
 }
 
-export interface RoomStatus {
-  room: string
-  temperature_c: number | null
-  rate_c_per_h: number | null
-  state: string // open | closed | unknown
-  limit_c: number
-  rise_c: number
-  close_at_c: number
-  valve_fraction: number | null
-}
-
 export interface Execution {
   mode: string
-  regulator: RoomStatus[]
   authority: number
   last_execution: { action: string; target_c: number | null; reason: string; at: string } | null
   last_lk: { action: string; target_c: number | null; reason: string; at: string } | null
@@ -86,30 +69,6 @@ export interface Execution {
   plan_error: string | null
 }
 
-export interface RoomRow {
-  room: string
-  temperature: string
-  rate: string
-  state: string
-  closeAt: string
-  rise: string
-  valves: string
-  tone: string | undefined
-}
-
-/** One line per room for the regulator panel; a closed room is flagged, a missing reading is a dash. */
-export function roomRows(rooms: RoomStatus[]): RoomRow[] {
-  return rooms.map((r) => ({
-    room: r.room,
-    temperature: r.temperature_c === null ? '-' : `${r.temperature_c.toFixed(1)} °C`,
-    rate: r.rate_c_per_h === null ? '-' : `${r.rate_c_per_h >= 0 ? '+' : ''}${r.rate_c_per_h.toFixed(2)} °C/h`,
-    state: r.state,
-    closeAt: `${r.close_at_c.toFixed(1)} °C`,
-    rise: `${r.rise_c.toFixed(1)} °C`,
-    valves: r.valve_fraction === null ? '-' : `${Math.round(r.valve_fraction * 100)} % open`,
-    tone: r.state === 'closed' ? 'warn' : r.state === 'unknown' ? 'bad' : undefined,
-  }))
-}
 
 export interface PlanRow {
   label: string
@@ -119,7 +78,6 @@ export interface PlanRow {
   room: number
   baselineRoom: number
   floor: number
-  extreme: boolean
   reason: string
 }
 
@@ -133,47 +91,35 @@ export function planRows(response: PlanResponse): PlanRow[] {
     room: h.room_c_end,
     baselineRoom: baseline_hours[i].room_c_end,
     floor: h.floor_c,
-    extreme: h.extreme,
     reason: h.reason.binding ?? '',
   }))
 }
 
 /**
  * What the plan saves against the flat setpoint, in kronor and split by where it comes from.
- * The planner's objective is not used for this: it caps the credit for heat left in the room, so a
- * plan that only runs the stored heat down looks like a saving of its own.
  *   volume: the energy the plan does not use, at the horizon's average price
  *   timing: using it in cheaper hours than the flat setpoint would have
- *   end heat: the plan's room at the end of the horizon against the flat one's, at the end cost
- *             per degree (negative when the plan leaves the room colder)
+ * The room at the end of the horizon against the flat one's is shown beside it: the heat shift moves heat
+ * and does not cut it, so a colder end is heat still to be bought.
  */
 export function planSaving(response: PlanResponse): {
-  netSek: number; volumeSek: number; timingSek: number; endHeatSek: number; kwhSaved: number; endDiffC: number
+  netSek: number; volumeSek: number; timingSek: number; kwhSaved: number; endDiffC: number
 } {
-  const { hours, baseline_hours, end_cost_sek_per_c } = response.plan
+  const { hours, baseline_hours } = response.plan
   const kwhSaved = baseline_hours.reduce((sum, h) => sum + h.energy_kwh, 0) - hours.reduce((sum, h) => sum + h.energy_kwh, 0)
   const energySek = baseline_hours.reduce((sum, h) => sum + h.energy_cost_sek, 0) - hours.reduce((sum, h) => sum + h.energy_cost_sek, 0)
   const meanPrice = hours.length === 0 ? 0 : hours.reduce((sum, h) => sum + h.price_sek_per_kwh, 0) / hours.length
   const volumeSek = kwhSaved * meanPrice
   const endDiffC = hours.length === 0 ? 0 : hours[hours.length - 1].room_c_end - baseline_hours[baseline_hours.length - 1].room_c_end
-  const endHeatSek = endDiffC * end_cost_sek_per_c
-  return { netSek: energySek + endHeatSek, volumeSek, timingSek: energySek - volumeSek, endHeatSek, kwhSaved, endDiffC }
+  return { netSek: energySek, volumeSek, timingSek: energySek - volumeSek, kwhSaved, endDiffC }
 }
 
 const REASONS: Record<string, string> = {
   baseline: 'Flat base setpoint (no optimisation)',
-  below_min_saving: 'Flat base setpoint: the saving is below the minimum worth moving for',
-  floor: 'Held up by the comfort floor',
-  ceiling: 'Held down by the comfort ceiling',
-  flow_cap: 'Limited by the maximum flow temperature',
   shift_sell: 'Lowered: dear window, the house coasts on stored heat',
   shift_buy: 'Raised: cheap window before a dear one',
   shift_none: 'Base setpoint: no dear or cheap window this hour',
   shift_guard: 'Back to base: a measured limit ended this window',
-  valves_closed: 'Floor loops closed: the lowest setpoint with the LK thermostats held down, so the house draws no heat',
-  rts_min: 'At the lowest allowed setpoint (price high enough to cut as far as allowed)',
-  rts_max: 'At the highest allowed setpoint (price low enough to heat as much as allowed)',
-  price_trade_off: 'Price against comfort: neither limit binds',
 }
 
 export function describeReason(binding: string): string {

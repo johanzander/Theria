@@ -3,12 +3,12 @@
 
 The add-on keeps every plan computation with its inputs, settings and parameters
 (`/data/plan_runs.jsonl`, also `GET /api/plan/runs?hours=N`). This feeds one of them to the
-planner again, checks that it decides what it decided then, and lets you change a setting to see
+heat shift again, checks that it decides what it decided then, and lets you change a setting to see
 what the plan would have been.
 
 Usage:
     python scripts/replay_plan.py runs.jsonl --at 2026-10-31T16:00        # closest run at/after
-    python scripts/replay_plan.py runs.json --at 2026-10-31T16:00 --set comfort_cost_sek_per_c_hour=2
+    python scripts/replay_plan.py runs.json --at 2026-10-31T16:00 --set shift_min_gain_sek_per_kwh=1
     python scripts/replay_plan.py runs.jsonl --list
 
 `runs` is the jsonl file or the JSON array from the API. `--set` replaces a PlanSettings field.

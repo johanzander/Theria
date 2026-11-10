@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
-from core.theria.plan.planner import PlanInputs
+from core.theria.plan.plan_model import PlanInputs
 from core.theria.plan.room_model import RoomState
 from core.theria.plan.settings import PlanSettings
 
@@ -26,15 +26,12 @@ def settings() -> PlanSettings:
         energy_counter_entity="sensor.compr_cons_heating",
         aux_energy_entity="sensor.aux_cons_heating",
         aux_status_entity="sensor.add_heat_status",
-        min_saving_sek=0.0,  # the mechanics are tested; the threshold has its own tests
-        commit_margin_sek=0.0,  # likewise the commitment to the applied choice
         latitude=55.578,
         longitude=12.927,
         night_end_hour=0,  # the night window is off unless a test turns it on
         rts_min_c=16.0,  # the planner's mechanics are tested on the old +/- 2 C range, whatever the production defaults are
         rts_max_c=20.0,
         floor_c=18.0,
-        plan_strategy="optimizer",  # the dynamic programme's own tests; test_heat_shift covers the shift
         plan_closes_valves=False,  # the thermostat limit, the regulator and the pump setpoint are tested on their own; closing the loops has its own tests
     )
 
@@ -43,7 +40,6 @@ def settings() -> PlanSettings:
 def make_inputs():
     def _make(
         price,
-        extreme=None,
         t_out=5.0,
         room_c=19.5,
         slab_c=28.0,
@@ -52,7 +48,6 @@ def make_inputs():
         return PlanInputs(
             hour_starts=[START + timedelta(hours=i) for i in range(HORIZON)],
             price_sek_per_kwh=np.asarray(price, dtype=float),
-            extreme=np.zeros(HORIZON, bool) if extreme is None else np.asarray(extreme),
             t_out_c=np.full(HORIZON, float(t_out)),
             sun_wm2=np.zeros(HORIZON),
             initial=RoomState(room_c, slab_c, 0.0),

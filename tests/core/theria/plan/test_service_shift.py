@@ -15,7 +15,7 @@ ROOM = "sensor.lk_bibliotek_temperature"
 
 
 def shifting(settings):
-    return replace(settings, plan_strategy="heat_shift", rts_base_c=18.0)
+    return replace(settings, rts_base_c=18.0)
 
 
 def service_at(settings, moment, room=19.8, store=None, prices=None):

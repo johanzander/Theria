@@ -1,9 +1,8 @@
-from dataclasses import replace
+import json
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
-from core.theria.exceptions import ModelFitError
 from core.theria.plan.outcomes import OutcomeInputs
 from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
 from core.theria.plan.series import hourly_grid
@@ -168,10 +167,15 @@ def test_an_older_record_without_the_new_fields_is_still_read(tmp_path):
     assert found.flow_c is None and found.binding is None
 
 
-def test_a_record_keeps_the_options_the_plan_weighed_for_the_hour(tmp_path):
-    options = [{"rts_c": 16.0, "excluded": None, "extra_objective_sek": 0.0}]
-    store = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
-    store.append(replace(record(), alternatives=options, held_by_commitment=None))
-    again = PlanRecordStore(str(tmp_path / "plan_record.jsonl"))
-    found = again.read(HOUR - timedelta(hours=1), HOUR + timedelta(hours=1))[HOUR]
-    assert found.alternatives == options
+def test_a_line_written_by_the_old_optimizer_still_loads(tmp_path):
+    path = tmp_path / "plan_record.jsonl"
+    store = PlanRecordStore(str(path))
+    store.append(record())
+    body = json.loads(path.read_text().splitlines()[0])
+    body["alternatives"] = [{"rts_c": 16.0}]
+    body["held_by_commitment"] = None
+    path.write_text(json.dumps(body) + "\n")
+    found = PlanRecordStore(str(path)).read(
+        HOUR - timedelta(hours=1), HOUR + timedelta(hours=1)
+    )[HOUR]
+    assert found.rts_c == record().rts_c

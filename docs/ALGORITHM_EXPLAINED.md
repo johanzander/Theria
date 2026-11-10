@@ -79,9 +79,6 @@ curves give the ground floor at most +0.09 / -0.05 C and the salon +0.07 / -0.04
 The current hour's setpoint is written in active mode, with the limits in
 [SOFTWARE_DESIGN.md](SOFTWARE_DESIGN.md#planexecutor-and-safetymonitor-planexecutorpy), and each thermostat gets its target for the hour.
 
-The other strategy, `optimizer`, chooses the setpoint per hour by dynamic programming over room and slab, including
-closing the loops at the lowest setpoint. It is kept but is not the default.
-
 ## 6. The temperatures are settings
 
 | Setting | Default | Meaning |
@@ -95,7 +92,6 @@ closing the loops at the lowest setpoint. It is kept but is not the default.
 | `target_c`, `floor_c` | 19.5, 18.5 | day target and limit, ground floor |
 | `night_target_c`, `night_floor_c` | 18.5, 17.5 | the same at 00-06 |
 | `extreme_floor_c` | 17 | limit in extreme-price hours |
-| `ceiling_c`, `lk_limit_c` | 22 | room limit; thermostat under the optimizer |
 | `lk_base_c` | 19.5 | normal thermostat target |
 | `lk_lower_day_c`, `lk_lower_night_c` | 18.5, 17.5 | how far a room may fall in a sell |
 | `lk_close_offset_c` | 0.5 | closing target above that limit |
@@ -261,7 +257,6 @@ with all loops open. Since 5 Nov 2026 about 0.42 of the loops are open, so about
 electricity at COP 3.5 [derived]**. The regressions measured 0.1-0.3 kWh/h **[observed]**, so the calculation and the
 measurement agree. Kitchen and large hall have no floor loops, and the upper floor, salon and guest house keep drawing.
 
-The closed-hour energy in the optimizer (`closed_energy_share` 0.15) is a guess; closed hours measured about 0.6 of open.
 
 ### Hot water
 

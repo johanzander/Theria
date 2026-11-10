@@ -6,9 +6,15 @@ from core.theria.plan.service import PlanService
 from core.theria.plan.state_store import PlanStateStore
 
 from .test_service import FakeWeather, feed_periods
-from .test_service_active import FakeNotifier, FakeSafety, WritableHA, run_cycle
-from .test_service_active import EVENING
-from .test_service_lk import LIMIT, NOW as CHEAP_BEFORE_PEAK
+from .test_service_active import (
+    EVENING,
+    FakeNotifier,
+    FakeSafety,
+    WritableHA,
+    run_cycle,
+)
+from .test_service_lk import LIMIT
+from .test_service_lk import NOW as CHEAP_BEFORE_PEAK
 
 
 def build(settings, ha, path, at=CHEAP_BEFORE_PEAK):

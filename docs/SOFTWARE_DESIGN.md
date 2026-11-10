@@ -47,11 +47,9 @@ graph TD
     CAL --> PS
     SG[SensorGuard] --> PS
     RS[RadiatorService] -->|salon_status| PS
-    PS --> MP[make_plan]
-    MP --> HS[heat_shift + shift_rules]
-    MP --> DP[planner, optimizer]
+    PS --> HS[heat_shift + shift_rules]
+    HS --> PM[plan_model: hours and flat baseline]
     HS --> PLAN[Plan snapshot]
-    DP --> PLAN
     PLAN -->|active only| EX[PlanExecutor]
     PLAN -->|active only| LK[LKExecutor]
     EX --> PUMP[Pump setpoint]
@@ -71,18 +69,18 @@ The coordinator. `cycle()` runs every 15 minutes, and each step is isolated so t
 
 1. Refit the models if due (24 h interval, 6 h retry after a failure).
 2. `run_once()`: compute one plan.
-3. `_regulate()`: the regulator measures and logs (it may only act when `regulator_active`).
-4. `forecast_check.run_due()`: compare finished hours with what the plans said.
-5. In active mode only, `_control()`: daily review, conflict check, safety check, write pump, write thermostats, trace.
+3. `forecast_check.run_due()`: compare finished hours with what the plans said.
+4. In active mode only, `_control()`: daily review, conflict check, safety check, write pump, write thermostats, trace.
 
 It also owns the mode (`set_mode`), settings changes, and the state saved over restarts.
 
-### Plan strategies (`plan/heat_shift.py`, `plan/planner.py`)
+### The plan (`plan/heat_shift.py`, `plan/plan_model.py`)
 
-`make_plan` picks by `plan_strategy`. The default `heat_shift` finds dear and cheap windows and moves the setpoint a fixed
-step. `optimizer` is the older dynamic programme over room, slab and previous setpoint. `heat_shift` reuses `_Problem` from
-the planner for its flat baseline, energy and comfort sums. Both return a `Plan`: hourly `HourPlan` rows and the flat
-baseline. In `heat_shift` each hour also has `thermostat`: `closing`, `opening` or `normal`; a closing hour has `valves_closed`.
+`plan_shift` finds the dear and cheap windows and moves the setpoint a fixed step; `plan_model.HourModel` works out what an hour
+at a setpoint means for the floor, the room and the electricity, and gives the flat-setpoint baseline. The result is a `Plan`:
+hourly `HourPlan` rows and the baseline. Each hour has `thermostat`: `closing`, `opening` or `normal`; a closing hour has
+`valves_closed`. The dynamic-programming optimizer and the regulator were removed on 2026-11-10: the optimizer gave plans that
+swung between 15 and 22 C and heated at 4 kr/kWh, and the regulator was never switched on. Git has them.
 
 ### Shift rules (`plan/shift_rules.py`)
 
@@ -114,13 +112,10 @@ A value that differs from the last written by 0.25 C or more is a hand change an
 
 Writes each LK thermostat, room by room: reads, rewrites while the value read differs, and restores `lk_base_c` when leaving active
 mode. A room that cannot be read does not stop the other. Values not yet confirmed are kept as pending for one hour, and any of them
-arriving late is not a hand change. A hand change pauses that room for an hour. In the heat shift it also leaves the room alone until
-the next window; the optimizer path resumes after the pause.
+arriving late is not a hand change. A hand change pauses that room for an hour and leaves it alone until the next window.
 
-In the heat shift `PlanService._shift_holds` gives every room its target and the window it belongs to, and with no fresh plan every
-room gets the normal target. In the optimizer the thermostats stand at `lk_limit_c`, and `_plan_valve_holds` turns an hour with
-`valves_closed` into a hold at the hour's `floor_c`. `plan/regulator.py` learns how far a room rises after its loops close, and stays
-inactive.
+`PlanService._shift_holds` gives every room its target and the window it belongs to; with no fresh plan every room gets the normal
+target.
 
 ### RadiatorService (`radiators/`)
 
@@ -171,16 +166,17 @@ do not feed the plan.
 ### One plan (`run_once`)
 
 ```text
-prices -> hourly from this hour to the end of what is known; extreme hours from the last 14 days
+prices -> hourly from this hour to the end of what is known
 weather + measured outdoor -> outdoor forecast per hour with the bias removed
 sensor guard -> measured room; minus the sun swing -> initial level
-shift readings -> room, salon status, the window that has started
-make_plan(inputs, effective settings, pump, room) -> Plan
+shift readings -> room, salon status, the window that has started, each room against the mean
+energy forecast's model -> a table of kWh per hour and setpoint
+plan_shift(inputs, effective settings, pump, room) -> Plan
 keep shift window, plan run, snapshot, plan record
 ```
 
-The effective settings are the stored settings with the setpoint range scaled by `min_authority` and skill, the ceiling
-lowered by the regulator's learned rise, and the night limits raised by the morning margin.
+The effective settings are the stored settings with the setpoint range scaled by `min_authority` and skill, and the night
+limits raised by the morning margin.
 
 ### One control pass, active only (`_control`)
 
@@ -203,7 +199,6 @@ Leaving active mode writes the base values back. If that fails the mode stays ac
 | Where | What |
 |---|---|
 | `config.yaml`, `/data/options.json` | entities, sensors, default plan settings |
-| Settings tab | the settings that only the optimizer reads are in their own group, "Optimizer only (not used by the heat shift)" |
 | `plan/settings.py` `PlanSettings` | every plan setting, validated at start |
 | `/data/plan_overrides.json` | values changed in the UI (`plan/settings_manager.py`) |
 | `radiators/settings.py`, `/data/radiator_prefs.json` | radiator configuration and preferences |
@@ -271,7 +266,6 @@ per window.
 
 | Where | Mismatch |
 |---|---|
-| `planner.py` `closed_energy_share` 0.15 | optimizer only; the heat shift uses `shift_closed_energy_share` 0.6, as measured |
 | `outcomes.py` | scales measured energy by the model and leaves out hot-water hours; it is not the agreed saving (see the algorithm document) |
 | `room_model.valve_open` | fitted on 12 days in mild weather (29 Oct - 10 Nov 2026); refit when colder days are logged |
 | `radiators/settings.py` | salon 51.7 W/K against 84 W/K in the analysis |

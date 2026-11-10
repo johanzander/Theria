@@ -7,10 +7,10 @@ import pytest
 
 from core.theria.plan.heat_shift import (
     find_trades,
-    make_plan,
+    plan_shift,
     shift_window_hours,
 )
-from core.theria.plan.planner import PlanInputs
+from core.theria.plan.plan_model import PlanInputs
 from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS
 from core.theria.plan.room_model import PRIOR_ROOM_PARAMS, RoomState
 from core.theria.plan.shift_rules import SalonStatus, ShiftReadings, ShiftWindow
@@ -26,7 +26,6 @@ MIDNIGHT = datetime(2026, 11, 9, 0, 0, tzinfo=STOCKHOLM).astimezone(UTC)
 def shifting(settings):
     return replace(
         settings,
-        plan_strategy="heat_shift",
         rts_min_c=15.0,
         rts_max_c=22.0,
         rts_base_c=18.0,
@@ -38,7 +37,6 @@ def inputs_for(prices, past=(), t_out=7.5, start_hour=0, shift=None):
     return PlanInputs(
         hour_starts=[MIDNIGHT + timedelta(hours=start_hour + i) for i in range(n)],
         price_sek_per_kwh=np.array(prices, dtype=float),
-        extreme=np.zeros(n, bool),
         t_out_c=np.full(n, t_out),
         sun_wm2=np.zeros(n),
         initial=RoomState(19.4, 30.0, 0.0),
@@ -49,7 +47,7 @@ def inputs_for(prices, past=(), t_out=7.5, start_hour=0, shift=None):
 
 
 def planned(settings, inputs):
-    result = make_plan(inputs, shifting(settings), PRIOR_PUMP_PARAMS, PRIOR_ROOM_PARAMS)
+    result = plan_shift(inputs, shifting(settings), PRIOR_PUMP_PARAMS, PRIOR_ROOM_PARAMS)
     return result, [h.rts_c for h in result.hours]
 
 

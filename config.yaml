@@ -81,18 +81,7 @@ options:
           - "binary_sensor.lk_bibliotek_actuator_8"
           - "binary_sensor.lk_bibliotek_actuator_10"
           - "binary_sensor.lk_bibliotek_actuator_12"
-    room_controls:  # the regulator's view of each room; several temperature sensors are averaged
-      - room: "vardagsrum"
-        thermostat_entity: "climate.lk_vardagsrum_thermostat"
-        temperature_entities:
-          - "sensor.lk_vardagsrum_temperature"
-      - room: "bibliotek"
-        thermostat_entity: "climate.lk_bibliotek_thermostat"
-        temperature_entities:
-          - "sensor.lk_bibliotek_temperature"
     plan_closes_valves: true  # true: the plan may close the floor loops in dear hours (LK thermostats held at the floor); false: they stay at the limit
-    closed_energy_share: 0.15  # the pump energy left with the loops closed, as a share of its energy at the lowest setpoint
-    regulator_active: false  # true: the regulator closes a room's valves; false: it only logs
     room_history_entities:  # older sensors that extend the room history back before the LK sensors
       - "sensor.sonoff_a480045bf5_temperature"
     heating_mode_entity: "binary_sensor.switch_valve_1"
@@ -102,10 +91,7 @@ options:
     aux_status_entity: "sensor.add_heat_status"
     latitude: 55.578
     longitude: 12.927
-    max_flow_c: 45.0  # LK's design flow temperature (LK023393); a sanity bound on the pump flow
     floor_mix_max_c: 40.0  # what the floor mixing valves (shunts) let through to the floor loops
-    ceiling_c: 22.0  # the room limit; the LK thermostats are held here in active mode
-    lk_limit_c: 22.0
     lk_base_c: 19.5  # the LK setting when Theria does not control the thermostats
     # Comfort is wanted 06:00-24:00 local time; nobody is in the ground floor at night, so the
     # room may be cooler then. Set night_start_hour = night_end_hour to switch the window off.
@@ -263,14 +249,7 @@ schema:
       - room: str
         entities:
           - str
-    room_controls:
-      - room: str
-        thermostat_entity: str
-        temperature_entities:
-          - str
     plan_closes_valves: bool?
-    closed_energy_share: float?
-    regulator_active: bool?
     heating_mode_entity: str
     flow_measured_entity: str
     energy_counter_entity: str
@@ -278,13 +257,9 @@ schema:
     aux_status_entity: str
     latitude: float
     longitude: float
-    max_flow_c: float?
     floor_mix_max_c: float?
-    ceiling_c: float?
-    lk_limit_c: float?
     lk_base_c: float?
     min_authority: float?
-    min_saving_sek: float?
     night_start_hour: int?
     night_end_hour: int?
     night_target_c: float?

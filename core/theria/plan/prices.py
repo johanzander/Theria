@@ -1,4 +1,4 @@
-"""Electricity prices for planning: parsing, hourly aggregation, extreme-price rule."""
+"""Electricity prices for planning: parsing and hourly aggregation."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -49,36 +49,3 @@ def hourly_prices(
     if not out:
         raise PriceDataError(f"no complete price hour available from {first_hour}")
     return out
-
-
-def extreme_threshold(
-    history_sek_per_kwh: list[float], percentile: float, min_sek_per_kwh: float
-) -> float:
-    """Price at or above which a period counts as extreme.
-
-    The larger of the given percentile of recent prices and the absolute minimum.
-    """
-    if len(history_sek_per_kwh) < 96:
-        raise PriceDataError(
-            "need at least one day (96 periods) of price history for the extreme rule"
-        )
-    return max(float(np.percentile(history_sek_per_kwh, percentile)), min_sek_per_kwh)
-
-
-class PriceHistory:
-    """Rolling store of 15-minute prices used for the extreme-price rule."""
-
-    def __init__(self, days: int):
-        self._days = days
-        self._prices: dict[datetime, float] = {}
-
-    def add(self, periods: list[PricePeriod]) -> None:
-        for p in periods:
-            self._prices[p.start] = p.price_sek_per_kwh
-
-    def prune(self, now: datetime) -> None:
-        cutoff = now - timedelta(days=self._days)
-        self._prices = {s: v for s, v in self._prices.items() if s >= cutoff}
-
-    def values(self) -> list[float]:
-        return [self._prices[s] for s in sorted(self._prices)]

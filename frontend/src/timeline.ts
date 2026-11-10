@@ -9,7 +9,6 @@ export interface DayHour {
   /** the four 15-minute prices of the hour, null for a quarter without a price */
   price_quarters: (number | null)[]
   floor_c: number
-  extreme: boolean
   rts_measured: number | null
   rts_planned: number | null
   rts_baseline: number | null
@@ -57,7 +56,6 @@ export interface HourRow {
   past: boolean
   price: number | null
   floor: number
-  extreme: boolean
   rtsMeasured: number | null
   rtsPlanned: number | null
   rtsBaseline: number | null
@@ -165,7 +163,6 @@ export function timelineRows(views: (DayView | null)[]): HourRow[] {
         past: h.past,
         price: h.price_sek_per_kwh,
         floor: h.floor_c,
-        extreme: h.extreme,
         rtsMeasured: h.rts_measured,
         rtsPlanned: h.rts_planned,
         rtsBaseline: h.rts_baseline,

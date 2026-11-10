@@ -1,7 +1,7 @@
 """Every plan computation with everything it was computed from, so that a plan can be replayed.
 
 The plan is a pure function of its inputs, the settings it ran on and the model parameters. A run
-keeps all of them next to what the plan decided; `replay` feeds them to the planner again, so that
+keeps all of them next to what the plan decided; `replay` feeds them to the heat shift again, so that
 a strange hour ("why pre-heat at the dearest price?") can be reproduced, taken apart and tried with
 another setting. One JSON line per run, kept for a few days.
 """
@@ -12,8 +12,8 @@ from typing import Any
 
 import numpy as np
 
-from core.theria.plan.heat_shift import make_plan
-from core.theria.plan.planner import Plan, PlanInputs
+from core.theria.plan.heat_shift import plan_shift
+from core.theria.plan.plan_model import Plan, PlanInputs
 from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.recent_log import RecentLines
 from core.theria.plan.room_model import RoomParams, RoomState
@@ -62,12 +62,10 @@ def run_to_dict(run: PlanRun) -> dict[str, Any]:
         "inputs": {
             "hour_starts": [h.isoformat() for h in i.hour_starts],
             "price_sek_per_kwh": _array(i.price_sek_per_kwh),
-            "extreme": [bool(e) for e in i.extreme],
             "t_out_c": _array(i.t_out_c),
             "sun_wm2": _array(i.sun_wm2),
             "initial": asdict(i.initial),
             "previous_rts_c": i.previous_rts_c,
-            "previous_closed": i.previous_closed,
             "extra_drift_c_per_h": _array(i.extra_drift_c_per_h),
             "past_prices_sek_per_kwh": _array(i.past_prices_sek_per_kwh),
             "shift": None if i.shift is None else i.shift.to_dict(),
@@ -96,14 +94,10 @@ def run_from_dict(body: dict[str, Any]) -> PlanRun:
         inputs=PlanInputs(
             hour_starts=[datetime.fromisoformat(h) for h in i["hour_starts"]],
             price_sek_per_kwh=np.array(i["price_sek_per_kwh"]),
-            extreme=np.array(i["extreme"], dtype=bool),
             t_out_c=np.array(i["t_out_c"]),
             sun_wm2=np.array(i["sun_wm2"]),
             initial=RoomState(**i["initial"]),
             previous_rts_c=i["previous_rts_c"],
-            previous_closed=i.get(
-                "previous_closed", False
-            ),  # absent in runs kept before 2026-11-04
             extra_drift_c_per_h=None if drift is None else np.array(drift),
             past_prices_sek_per_kwh=None if past is None else np.array(past),
             shift=(
@@ -113,10 +107,7 @@ def run_from_dict(body: dict[str, Any]) -> PlanRun:
             energy_setpoints_c=_optional_array(i.get("energy_setpoints_c")),
             energy_kwh_table=_optional_array(i.get("energy_kwh_table")),
         ),
-        # runs kept before 2026-11-09 were made by the optimizer
-        settings=PlanSettings.from_dict(
-            {"plan_strategy": "optimizer", **body["settings"]}
-        ),
+        settings=PlanSettings.from_dict(body["settings"]),
         pump=PumpParams(**body["pump"]),
         room=RoomParams(**body["room"]),
         decided=body["decided"],
@@ -151,8 +142,6 @@ def make_run(
                 "room_c": h.room_c_end + h.sun_swing_c,
                 "flow_c": h.flow_target_c,
                 "binding": h.reason.get("binding"),
-                "alternatives": h.reason.get("alternatives"),
-                "held_by_commitment": h.reason.get("held_by_commitment"),
             }
             for h in result.hours
         ],
@@ -162,7 +151,7 @@ def make_run(
 
 def replay(run: PlanRun, settings: PlanSettings | None = None) -> Plan:
     """The plan again from what the run kept; `settings` replaces the ones it ran on."""
-    return make_plan(run.inputs, settings or run.settings, run.pump, run.room)
+    return plan_shift(run.inputs, settings or run.settings, run.pump, run.room)
 
 
 class PlanRunStore(RecentLines):

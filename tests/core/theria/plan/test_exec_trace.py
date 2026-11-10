@@ -25,7 +25,7 @@ def test_every_control_cycle_keeps_what_was_read_asked_and_written(settings, tmp
     assert record["pump"]["read"] == 18.0  # the setpoint the pump had
     assert record["pump"]["result"]["action"] in ("wrote", "kept")
     assert (
-        record["lk"]["read"][LK] == 19.5
+        record["lk"]["read"][LK] == 21.0
     )  # what each thermostat showed before the cycle
     assert record["lk"]["targets"][LK] == LIMIT  # what the cycle asked of it
     assert record["lk"]["result"]["action"] == "wrote"

@@ -37,9 +37,9 @@ def test_a_floor_the_room_comes_close_to_is_left_alone(settings):
     assert rec.status == "ok" and rec.suggestion is None
 
 
-def test_the_suggested_floor_never_goes_below_the_extreme_floor(settings):
+def test_the_suggested_floor_never_goes_below_the_night_floor(settings):
     rec = recommend(settings, days_with_room_min(30.0))["floor_c"]
-    assert float(rec.suggestion.split()[0]) >= settings.extreme_floor_c
+    assert float(rec.suggestion.split()[0]) >= settings.night_floor_c
 
 
 def test_too_few_days_means_no_advice(settings):

@@ -12,8 +12,8 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from core.theria.plan.outcomes import OutcomeInputs
+from core.theria.plan.plan_model import HourPlan, Plan
 from core.theria.plan.plan_record import PlanRecord
-from core.theria.plan.planner import HourPlan, Plan
 from core.theria.plan.prices import QUARTERS_PER_HOUR, PricePeriod
 from core.theria.plan.series import hour_floor
 from core.theria.plan.settings import PlanSettings
@@ -135,7 +135,6 @@ def build_day_view(
             "price_sek_per_kwh": _hour_price(prices, hour),
             "price_quarters": _quarter_prices(prices, hour),
             "floor_c": settings.night_floor_c if night else settings.floor_c,
-            "extreme": False,
             "rts_measured": None,
             "rts_planned": None,
             "rts_baseline": None,
@@ -150,7 +149,6 @@ def build_day_view(
             "flow_planned_c": None,
             "flow_baseline_c": None,
             "reason": None,
-            "decision": None,
             "loops_open": {},
             "thermostats": {},
             "salon_measured": None,
@@ -222,12 +220,6 @@ def build_day_view(
                 flow_planned_c=record.flow_c,
                 flow_baseline_c=record.baseline_flow_c,
                 reason=record.binding,
-                decision=None
-                if record.alternatives is None
-                else {
-                    "alternatives": record.alternatives,
-                    "held_by_commitment": record.held_by_commitment,
-                },
             )
         elif not past and hour in planned:
             hour_plan, baseline = planned[hour]
@@ -235,7 +227,6 @@ def build_day_view(
             row.update(
                 price_sek_per_kwh=price,
                 floor_c=hour_plan.floor_c,
-                extreme=hour_plan.extreme,
                 rts_planned=hour_plan.rts_c,
                 rts_baseline=baseline.rts_c,
                 room_planned=hour_plan.room_c_end + hour_plan.sun_swing_c,
@@ -246,12 +237,6 @@ def build_day_view(
                 flow_baseline_c=baseline.flow_target_c,
                 reason=hour_plan.reason.get("binding"),
                 **_expected_zones(hour_plan, settings, night, salon_now_c),
-                decision=None
-                if hour_plan.reason.get("alternatives") is None
-                else {
-                    "alternatives": hour_plan.reason["alternatives"],
-                    "held_by_commitment": hour_plan.reason["held_by_commitment"],
-                },
             )
         row["saving_planned_sek"] = _saving(
             price, row["energy_baseline_kwh"], row["energy_planned_kwh"]

@@ -10,7 +10,7 @@ from .test_service_active import make, run_cycle
 
 NOW = datetime(2026, 10, 12, 23, 20, tzinfo=UTC)
 LK = "climate.lk_bibliotek_thermostat"
-LIMIT = 22.0
+LIMIT = 19.5  # the normal target: where the thermostats stand outside a window
 BASE = 19.5  # the thermostats' setting before Theria, and when it does not control them
 
 
@@ -48,6 +48,7 @@ def test_a_failed_thermostat_restore_keeps_active_mode(settings):
     service, ha, *_ = make(settings, clock=lambda: NOW)
     service.set_mode("active", confirm=True)
     run_cycle(service)
+    ha.lk[LK] = 21.0  # changed by hand: the restore has something to write
     ha.fail_lk_writes = True
     with pytest.raises(SetpointRestoreError):
         service.set_mode("shadow")
@@ -110,28 +111,3 @@ def test_the_plan_never_closes_the_loops_when_the_switch_is_off(settings):
     run_cycle(service)
     assert not any(h.valves_closed for h in service.latest().plan.hours)
     assert ha.lk[LK] == LIMIT
-
-
-def test_the_hold_is_a_valid_half_degree_step_and_never_below_the_hours_floor(settings):
-    """The LK thermostats take half-degree steps (target_temp_step 0.5); a floor of 17.85 (or 17.25) asked for
-    as it is ends up as 17.8 or 17.7 in the thermostat."""
-    service, ha, *_ = make(
-        replace(
-            settings,
-            plan_closes_valves=True,
-            extreme_floor_c=17.25,
-            night_floor_c=17.25,
-        ),
-        evening=9.0,
-    )
-    service.set_mode("active", confirm=True)
-    run_cycle(service)
-    now = service._now()
-    hour = next(
-        h
-        for h in service.latest().plan.hours
-        if h.start <= now < h.start + timedelta(hours=1)
-    )
-    assert hour.valves_closed and hour.floor_c == pytest.approx(17.25), "precondition"
-    assert ha.lk[LK] * 2 == pytest.approx(round(ha.lk[LK] * 2))
-    assert ha.lk[LK] >= hour.floor_c

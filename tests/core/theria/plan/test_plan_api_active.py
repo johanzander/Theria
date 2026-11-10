@@ -9,7 +9,7 @@ from backend import plan_api
 from core.theria.plan.executor import PlanExecutor
 from core.theria.plan.service import PlanService
 
-from .test_service import NOW, FakeWeather, fitted_models, feed_periods
+from .test_service import NOW, FakeWeather, feed_periods, fitted_models
 from .test_service_active import FakeNotifier, FakeSafety, WritableHA, good_days
 
 
@@ -61,7 +61,6 @@ def test_execution_reports_the_last_write(client):
     assert body["mode"] == "active"
     assert "stage" not in body
     assert body["authority"] == 0.75
-    assert body["regulator"] == []
     assert body["last_execution"]["action"] in ("wrote", "kept")
 
 

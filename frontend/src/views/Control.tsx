@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { debugExportUrl, fetchExecution, fetchLog, fetchPlan, fetchPreflight, refitModels, setMode } from '../api'
-import { roomRows, statusTone } from '../model'
+import { statusTone } from '../model'
 import { Card, PageIntro, useLoaded } from '../ui'
 
 export function Control() {
@@ -39,9 +39,9 @@ export function Control() {
   return (
     <>
       <PageIntro>
-        Where Theria is allowed to act. Off: nothing is computed. Shadow: the plan is computed and shown but nothing is written. Active: the plan
-        sets the heat pump's setpoint and holds the LK thermostats at the room limit. A hand change of either pauses control for an hour, and
-        stopping and starting active mode clears the pause.
+        Where Theria is allowed to act. Shadow: the plan is computed and shown but nothing is written. Active: the plan sets the heat pump's
+        setpoint and each LK thermostat (closing in a sell, opening just before one, the normal target otherwise). A hand change on the pump
+        pauses it for an hour; on a thermostat it pauses that room and leaves it alone until the next window.
       </PageIntro>
       <div className="cards">
         <Card label="Mode" value={mode} tone={mode === 'active' ? 'bad' : undefined} />
@@ -56,31 +56,6 @@ export function Control() {
           note={execution.data?.last_lk?.reason}
         />
       </div>
-
-      {execution.data && (
-        <div className="panel">
-          <h2>Rooms</h2>
-          <p className="note">
-            The regulator watches each room every 15 minutes. The LK thermostat is held at the room limit; a room is closed a little
-            earlier, by the rise it has learned after the valves close. Plan freedom (authority): {Math.round((execution.data.authority ?? 0.5) * 100)} % of the setpoint range.
-          </p>
-          {execution.data.regulator && execution.data.regulator.length > 0 ? (
-            <table>
-              <thead><tr><th>Room</th><th>Now</th><th>Trend</th><th>Valves</th><th>State</th><th>Closes at</th><th>Learned rise</th></tr></thead>
-              <tbody>
-                {roomRows(execution.data.regulator).map((r) => (
-                  <tr key={r.room}>
-                    <td>{r.room}</td><td>{r.temperature}</td><td>{r.rate}</td><td>{r.valves}</td>
-                    <td className={r.tone}>{r.state}</td><td>{r.closeAt}</td><td>{r.rise}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="note">No rooms are configured for the regulator.</p>
-          )}
-        </div>
-      )}
 
       <div className="panel">
         <h2>Before activating</h2>
@@ -160,7 +135,7 @@ export function Control() {
 
       <div className="panel">
         <h2>What it did</h2>
-        <p className="note">The latest writes, pauses, regulator decisions and mode changes, newest first.</p>
+        <p className="note">The latest writes, pauses and mode changes, newest first.</p>
         {log.data && log.data.length > 0 ? (
           <table>
             <thead><tr><th>Time (UTC)</th><th>What</th><th>Action</th><th>Detail</th></tr></thead>

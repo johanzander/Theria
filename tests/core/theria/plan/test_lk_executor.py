@@ -2,7 +2,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.theria.exceptions import ConfigurationError
 from core.theria.plan.lk_executor import LKExecutor
 
 NOW = datetime(2026, 11, 3, 1, 20, tzinfo=UTC)
@@ -10,7 +9,7 @@ THERMOSTATS = ("climate.lk_a", "climate.lk_b")
 
 
 class FakeLK:
-    def __init__(self, value=19.5):
+    def __init__(self, value=21.0):  # the thermostats as set by hand, away from the normal target
         self.values = dict.fromkeys(THERMOSTATS, value)
         self.writes = []
         self.fail = set()
@@ -56,11 +55,11 @@ def make(lk_settings, ha=None, clock=None):
     return executor, ha, current
 
 
-LIMIT = 22.0
+LIMIT = 19.5  # the normal target: where the thermostats stand outside a window
 
 
 def test_every_thermostat_is_held_at_the_limit(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(19.5))
+    executor, ha, _ = make(lk_settings, FakeLK(21.0))
     result = executor.execute()
     assert result.action == "wrote" and result.target_c == LIMIT
     assert ha.values == {"climate.lk_a": LIMIT, "climate.lk_b": LIMIT}
@@ -82,7 +81,7 @@ def test_a_held_thermostat_gets_its_hold_and_goes_back_to_the_limit_when_release
     assert ha.values == {"climate.lk_a": LIMIT, "climate.lk_b": LIMIT}
 
 
-def test_a_hand_change_pauses_the_lever_for_an_hour(lk_settings):
+def test_a_hand_change_pauses_the_room_and_is_kept_after_the_hour(lk_settings):
     executor, ha, now = make(lk_settings, FakeLK(LIMIT))
     executor.execute()
     ha.values["climate.lk_a"] = 20.0  # Johan changes one thermostat
@@ -91,8 +90,8 @@ def test_a_hand_change_pauses_the_lever_for_an_hour(lk_settings):
     now[0] += timedelta(minutes=30)
     assert executor.execute().action == "paused"
     now[0] += timedelta(minutes=31)
-    assert executor.execute().action == "wrote"
-    assert ha.values["climate.lk_a"] == LIMIT
+    executor.execute()
+    assert ha.values["climate.lk_a"] == 20.0  # left alone until the next window
 
 
 def test_a_hold_that_was_written_is_not_mistaken_for_a_hand_change(lk_settings):
@@ -103,23 +102,23 @@ def test_a_hold_that_was_written_is_not_mistaken_for_a_hand_change(lk_settings):
 
 
 def test_one_unreachable_thermostat_does_not_stop_the_other(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(19.5))
+    executor, ha, _ = make(lk_settings, FakeLK(21.0))
     ha.fail.add("climate.lk_a")
     result = executor.execute()
     assert result.action == "failed" and ha.values["climate.lk_b"] == LIMIT
 
 
 def test_a_write_that_is_not_accepted_is_reported_not_assumed(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(19.5))
+    executor, ha, _ = make(lk_settings, FakeLK(21.0))
     ha.ignore.add("climate.lk_b")
     assert executor.execute().action == "failed"
 
 
 def test_restore_writes_the_base_everywhere_and_reports_failure(lk_settings):
-    executor, ha, _ = make(lk_settings, FakeLK(LIMIT))
+    executor, ha, _ = make(lk_settings, FakeLK(21.0))
     assert executor.restore_base().action == "wrote"
     assert set(ha.values.values()) == {19.5}
-    ha.values["climate.lk_a"] = LIMIT
+    ha.values["climate.lk_a"] = 21.0
     ha.fail.add("climate.lk_a")
     assert executor.restore_base().action == "failed"
 
@@ -133,7 +132,7 @@ def test_restore_overrides_a_manual_pause(lk_settings):
 
 
 def test_thermostats_that_take_a_few_reads_to_confirm_are_not_a_failure(lk_settings):
-    ha = FakeLK(19.5)
+    ha = FakeLK(21.0)
     ha.lag = 3
     executor, _, _ = make(lk_settings, ha)
     result = executor.execute()
@@ -191,16 +190,17 @@ def test_what_was_still_pending_survives_a_restart_of_the_lk_executor(lk_setting
 def test_the_thermostat_that_took_the_value_is_not_a_hand_change_when_the_other_one_lagged(
     lk_settings,
 ):
-    ha = FakeLK(19.5)
+    ha = FakeLK(21.0)
     executor2, ha, now2 = make(lk_settings, ha)
     executor2.restore_base()  # both thermostats are known at the base
     ha.ignore.add("climate.lk_b")  # the cloud does not deliver this one in time
-    result = executor2.execute()
-    assert result.action == "failed" and ha.values["climate.lk_a"] == LIMIT
+    holds = {"climate.lk_a": 20.5, "climate.lk_b": 20.5}
+    result = executor2.execute(holds, "w1")
+    assert result.action == "failed" and ha.values["climate.lk_a"] == 20.5
     ha.ignore.discard("climate.lk_b")
-    ha.values["climate.lk_b"] = LIMIT  # delivered late
+    ha.values["climate.lk_b"] = 20.5  # delivered late
     now2[0] += timedelta(minutes=15)
-    assert executor2.execute().action == "kept"
+    assert executor2.execute(holds, "w1").action == "kept"
 
 
 # ---- the thermostats show their value to a tenth, and a value that is there is not written again
@@ -227,7 +227,7 @@ def test_a_thermostat_a_quarter_degree_off_is_written(lk_settings):
 def shift_settings(lk_settings):
     from dataclasses import replace
 
-    return replace(lk_settings, plan_strategy="heat_shift")
+    return replace(lk_settings)
 
 
 BASE = 19.5

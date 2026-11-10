@@ -56,7 +56,7 @@ def test_a_buy_window_does_not_close():
 
 @pytest.fixture
 def lk(settings):
-    return replace(settings, plan_strategy="heat_shift")
+    return replace(settings)
 
 
 def test_closing_is_the_lower_limit_plus_the_offset_by_day(lk):

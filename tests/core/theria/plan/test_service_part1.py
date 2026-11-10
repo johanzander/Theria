@@ -13,7 +13,7 @@ NOON = datetime(2026, 10, 12, 10, 20, tzinfo=UTC)
 
 def shifting(settings):
     return replace(
-        settings, plan_strategy="heat_shift", rts_base_c=18.0, plan_closes_valves=True
+        settings, rts_base_c=18.0, plan_closes_valves=True
     )
 
 
@@ -61,13 +61,6 @@ def test_a_room_that_failed_to_restore_gets_no_window(settings):
     ha.fail_lk_writes = False
     run_cycle(service)
     assert ha.lk[LK] == settings.lk_base_c
-
-
-def test_the_optimizer_keeps_its_limit(settings):
-    service, ha, *_ = make(settings, clock=lambda: NOON)
-    service.set_mode("active", confirm=True)
-    run_cycle(service)
-    assert ha.lk[LK] == 22.0
 
 
 def test_a_stale_plan_gets_no_window(settings):

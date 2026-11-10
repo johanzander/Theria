@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
-  planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, planSaving, tabHref,
+  planRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, planSaving, tabHref,
   timelineRows, quarterRows, hasData, dayStatus, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted, shiftWindows, combinedNeed, roomColour,
   type PlanResponse, type DayHour, type DayView, type HourRow,
 } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
   start: `2026-10-12T${String(h).padStart(2, '0')}:00:00Z`,
-  rts_c: rts, price_sek_per_kwh: price, extreme: false, floor_c: 18,
+  rts_c: rts, price_sek_per_kwh: price, floor_c: 18,
   flow_target_c: 36, energy_kwh: 2, room_c_end: room, slab_c_end: 25,
-  energy_cost_sek: 2 * price, comfort_cost_sek: 0, tail: false, reason: { binding: 'price' },
+  energy_cost_sek: 2 * price, reason: { binding: 'price' },
 })
 
 const plan: PlanResponse = {
@@ -17,7 +17,7 @@ const plan: PlanResponse = {
   plan: {
     hours: [hour(0, 17, 19.6, 1), hour(1, 18.5, 19.7, 3)],
     baseline_hours: [hour(0, 18, 19.8, 1), hour(1, 18, 19.8, 3)],
-    objective_sek: 10, baseline_objective_sek: 12, floor_violation_hours: 0, end_cost_sek_per_c: 100,
+    objective_sek: 10, baseline_objective_sek: 12, floor_violation_hours: 0,
   },
 }
 
@@ -31,8 +31,8 @@ describe('planRows', () => {
 })
 
 describe('planSaving', () => {
-  const withHours = (planHours: ReturnType<typeof hour>[], flatHours: ReturnType<typeof hour>[], endCost = 100): PlanResponse => ({
-    ...plan, plan: { ...plan.plan, hours: planHours, baseline_hours: flatHours, end_cost_sek_per_c: endCost },
+  const withHours = (planHours: ReturnType<typeof hour>[], flatHours: ReturnType<typeof hour>[]): PlanResponse => ({
+    ...plan, plan: { ...plan.plan, hours: planHours, baseline_hours: flatHours },
   })
   const at = (h: number, price: number, kwh: number, room: number) => ({ ...hour(h, 17, room, price), energy_kwh: kwh, energy_cost_sek: kwh * price })
 
@@ -47,15 +47,12 @@ describe('planSaving', () => {
     expect(s.netSek).toBeCloseTo(2)
   })
 
-  it('does not count heat taken out of the room as a saving', () => {
-    // the plan uses less energy but ends the room 0.5 degrees colder, at 100 kr per degree
+  it('shows how much colder the room ends beside the saving', () => {
     const flat = [at(0, 2, 2, 19.5), at(1, 2, 2, 19.5)]
     const planned = [at(0, 2, 1, 19.2), at(1, 2, 1, 19.0)]
     const s = planSaving(withHours(planned, flat))
     expect(s.volumeSek).toBeCloseTo(4)
     expect(s.endDiffC).toBeCloseTo(-0.5)
-    expect(s.endHeatSek).toBeCloseTo(-50)
-    expect(s.netSek).toBeCloseTo(-46)
   })
 
   it('is zero for a plan equal to the flat setpoint', () => {
@@ -70,11 +67,9 @@ import { describeReason, formatAge, fitQuality } from './model'
 
 describe('describeReason', () => {
   it('explains known binding values and passes unknown ones through', () => {
-    expect(describeReason('rts_min')).toMatch(/lowest allowed setpoint/i)
-    expect(describeReason('flow_cap')).toMatch(/flow/i)
     expect(describeReason('shift_sell')).toMatch(/dear/i)
+    expect(describeReason('shift_buy')).toMatch(/cheap/i)
     expect(describeReason('shift_guard')).toMatch(/limit/i)
-    expect(describeReason('valves_closed')).toMatch(/loops closed/i)
     expect(describeReason('something_new')).toBe('something_new')
   })
 })
@@ -169,25 +164,6 @@ describe('sortedRecommendations', () => {
   })
 })
 
-describe('roomRows', () => {
-  const rooms = [
-    { room: 'vardagsrum', temperature_c: 22.34, rate_c_per_h: 0.123, state: 'closed', limit_c: 22, rise_c: 0.7, close_at_c: 21.3, valve_fraction: 0 },
-    { room: 'bibliotek', temperature_c: null, rate_c_per_h: null, state: 'unknown', limit_c: 22, rise_c: 0, close_at_c: 21.9, valve_fraction: null },
-    { room: 'kok', temperature_c: 20, rate_c_per_h: -0.04, state: 'open', limit_c: 22, rise_c: 0.2, close_at_c: 21.8, valve_fraction: 0.6 },
-  ]
-  const rows = roomRows(rooms)
-
-  it('formats the readings and flags a closed or unreadable room', () => {
-    expect(rows[0]).toMatchObject({ temperature: '22.3 °C', rate: '+0.12 °C/h', valves: '0 % open', tone: 'warn' })
-    expect(rows[1]).toMatchObject({ temperature: '-', rate: '-', valves: '-', tone: 'bad' })
-    expect(rows[2]).toMatchObject({ rate: '-0.04 °C/h', valves: '60 % open', tone: undefined })
-  })
-
-  it('shows the level it closes at and the rise it has learned', () => {
-    expect(rows[0]).toMatchObject({ closeAt: '21.3 °C', rise: '0.7 °C' })
-  })
-})
-
 describe('tooltip formatting', () => {
   it('rounds to a few decimals and adds the unit', () => {
     expect(formatValue(19.123456, UNITS.temp)).toBe('19.1 °C')
@@ -209,7 +185,7 @@ describe('tooltip formatting', () => {
 })
 
 const dayHour = (start: string, extra: Partial<DayHour> = {}): DayHour => ({
-  start, past: false, price_sek_per_kwh: 1, price_quarters: [1, 1, 1, 1], floor_c: 18, extreme: false,
+  start, past: false, price_sek_per_kwh: 1, price_quarters: [1, 1, 1, 1], floor_c: 18,
   salon_measured: null, salon_planned: null, need_ground_kw: null, need_salon_kw: null, delivered_ground_kw: null, flow_measured_c: null, flow_target_c: null, thermostat: null, thermostat_target_c: null, loops_expected: null,
   rts_measured: null, rts_planned: 18, rts_baseline: 18, room_measured: null, room_planned: 19.5, room_baseline: 19.5,
   energy_measured_kwh: null, energy_planned_kwh: 1.5, energy_baseline_kwh: 2, saving_planned_sek: 0.5, saving_measured_sek: null,

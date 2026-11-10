@@ -6,7 +6,7 @@ computed in it. One JSON line per hour; later plans for the same hour are not ke
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from typing import Any
 
@@ -28,9 +28,6 @@ class PlanRecord:
     flow_c: float | None = None
     baseline_flow_c: float | None = None
     binding: str | None = None
-    # what the plan weighed for the hour (see planner.alternatives)
-    alternatives: list[dict[str, Any]] | None = None
-    held_by_commitment: dict[str, float] | None = None
     thermostat: str | None = None  # the heat shift's thermostats: closing, opening or normal
 
 
@@ -42,9 +39,11 @@ def _to_dict(record: PlanRecord) -> dict[str, Any]:
 
 
 def _from_dict(body: dict[str, Any]) -> PlanRecord:
+    known = {f.name for f in fields(PlanRecord)}
     return PlanRecord(
         **{
-            **body,
+            # lines written before 2026-11-10 also kept what the optimizer weighed
+            **{k: v for k, v in body.items() if k in known},
             "hour": datetime.fromisoformat(body["hour"]),
             "computed_at": datetime.fromisoformat(body["computed_at"]),
         }

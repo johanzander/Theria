@@ -2,8 +2,8 @@
 
 The LK valves close when the room reaches the thermostat setpoint. In the heat shift each room gets
 its target for the hour (`holds`): closing in a sell, above the room in a buy just before a sell, and
-the normal target otherwise. In the optimizer the setpoint is the room limit (`lk_limit_c`), and the
-regulator may hold a single thermostat lower for a while. A room changed by hand is paused on its own.
+the normal target (`lk_base_c`) otherwise. A room changed by hand is paused on its own, and left alone
+until the next window.
 """
 
 import logging
@@ -181,10 +181,9 @@ class LKExecutor:
             self._pause_until[entity] = now + MANUAL_PAUSE
             self._last_written.pop(entity, None)
             self._pending.pop(entity, None)
-            if self._s.plan_strategy == "heat_shift":
-                self._left_alone[entity] = window
+            self._left_alone[entity] = window
         free = {e: v for e, v in current.items() if not self._skip(e, window, now)}
-        default = self._s.lk_setpoint_c
+        default = self._s.lk_base_c
         targets = {e: (holds or {}).get(e, default) for e in free}
         self.last_targets = targets if targets else None
         result = self._apply(targets, free, "hold" if holds else "limit", now, failures)
@@ -272,7 +271,7 @@ class LKExecutor:
         shown = (
             next(iter(targets.values()))
             if len(set(targets.values())) == 1
-            else self._s.lk_setpoint_c
+            else self._s.lk_base_c
         )
         if failures:
             logger.error("LK thermostat write failed: %s", "; ".join(failures))

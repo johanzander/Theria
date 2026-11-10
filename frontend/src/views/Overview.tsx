@@ -36,7 +36,7 @@ function Status({ plan, execution, totals, roomNow }: {
         value={saving ? `${saving.netSek.toFixed(1)} kr` : '-'}
         note={saving
           ? `${saving.kwhSaved.toFixed(1)} kWh less: ${saving.volumeSek.toFixed(1)} kr from using less, ${saving.timingSek.toFixed(1)} kr from timing; `
-            + `${saving.endHeatSek.toFixed(1)} kr for ending the room ${Math.abs(saving.endDiffC).toFixed(1)} °C ${saving.endDiffC < 0 ? 'colder' : 'warmer'}`
+            + `the room ends ${Math.abs(saving.endDiffC).toFixed(1)} °C ${saving.endDiffC < 0 ? 'colder' : 'warmer'}`
           : undefined}
         tone={saving ? (saving.netSek >= 0 ? 'good' : 'bad') : undefined}
       />

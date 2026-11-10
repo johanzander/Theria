@@ -26,13 +26,7 @@ BASE = {
 
 def test_defaults_match_the_agreed_design():
     s = PlanSettings.from_dict(BASE)
-    assert (s.floor_c, s.extreme_floor_c, s.target_c, s.ceiling_c) == (
-        18.5,
-        17.0,
-        19.5,
-        22.0,
-    )
-    assert s.comfort_cost_sek_per_c_hour == 1.0
+    assert (s.floor_c, s.target_c, s.lk_base_c) == (18.5, 19.5, 19.5)
     assert s.mode == "shadow"
     assert s.room_temp_entities == ("sensor.a", "sensor.b")
 
@@ -42,22 +36,15 @@ def test_defaults_match_the_agreed_design():
     [
         {"mode": "active"},
         {"floor_c": 19.9},  # above target
-        {"extreme_floor_c": 18.5},  # above floor
         {"rts_base_c": 30.0},  # outside range
         {"rts_step_c": 0.0},
         {"max_rts_step_per_hour_c": 0.1},
-        {"comfort_cost_sek_per_c_hour": -1.0},
-        {"setpoint_deviation_cost_sek_per_c_hour": -0.1},
-        {"extreme_price_percentile": 100.0},
         {"room_temp_entities": []},
         {"room_thermostat_entities": []},
-        {"boost_flow_limit_c": 29.0},  # below any useful flow temperature
-        {"boost_flow_limit_c": 46.0},  # above the floor limit
-        {"plan_strategy": "whatever"},
         {"shift_room_swing_c": 0.0},
         {"shift_rts_c": 0.0},
-        {"max_flow_c": 29.0},  # below any useful flow temperature
-        {"max_flow_c": 63.0},  # above the pump limit of 62 C
+        {"lk_lower_day_c": 21.0},  # above the upper limit
+        {"shift_closed_energy_share": 1.5},
         {"unknown_option": 1},
     ],
 )
@@ -119,41 +106,11 @@ def test_load_raises_configuration_error_for_invalid_yaml(tmp_path):
         load_plan_settings(str(tmp_path / "a.json"), str(config))
 
 
-def test_max_flow_default_is_the_flow_temperature_lk_designed_for():
-    assert PlanSettings.from_dict(BASE).max_flow_c == 45.0
-
-
-def test_deviating_from_the_base_setpoint_has_a_default_cost_for_the_rooms_that_react_faster():
-    assert PlanSettings.from_dict(BASE).setpoint_deviation_cost_sek_per_c_hour == 0.1
-
-
 def test_floor_loops_are_read_as_a_list_of_rooms():
     s = PlanSettings.from_dict(
         {**BASE, "room_actuators": [{"room": "bib", "entities": ["binary_sensor.a"]}]}
     )
     assert s.room_actuators == {"bib": ("binary_sensor.a",)}
-
-
-def test_the_lk_limit_defaults_to_the_room_ceiling_and_the_shunt_cap_to_40(settings):
-    assert settings.lk_limit_c == settings.ceiling_c == 22.0
-    assert settings.floor_mix_max_c == 40.0
-
-
-def test_the_lk_limit_must_lie_between_the_floor_and_the_plans_ceiling_must_not_pass_it(settings):
-    from dataclasses import replace
-
-    import pytest
-
-    from core.theria.exceptions import ConfigurationError
-
-    with pytest.raises(ConfigurationError):
-        replace(settings, lk_limit_c=settings.floor_c - 0.5)
-    with pytest.raises(ConfigurationError):
-        replace(settings, ceiling_c=settings.lk_limit_c + 0.5)  # the plan aims above where the valves close
-    with pytest.raises(ConfigurationError):
-        replace(settings, lk_base_c=settings.lk_limit_c + 0.5)
-    with pytest.raises(ConfigurationError):
-        replace(settings, floor_mix_max_c=0.0)
 
 
 def test_the_plan_starts_with_three_quarters_of_the_setpoint_range_and_the_minimum_can_be_changed(settings):
@@ -175,7 +132,9 @@ def test_the_setpoint_shift_stays_inside_what_has_been_measured():
         PlanSettings.from_dict({**BASE, "shift_rts_c": 2.5})
 
 
-def test_an_option_that_was_removed_can_still_be_stored_in_home_assistant(settings):
+def test_the_options_of_the_removed_optimizer_can_still_be_stored_in_home_assistant(
+    settings,
+):
     from dataclasses import asdict
 
     from core.theria.plan.settings import PlanSettings
@@ -183,7 +142,15 @@ def test_an_option_that_was_removed_can_still_be_stored_in_home_assistant(settin
     stored = {
         k: v
         for k, v in asdict(settings).items()
-        if k not in ("room_actuators", "room_controls")
+        if k not in ("room_actuators",)
     }
-    loaded = PlanSettings.from_dict({**stored, "radiator_entities": ["climate.a"]})
+    loaded = PlanSettings.from_dict(
+        {
+            **stored,
+            "radiator_entities": ["climate.a"],
+            "plan_strategy": "optimizer",
+            "ceiling_c": 22.0,
+            "room_controls": [],
+        }
+    )
     assert loaded.outdoor_entity == settings.outdoor_entity

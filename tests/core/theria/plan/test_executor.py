@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from core.theria.plan.executor import PlanExecutor, SafetyMonitor
-from core.theria.plan.planner import HourPlan, Plan
+from core.theria.plan.plan_model import HourPlan, Plan
 from core.theria.plan.room_model import RoomState
 from core.theria.plan.snapshot import PlanSnapshot
 
@@ -17,15 +17,12 @@ def snapshot(rts_by_hour, computed_at=NOW):
             start=datetime(2026, 11, 3, 12, tzinfo=UTC) + timedelta(hours=i),
             rts_c=rts,
             price_sek_per_kwh=1.0,
-            extreme=False,
             floor_c=18.0,
             flow_target_c=35.0,
             energy_kwh=2.0,
             room_c_end=19.9,
             slab_c_end=25.0,
             energy_cost_sek=2.0,
-            comfort_cost_sek=0.0,
-            tail=False,
             reason={},
         )
         for i, rts in enumerate(rts_by_hour)
@@ -34,7 +31,6 @@ def snapshot(rts_by_hour, computed_at=NOW):
         computed_at=computed_at,
         mode="active",
         plan=Plan(hours, hours, 0.0, 0.0, 0),
-        extreme_threshold_sek_per_kwh=3.0,
         outdoor_bias_c=0.0,
         initial=RoomState(19.9, 25.0, 0.0),
         model_status={},

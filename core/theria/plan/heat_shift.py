@@ -23,7 +23,7 @@ from core.theria.plan.house_model import (
     next_delta_c,
     next_delta_closed_c,
 )
-from core.theria.plan.planner import HourPlan, Plan, PlanInputs, _Problem, plan
+from core.theria.plan.plan_model import HourModel, HourPlan, Plan, PlanInputs
 from core.theria.plan.pump_model import PumpParams, flow_target
 from core.theria.plan.room_model import RoomParams, valve_open
 from core.theria.plan.settings import PlanSettings
@@ -116,7 +116,7 @@ def _runs(values: np.ndarray) -> list[tuple[int, int]]:
 
 
 def _forecast_deltas(
-    problem: _Problem,
+    problem: HourModel,
     baseline: list[HourPlan],
     adjust: np.ndarray,
     modes: list[str],
@@ -133,13 +133,13 @@ def _forecast_deltas(
             - flow_target(problem.pump, t_out, s.rts_base_c)
         )
         base_flow = problem.floor_flow(t, s.rts_base_c)
-        target = s.lk_upper_c if modes[t] == OPENING else s.lk_setpoint_c
+        target = s.lk_upper_c if modes[t] == OPENING else s.lk_base_c
         open_share = float(valve_open(flat.room_c_end, target))
         deltas[MAIN] = (
             next_delta_closed_c(
                 MAIN,
                 deltas[MAIN],
-                float(valve_open(flat.room_c_end, s.lk_setpoint_c)),
+                float(valve_open(flat.room_c_end, s.lk_base_c)),
                 base_flow - flat.room_c_end,
             )
             if modes[t] == CLOSING
@@ -165,7 +165,7 @@ def _setpoint(settings: PlanSettings, adjustment: float) -> float:
 
 
 def _worth_storing(
-    problem: _Problem,
+    problem: HourModel,
     baseline: list[HourPlan],
     adjust: np.ndarray,
     window: int,
@@ -234,7 +234,7 @@ def plan_shift(
     inputs: PlanInputs, settings: PlanSettings, pump: PumpParams, room: RoomParams
 ) -> Plan:
     """The base setpoint, lowered in the dearest windows, raised before them where the heat is needed."""
-    problem = _Problem(inputs, settings, pump, room)
+    problem = HourModel(inputs, settings, pump, room)
     past = (
         np.zeros(0)
         if inputs.past_prices_sek_per_kwh is None
@@ -293,15 +293,14 @@ def plan_shift(
             flat.room_c_end + deltas[MAIN][t],
             flat.slab_c_end,
             reason,
-            tail=False,
             closed=closed,
         )
         energy = hour.energy_kwh
         if closed:
             # closing saves nothing on loops that would have been closed anyway
-            share = float(valve_open(flat.room_c_end, settings.lk_setpoint_c))
+            share = float(valve_open(flat.room_c_end, settings.lk_base_c))
             energy = problem.energy_kwh(t, rts) * (
-                1.0 - (1.0 - settings.closed_share) * share
+                1.0 - (1.0 - settings.shift_closed_energy_share) * share
             )
         hours.append(
             replace(
@@ -319,19 +318,8 @@ def plan_shift(
     return Plan(
         hours,
         baseline,
-        float(sum(h.energy_cost_sek + h.comfort_cost_sek for h in hours)),
-        float(sum(h.energy_cost_sek + h.comfort_cost_sek for h in baseline)),
+        float(sum(h.energy_cost_sek for h in hours)),
+        float(sum(h.energy_cost_sek for h in baseline)),
         violations,
-        end_reference_c=float(problem.targets[-1]),
-        end_cost_sek_per_c=0.0,
         shift_window=committed,
     )
-
-
-def make_plan(
-    inputs: PlanInputs, settings: PlanSettings, pump: PumpParams, room: RoomParams
-) -> Plan:
-    """The plan by the chosen strategy."""
-    if settings.plan_strategy == "heat_shift":
-        return plan_shift(inputs, settings, pump, room)
-    return plan(inputs, settings, pump, room)

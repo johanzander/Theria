@@ -64,7 +64,7 @@ def test_an_unknown_input_gives_no_need():
 
 @pytest.fixture
 def shift(settings):
-    return replace(settings, plan_strategy="heat_shift")
+    return replace(settings)
 
 
 def test_a_closing_thermostat_expects_closed_loops_above_its_target(shift):
@@ -187,7 +187,7 @@ def zones(start, stop):
 
 def shifting(settings):
     return replace(
-        settings, plan_strategy="heat_shift", rts_base_c=18.0, plan_closes_valves=True
+        settings, rts_base_c=18.0, plan_closes_valves=True
     )
 
 

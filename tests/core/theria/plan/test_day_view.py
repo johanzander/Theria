@@ -180,15 +180,3 @@ def test_the_checks_include_the_price_feed_and_the_stored_history(settings):
         "electric heater counter",
         "measured savings",
     } <= set(names)
-
-
-def test_a_planned_hour_carries_the_options_the_plan_weighed(settings):
-    service = started(settings)
-    rows = {r["start"]: r for r in service.day_view(LOCAL_DAY)["hours"]}
-    first = service.latest().plan.hours[0]
-    decision = rows[PLAN_START]["decision"]
-    assert decision["alternatives"] == first.reason["alternatives"]
-    assert decision["held_by_commitment"] == first.reason["held_by_commitment"]
-    assert (
-        rows[PLAN_START - timedelta(hours=1)]["decision"] is None
-    )  # nothing was recorded

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
-from core.theria.plan.planner import HourPlan, Plan
+from core.theria.plan.plan_model import HourPlan, Plan
 from core.theria.plan.room_model import RoomState
 from core.theria.plan.scoring import ScoreBoard
 from core.theria.plan.snapshot import PlanSnapshot
@@ -16,15 +16,12 @@ def snapshot(computed_at: datetime, predicted: list[float]) -> PlanSnapshot:
             start=T0 + timedelta(hours=i),
             rts_c=18.0,
             price_sek_per_kwh=1.0,
-            extreme=False,
             floor_c=18.0,
             flow_target_c=36.0,
             energy_kwh=1.0,
             room_c_end=value,
             slab_c_end=28.0,
             energy_cost_sek=1.0,
-            comfort_cost_sek=0.0,
-            tail=False,
             reason={},
         )
         for i, value in enumerate(predicted)
@@ -33,7 +30,6 @@ def snapshot(computed_at: datetime, predicted: list[float]) -> PlanSnapshot:
         computed_at=computed_at,
         mode="shadow",
         plan=Plan(hours, hours, 0.0, 0.0, 0),
-        extreme_threshold_sek_per_kwh=3.0,
         outdoor_bias_c=0.0,
         initial=RoomState(19.5, 28.0, 0.0),
         model_status={},

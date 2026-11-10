@@ -1,7 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from core.theria.plan.disturbance import Innovation
 from core.theria.plan.skill import (
     BAD_C_PER_H,

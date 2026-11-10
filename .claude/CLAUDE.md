@@ -51,7 +51,7 @@ The rest of the closed-loop heat shift: window length from measured cooling, the
 
 ## Key Design Decisions
 
-1. **Heat shift, not MPC** - The default plan moves a fixed setpoint step between price windows; the dynamic programme is kept as an alternative strategy
+1. **Heat shift, not MPC** - The plan moves a fixed setpoint step between price windows; the dynamic-programming optimizer was removed on 2026-11-10
 2. **Measured state wins** - Each plan starts from the measured room; the models only say what a change would do
 3. **Home Assistant Integration** - Deployed as HA add-on, not standalone
 4. **Algorithm apart from temperatures** - Temperatures and limits are settings

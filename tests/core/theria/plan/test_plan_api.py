@@ -143,8 +143,7 @@ def test_the_model_catalog_lists_the_parameters(client):
     assert {
         "energy_per_rts",
         "k_slab",
-        "comfort_cost_sek_per_c_hour",
-        "end_cost_sek_per_c",
+        "lk_base_c",
     } <= keys
     assert all(e["description"] for e in body)
 
@@ -172,12 +171,12 @@ def test_the_settings_are_listed_with_value_default_and_meaning(editable_client)
 
 def test_a_setting_can_be_changed_and_reset(editable_client):
     http, service = editable_client
-    response = http.put("/api/plan/settings", json={"values": {"ceiling_c": 21.5}})
+    response = http.put("/api/plan/settings", json={"values": {"lk_upper_c": 21.5}})
     assert response.status_code == 200
-    assert {e["key"]: e for e in response.json()}["ceiling_c"]["source"] == "override"
-    assert service._settings.ceiling_c == 21.5
-    response = http.delete("/api/plan/settings/ceiling_c")
-    assert response.status_code == 200 and service._settings.ceiling_c == 22.0
+    assert {e["key"]: e for e in response.json()}["lk_upper_c"]["source"] == "override"
+    assert service._settings.lk_upper_c == 21.5
+    response = http.delete("/api/plan/settings/lk_upper_c")
+    assert response.status_code == 200 and service._settings.lk_upper_c == 20.5
 
 
 def test_an_invalid_change_is_a_422_that_says_why(editable_client):

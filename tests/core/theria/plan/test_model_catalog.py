@@ -18,7 +18,6 @@ def catalog(settings, **overrides):
         disturbance_c_per_h=0.0,
         authority=0.5,
         skill_error_c_per_h=None,
-        regulator_rise_c={},
         plan=None,
     )
     args.update(overrides)
@@ -49,9 +48,7 @@ def test_the_pump_room_sun_weights_and_limits_are_all_listed(settings):
         "energy_per_rts", "aux_onset_c", "aux_per_flow_c",
         "k_slab", "k_out", "tau_slab_h", "sun_swing_c_per_wm2", "sun_lag_h", "room_gain_c_per_c",
         "room_time_constant_days", "disturbance_c_per_h", "authority", "morning_margin_c",
-        "comfort_cost_sek_per_c_hour", "setpoint_deviation_cost_sek_per_c_hour",
-        "floor_violation_cost_sek_per_c_hour", "ceiling_violation_cost_sek_per_c_hour", "switch_cost_sek_per_c", "end_credit_c",
-        "min_saving_sek", "floor_mix_max_c", "lk_limit_c",
+        "floor_mix_max_c", "lk_base_c",
     ):
         assert wanted in keys, wanted
 
@@ -62,11 +59,6 @@ def test_fitted_and_prior_parameters_are_told_apart(settings):
 
 
 def test_the_settings_show_the_value_in_use(settings):
-    entries = by_key(catalog(replace(settings, comfort_cost_sek_per_c_hour=0.7)))
-    assert entries["comfort_cost_sek_per_c_hour"]["value"] == 0.7
-    assert entries["comfort_cost_sek_per_c_hour"]["source"] == "setting"
-
-
-def test_a_learned_rise_is_listed_per_room(settings):
-    entries = by_key(catalog(settings, regulator_rise_c={"bibliotek": 0.6}))
-    assert entries["regulator_rise_bibliotek"]["value"] == 0.6
+    entries = by_key(catalog(replace(settings, floor_mix_max_c=38.0)))
+    assert entries["floor_mix_max_c"]["value"] == 38.0
+    assert entries["floor_mix_max_c"]["source"] == "setting"

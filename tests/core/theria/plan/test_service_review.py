@@ -80,7 +80,8 @@ def test_the_base_setpoint_is_restored_before_the_mode_is_saved(settings, tmp_pa
     store.save = lambda state: (order.append("save"), real_save(state))[1]
     ha.set_temperature = lambda e, v: (order.append("write"), real_set(e, v))[1]
     service.set_mode("shadow")
-    assert order == ["write", "save"]
+    # the pump and the thermostats are written back first, and only then is the mode saved
+    assert order[-1] == "save" and set(order[:-1]) == {"write"}
 
 
 def test_stopping_the_service_in_active_mode_puts_the_base_back(settings):

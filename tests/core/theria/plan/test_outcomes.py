@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from core.theria.plan.outcomes import OutcomeInputs, day_outcomes, load_outcome_inputs
-from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, energy_kwh_per_hour
 from core.theria.plan.prices import PricePeriod
+from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, energy_kwh_per_hour
 
 START = datetime(2026, 1, 10, 0, tzinfo=UTC)
 PUMP = PRIOR_PUMP_PARAMS

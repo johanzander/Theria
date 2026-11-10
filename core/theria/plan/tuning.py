@@ -72,7 +72,7 @@ def _floor(s: PlanSettings, days: list[DayOutcome]) -> Recommendation:
             "The room comes close to the floor, so it is doing its job.",
             "ok",
         )
-    suggested = max(s.extreme_floor_c, s.floor_c - FLOOR_STEP_C)
+    suggested = max(s.night_floor_c, s.floor_c - FLOOR_STEP_C)
     return Recommendation(
         "floor_c",
         title,

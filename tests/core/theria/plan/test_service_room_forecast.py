@@ -20,16 +20,6 @@ def with_room(service, room_c):
     return service
 
 
-def test_a_stove_warmed_room_is_forecast_to_cool_with_the_pump_turned_down(settings):
-    service = with_room(
-        make_service(settings, prices=feed_periods(days=3), clock=lambda: MIDNIGHT),
-        22.0,
-    )
-    hours = service.run_once().plan.hours
-    assert all(h.rts_c < settings.rts_base_c for h in hours[:6])
-    assert hours[5].room_c_end < 21.5
-
-
 def test_a_warmer_room_falls_faster(settings):
     def fall(room_c):
         service = with_room(

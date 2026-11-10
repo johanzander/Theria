@@ -48,30 +48,24 @@ from core.theria.plan.energy_forecast import trailing_means
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
-from core.theria.plan.heat_shift import make_plan
-from core.theria.plan.lk_executor import LKExecutor, LKResult, step_up
+from core.theria.plan.heat_shift import plan_shift
+from core.theria.plan.lk_executor import LKExecutor, LKResult
 from core.theria.plan.model_catalog import build_catalog
 from core.theria.plan.morning import MorningRules, update_margin
 from core.theria.plan.night_drift import NightDrift
 from core.theria.plan.outcomes import DayOutcome, OutcomeInputs
 from core.theria.plan.parameter_log import ParameterLog
-from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
-from core.theria.plan.plan_run import PlanRunStore, make_run
-from core.theria.plan.planner import (
+from core.theria.plan.plan_model import (
     HourPlan,
     Plan,
     PlanInputs,
     sun_filtered_sequence,
 )
+from core.theria.plan.plan_record import PlanRecord, PlanRecordStore
+from core.theria.plan.plan_run import PlanRunStore, make_run
 from core.theria.plan.preflight import Check, preflight_checks
-from core.theria.plan.prices import (
-    PriceHistory,
-    PricePeriod,
-    extreme_threshold,
-    hourly_prices,
-)
-from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, PumpParams, flow_target
-from core.theria.plan.regulator import Regulator, RoomStatus
+from core.theria.plan.prices import PricePeriod, hourly_prices
+from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, PumpParams
 from core.theria.plan.room_level import room_level_c
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
@@ -229,7 +223,6 @@ class PlanService:
             asyncio.Event()
         )  # set to run the next cycle now instead of after the interval
         self._mode = settings.mode
-        self._history = PriceHistory(settings.extreme_history_days)
         self._snapshots: deque[PlanSnapshot] = deque(maxlen=SNAPSHOTS_KEPT)
         self._task: asyncio.Task | None = None
         self._calibrator = calibrator
@@ -273,14 +266,6 @@ class PlanService:
         self._authority_day: tuple[date, float] | None = None
         self._shift_window: ShiftWindow | None = None
         self._salon_status: Callable[[], SalonStatus] | None = None
-        self._regulator = (
-            Regulator(
-                settings.room_controls, settings.lk_limit_c, settings.room_actuators
-            )
-            if settings.room_controls
-            else None
-        )
-        self._regulator_statuses: list[RoomStatus] = []
         self._tuning_days: tuple[datetime, list[DayOutcome]] | None = None
         self._actuals_loader = actuals_loader
         self._forecast_check = forecast_check
@@ -307,8 +292,6 @@ class PlanService:
                 executor.load_state(state.executor)
             if state.lk is not None and lk_executor is not None:
                 lk_executor.load_state(state.lk)
-            if state.regulator is not None and self._regulator is not None:
-                self._regulator.load_state(state.regulator)
             if state.skill is not None:
                 self._skill.load_state(state.skill)
             if state.shift_window is not None:
@@ -455,7 +438,6 @@ class PlanService:
         result: Any,
         settings: PlanSettings,
         room: RoomParams,
-        baseline_flow: Any,
     ) -> ComfortOutlook | None:
         hours = result.hours
         for k in range(len(hours) - 1):
@@ -465,10 +447,7 @@ class PlanService:
                 hour = hours[k]
                 expected = hour.room_c_end + hour.sun_swing_c
                 deficit = max(0.0, settings.target_c - expected)
-                cap = min(
-                    settings.max_flow_c,
-                    max(settings.boost_flow_limit_c, float(baseline_flow[k])),
-                )
+                cap = settings.floor_mix_max_c
                 extra = room.k_slab * max(0.0, cap - hour.flow_target_c)
                 lead = (
                     0.0 if deficit == 0.0 else (deficit / extra if extra > 0 else None)
@@ -514,10 +493,6 @@ class PlanService:
         down = round((s.rts_base_c - s.rts_min_c) * authority / step) * step
         up = round((s.rts_max_c - s.rts_base_c) * authority / step) * step
         s = replace(s, rts_min_c=s.rts_base_c - down, rts_max_c=s.rts_base_c + up)
-        if self._regulator is not None:
-            rise = max((r.rise_c for r in self._regulator.rooms), default=0.0)
-            ceiling = max(s.ceiling_c - rise, s.target_c + 0.5)
-            s = replace(s, ceiling_c=min(s.ceiling_c, ceiling))
         if self._morning_margin_c <= 0.0 or s.night_start_hour == s.night_end_hour:
             return s
         return replace(
@@ -639,11 +614,6 @@ class PlanService:
                         else self._executor.export_state()
                     ),
                     lk=None if self._lk is None else self._lk.export_state(),
-                    regulator=(
-                        None
-                        if self._regulator is None
-                        else self._regulator.export_state()
-                    ),
                     skill=self._skill.export_state(),
                     shift_window=(
                         None
@@ -707,12 +677,6 @@ class PlanService:
             self._lk.use_settings(settings)
         if self._safety is not None:
             self._safety.use_settings(settings)
-        if self._regulator is not None:
-            learned = self._regulator.export_state()
-            self._regulator = Regulator(
-                settings.room_controls, settings.lk_limit_c, settings.room_actuators
-            )
-            self._regulator.load_state(learned)
         self._save_state()
 
     def model_catalog(self) -> list[dict[str, Any]]:
@@ -731,11 +695,6 @@ class PlanService:
             disturbance_c_per_h=self._disturbance.at(now),
             authority=self._authority(),
             skill_error_c_per_h=self._skill.error(now),
-            regulator_rise_c=(
-                {}
-                if self._regulator is None
-                else {r.room: r.rise_c for r in self._regulator.rooms}
-            ),
             plan=None if latest is None else latest.plan,
         )
 
@@ -750,7 +709,6 @@ class PlanService:
             "plan_error": self._plan_error,
             "last_execution": result,
             "last_lk": lk_result,
-            "regulator": self._regulator_statuses,
             "authority": self._authority(),
             "morning_margin_c": self._morning_margin_c,
             "last_trouble": self._last_trouble,
@@ -873,7 +831,7 @@ class PlanService:
         innovation = self._disturbance.update(
             sample,
             replace(self._warmed_room(), drift_c_per_h=self._day_heat(now)),
-            s.lk_setpoint_c,
+            s.lk_base_c,
         )
         if innovation is not None:
             self._skill.add(innovation)
@@ -928,8 +886,6 @@ class PlanService:
             return SalonStatus(None, 0.0)
 
     def _shift_readings(self, room_c: float) -> ShiftReadings | None:
-        if self._settings.plan_strategy != "heat_shift":
-            return None
         rooms = [
             r
             for r in (self._room_c(e) for e in self._settings.room_thermostat_entities)
@@ -1090,13 +1046,6 @@ class PlanService:
         s = self._settings
 
         periods = self._price_periods()
-        self._history.add(periods)
-        self._history.prune(now)
-        threshold = extreme_threshold(
-            self._history.values(),
-            s.extreme_price_percentile,
-            s.extreme_price_min_sek_per_kwh,
-        )
         hourly = hourly_prices(periods, _floor_hour(now))
         starts = [h for h, _ in hourly]
         prices = np.array([p for _, p in hourly])
@@ -1144,36 +1093,27 @@ class PlanService:
         inputs = PlanInputs(
             hour_starts=starts,
             price_sek_per_kwh=prices,
-            extreme=prices >= threshold,
             t_out_c=t_out,
             sun_wm2=sun,
             initial=initial,
             previous_rts_c=previous_rts,
-            previous_closed=self._closed_now(now),
             extra_drift_c_per_h=self._extra_drift(starts),
             past_prices_sek_per_kwh=self._prices_today(periods, starts[0]),
             shift=self._shift_readings(room_c),
             **self._energy_table(starts, weather, bias),
         )
-        baseline_flow = np.minimum(
-            np.asarray(flow_target(self._pump, t_out, s.rts_base_c), dtype=float),
-            s.floor_mix_max_c,
-        )
         room_params = self._warmed_room()
         effective = self._effective_settings()
-        result = make_plan(inputs, effective, self._pump, room_params)
+        result = plan_shift(inputs, effective, self._pump, room_params)
         self._keep_shift_window(result.shift_window)
         self._keep_run(now, inputs, effective, room_params, result)
         snapshot = PlanSnapshot(
             computed_at=now,
             mode=self._mode,
             plan=result,
-            extreme_threshold_sek_per_kwh=threshold,
             outdoor_bias_c=bias,
             initial=initial,
-            comfort_outlook=self._comfort_outlook(
-                result, effective, room_params, baseline_flow
-            ),
+            comfort_outlook=self._comfort_outlook(result, effective, room_params),
             model_status={
                 "energy": (
                     "pump model" if inputs.energy_kwh_table is None else "forecast"
@@ -1227,9 +1167,6 @@ class PlanService:
                     flow_c=hour.flow_target_c,
                     baseline_flow_c=flat.flow_target_c,
                     binding=hour.reason.get("binding"),
-                    # only the optimizer weighs alternatives
-                    alternatives=hour.reason.get("alternatives"),
-                    held_by_commitment=hour.reason.get("held_by_commitment"),
                     thermostat=hour.thermostat,
                 )
             )
@@ -1296,10 +1233,6 @@ class PlanService:
         except Exception as e:
             self._plan_error = f"{type(e).__name__}: {e}"
             logger.exception("plan computation failed")
-        try:
-            await asyncio.to_thread(self._regulate)
-        except Exception:  # supervisor boundary: the loop must survive
-            logger.exception("regulator failed")
         if self._forecast_check is not None:
             try:
                 await asyncio.to_thread(self._forecast_check.run_due)
@@ -1310,32 +1243,6 @@ class PlanService:
                 await asyncio.to_thread(self._control)
             except Exception:
                 logger.exception("plan control failed")
-
-    def _regulate(self) -> None:
-        """Measure every room, decide which valves should be closed and log what changed."""
-        if self._regulator is None:
-            return
-        statuses = self._regulator.step(
-            self._now(), lambda entity: self._ha.get_state(entity)["state"]
-        )
-        self._regulator_statuses = statuses
-        acting = self._mode == "active" and self._settings.regulator_active
-        for status in statuses:
-            for action, detail in status.events:
-                prefix = "" if acting or action == "learned" else "would: "
-                self._log("regulator", action, f"{prefix}{status.room} {detail}")
-
-    def _holds(self) -> dict[str, float] | None:
-        """Thermostat setpoints that close rooms: the regulator's (when it may act) and, in an hour
-        where the plan closes the floor loops, every thermostat at the hour's floor. The lower wins.
-        """
-        holds = self._plan_valve_holds()
-        if self._regulator is not None and self._settings.regulator_active:
-            for entity, target in self._regulator.holds(
-                self._regulator_statuses
-            ).items():
-                holds[entity] = min(target, holds.get(entity, target))
-        return holds or None
 
     def _plan_hour_now(self, now: datetime) -> HourPlan | None:
         snapshot = self.latest()
@@ -1356,11 +1263,6 @@ class PlanService:
             return None
         plan_hour = self._plan_hour_now(hour)
         return None if plan_hour is None else plan_hour.rts_c
-
-    def _closed_now(self, now: datetime) -> bool:
-        """Whether the plan last computed has the floor loops closed in the hour that is applied."""
-        hour = self._plan_hour_now(now)
-        return hour is not None and hour.valves_closed
 
     def _trace_cycle(
         self,
@@ -1416,15 +1318,6 @@ class PlanService:
                     ),
                     "rts_range_c": [effective.rts_min_c, effective.rts_max_c],
                     "disturbance_c_per_h": self._disturbance.at(now),
-                    "regulator": [
-                        {
-                            "room": r.room,
-                            "temperature_c": r.temperature_c,
-                            "state": r.state,
-                            "valve_fraction": r.valve_fraction,
-                        }
-                        for r in self._regulator_statuses
-                    ],
                 }
             )
         except OSError:
@@ -1531,32 +1424,6 @@ class PlanService:
         }
         return targets, f"{mode}:{hours[last].start.isoformat()}"
 
-    def _plan_valve_holds(self) -> dict[str, float]:
-        """The floor loops close while the plan's current hour has them closed. The thermostats are
-        held at the hour's floor, so the loops reopen by themselves if a room falls that far.
-        """
-        s = self._settings
-        snapshot = self.latest()
-        now = self._now()
-        if (
-            not s.plan_closes_valves
-            or snapshot is None
-            or now - snapshot.computed_at > MAX_PLAN_AGE
-        ):
-            return {}
-        hour = next(
-            (
-                h
-                for h in snapshot.plan.hours
-                if h.start <= now < h.start + timedelta(hours=1)
-            ),
-            None,
-        )
-        if hour is None or not hour.valves_closed:
-            return {}
-        # a valid thermostat step, rounded up: the loops reopen no later than the floor itself
-        return dict.fromkeys(s.room_thermostat_entities, step_up(hour.floor_c))
-
     def _control(self) -> None:
         """Active mode: review the last days once a day, watch for trouble, apply the plan."""
         if self._executor is None:
@@ -1586,11 +1453,7 @@ class PlanService:
             holds = None
             lk = None
             if self._lk is not None:
-                window = None
-                if self._settings.plan_strategy == "heat_shift":
-                    holds, window = self._shift_holds()
-                else:
-                    holds = self._holds()
+                holds, window = self._shift_holds()
                 lk = self._lk.execute(holds, window)
                 if lk.action != "kept":
                     self._log("lk", lk.action, f"{lk.target_c}: {lk.reason}")

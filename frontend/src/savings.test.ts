@@ -4,7 +4,7 @@ import { dailyRows, dailyTotals, shiftRows, shiftTotals } from './savings'
 
 const row = (hour: number, price: number | null, flat: number | null, plan: number | null, measuredSaving: number | null = null): HourRow => ({
   key: `2026-10-12 ${String(hour).padStart(2, '0')}:00`, hour: `${String(hour).padStart(2, '0')}:00`, dayStart: hour === 0, dayLabel: 'mån 12',
-  current: false, past: true, price, floor: 18, extreme: false, rtsMeasured: null, rtsPlanned: null, rtsBaseline: null,
+  current: false, past: true, price, floor: 18, rtsMeasured: null, rtsPlanned: null, rtsBaseline: null,
   roomMeasured: null, roomPlanned: null, roomBaseline: null, energyMeasured: null, energyPlanned: plan, energyBaseline: flat,
   savingPlanned: null, savingMeasured: measuredSaving, flowPlanned: null, flowBaseline: null, reason: null, mode: null, loops: {}, thermostats: {},
   salonMeasured: null, salonPlanned: null, needGround: null, needSalon: null, needCombined: null, deliveredGround: null, flowMeasured: null, flowTarget: null, thermostat: null, thermostatTarget: null, loopsExpected: null,
