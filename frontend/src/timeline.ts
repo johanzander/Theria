@@ -26,6 +26,16 @@ export interface DayHour {
   reason: string | null
   loops_open: Record<string, number | null>
   thermostats: Record<string, { room_c: number | null; set_c: number | null }>
+  salon_measured: number | null
+  salon_planned: number | null
+  need_ground_kw: number | null
+  need_salon_kw: number | null
+  delivered_ground_kw: number | null
+  flow_measured_c: number | null
+  flow_target_c: number | null
+  thermostat: string | null
+  thermostat_target_c: number | null
+  loops_expected: number | null
 }
 
 export interface DayView {
@@ -65,6 +75,17 @@ export interface HourRow {
   mode: Mode | null
   loops: Record<string, number | null>
   thermostats: DayHour['thermostats']
+  salonMeasured: number | null
+  salonPlanned: number | null
+  needGround: number | null
+  needSalon: number | null
+  needCombined: number | null
+  deliveredGround: number | null
+  flowMeasured: number | null
+  flowTarget: number | null
+  thermostat: string | null
+  thermostatTarget: number | null
+  loopsExpected: number | null
 }
 
 const localKey = (iso: string, extraMinutes = 0) => {
@@ -89,6 +110,44 @@ export function hasData(view: DayView | null): boolean {
   return view.hours.some(
     (h) => h.price_sek_per_kwh !== null || h.rts_planned !== null || h.rts_measured !== null || h.room_measured !== null,
   )
+}
+
+const ROOM_COLOURS: Record<string, string> = { bibliotek: '#2f855a', vardagsrum: '#b7791f' }
+
+/** A room keeps its colour on every chart, whichever way its name is written. */
+export function roomColour(name: string): string {
+  return ROOM_COLOURS[name.replace(/^lk_/, '')] ?? '#0e7490'
+}
+
+/** The zones' heat need together; unknown when one of them is. */
+export function combinedNeed(ground: number | null, salon: number | null): number | null {
+  return ground === null || salon === null ? null : ground + salon
+}
+
+export interface ShiftWindow {
+  kind: 'sell' | 'buy'
+  x1: string
+  x2: string
+}
+
+function windowKind(r: { reason: string | null; thermostat: string | null }): ShiftWindow['kind'] | null {
+  if (r.reason === 'shift_sell' || r.thermostat === 'closing') return 'sell'
+  if (r.reason === 'shift_buy' || r.thermostat === 'opening') return 'buy'
+  return null
+}
+
+/** The runs of sell and buy hours, to shade on every chart; each ends where the next hour starts. */
+export function shiftWindows(rows: { key: string; reason: string | null; thermostat: string | null }[]): ShiftWindow[] {
+  const out: ShiftWindow[] = []
+  rows.forEach((r, i) => {
+    const kind = windowKind(r)
+    if (kind === null) return
+    const last = out[out.length - 1]
+    const next = rows[i + 1]?.key ?? r.key
+    if (last && last.kind === kind && last.x2 === r.key) last.x2 = next
+    else out.push({ kind, x1: r.key, x2: next })
+  })
+  return out
 }
 
 /** One row per hour of the given days, in order; days without data are left out. */
@@ -124,6 +183,17 @@ export function timelineRows(views: (DayView | null)[]): HourRow[] {
         mode: modeOf(h.rts_planned, h.rts_baseline),
         loops: h.loops_open,
         thermostats: h.thermostats,
+        salonMeasured: h.salon_measured,
+        salonPlanned: h.salon_planned,
+        needGround: h.need_ground_kw,
+        needSalon: h.need_salon_kw,
+        needCombined: combinedNeed(h.need_ground_kw, h.need_salon_kw),
+        deliveredGround: h.delivered_ground_kw,
+        flowMeasured: h.flow_measured_c,
+        flowTarget: h.flow_target_c,
+        thermostat: h.thermostat,
+        thermostatTarget: h.thermostat_target_c,
+        loopsExpected: h.loops_expected,
       })
     })
   }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   planRows, roomRows, formatValue, tooltipFormatter, UNITS, sortedRecommendations, planSaving, tabHref,
-  timelineRows, quarterRows, hasData, dayStatus, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted,
-  type PlanResponse, type DayHour, type DayView,
+  timelineRows, quarterRows, hasData, dayStatus, modeOf, axisTicks, axisLabel, rangeLabel, savingsTotals, splitPredicted, firstPredicted, shiftWindows, combinedNeed, roomColour,
+  type PlanResponse, type DayHour, type DayView, type HourRow,
 } from './model'
 
 const hour = (h: number, rts: number, room: number, price: number) => ({
@@ -210,6 +210,7 @@ describe('tooltip formatting', () => {
 
 const dayHour = (start: string, extra: Partial<DayHour> = {}): DayHour => ({
   start, past: false, price_sek_per_kwh: 1, price_quarters: [1, 1, 1, 1], floor_c: 18, extreme: false,
+  salon_measured: null, salon_planned: null, need_ground_kw: null, need_salon_kw: null, delivered_ground_kw: null, flow_measured_c: null, flow_target_c: null, thermostat: null, thermostat_target_c: null, loops_expected: null,
   rts_measured: null, rts_planned: 18, rts_baseline: 18, room_measured: null, room_planned: 19.5, room_baseline: 19.5,
   energy_measured_kwh: null, energy_planned_kwh: 1.5, energy_baseline_kwh: 2, saving_planned_sek: 0.5, saving_measured_sek: null,
   flow_planned_c: 35, flow_baseline_c: 36, reason: 'price_trade_off', loops_open: {}, thermostats: {}, ...extra,
@@ -347,5 +348,39 @@ describe('dayStatus', () => {
   })
   it('keeps the view’s own text when the day is there but empty', () => {
     expect(dayStatus(true, true, 'Nothing to show')).toBe('Nothing to show')
+  })
+})
+
+describe('shift windows', () => {
+  const row = (key: string, reason: string | null, thermostat: string | null = null) =>
+    ({ key, reason, thermostat }) as unknown as HourRow
+  it('joins the hours of a sell, and ends at the next hour', () => {
+    const rows = [row('a', 'shift_none'), row('b', 'shift_sell'), row('c', 'shift_sell'), row('d', 'shift_none')]
+    expect(shiftWindows(rows)).toEqual([{ kind: 'sell', x1: 'b', x2: 'd' }])
+  })
+  it('shows a buy', () => {
+    expect(shiftWindows([row('a', 'shift_buy'), row('b', null)])).toEqual([{ kind: 'buy', x1: 'a', x2: 'b' }])
+  })
+  it('counts a sell the guard ended by its closing thermostats', () => {
+    expect(shiftWindows([row('a', 'shift_guard', 'closing'), row('b', 'shift_none')])).toEqual([{ kind: 'sell', x1: 'a', x2: 'b' }])
+  })
+  it('runs to the last hour', () => {
+    expect(shiftWindows([row('a', 'shift_sell'), row('b', 'shift_sell')])).toEqual([{ kind: 'sell', x1: 'a', x2: 'b' }])
+  })
+})
+
+describe('combined need', () => {
+  it('adds the zones', () => {
+    expect(combinedNeed(1.5, 0.5)).toBe(2)
+  })
+  it('is unknown when a zone is unknown', () => {
+    expect(combinedNeed(null, 0.5)).toBeNull()
+  })
+})
+
+describe('room colours', () => {
+  it('gives a room the same colour whatever the name looks like', () => {
+    expect(roomColour('lk_bibliotek')).toBe(roomColour('bibliotek'))
+    expect(roomColour('vardagsrum')).not.toBe(roomColour('bibliotek'))
   })
 })

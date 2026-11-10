@@ -61,6 +61,7 @@ from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.state_store import PlanStateStore
 from core.theria.plan.weather import OpenMeteoClient
+from core.theria.plan.zone_heat import load_zone_measurements
 from core.theria.radiators.service import RadiatorService
 from core.theria.radiators.settings import load_radiator_settings
 from core.theria.radiators.store import PrefsStore
@@ -145,7 +146,9 @@ async def lifespan(app: FastAPI):
 
         # Start temperature history collection service
         history_service = TemperatureHistoryService(
-            ha_client, ZONES, collection_interval_seconds=60  # Collect every minute
+            ha_client,
+            ZONES,
+            collection_interval_seconds=60,  # Collect every minute
         )
         await history_service.start()
 
@@ -205,9 +208,9 @@ async def lifespan(app: FastAPI):
                 trace_path = os.path.join(DATA_DIR, "exec_trace.jsonl")
                 check_path = os.path.join(DATA_DIR, "forecast_check.jsonl")
                 history_source = InfluxHistorySource()
-                built: list[PlanService] = (
-                    []
-                )  # the loader reads the fitted pump from it
+                built: list[
+                    PlanService
+                ] = []  # the loader reads the fitted pump from it
 
                 plan_record = PlanRecordStore(record_path)
                 prices = NordpoolFeed(
@@ -215,6 +218,22 @@ async def lifespan(app: FastAPI):
                     plan_settings.price_config_entry,
                     plan_settings.price_area,
                     plan_settings.timezone,
+                )
+
+                radiator_settings = load_radiator_settings(
+                    os.path.join(DATA_DIR, "options.json"),
+                    os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
+                )
+                salon_points: list[tuple[str, str | None]] = (
+                    []
+                    if radiator_settings is None
+                    else [
+                        *(
+                            (e, "current_temperature")
+                            for e in radiator_settings.salon_thermostats
+                        ),
+                        *((e, None) for e in radiator_settings.salon_sensors),
+                    ]
                 )
 
                 def actuals_loader(start: datetime, stop: datetime) -> OutcomeInputs:
@@ -260,7 +279,9 @@ async def lifespan(app: FastAPI):
                         stop,
                     ),
                     weather_client.fetch,
-                    EnergyForecastStore(os.path.join(DATA_DIR, "energy_forecast.jsonl")),
+                    EnergyForecastStore(
+                        os.path.join(DATA_DIR, "energy_forecast.jsonl")
+                    ),
                     plan_settings.timezone,
                     lambda: datetime.now(UTC),
                     lambda hour: built[0].planned_setpoint(hour),
@@ -293,6 +314,9 @@ async def lifespan(app: FastAPI):
                     price_history=prices.history,
                     forecast_check=forecast_check,
                     energy_forecast=energy_forecaster,
+                    zone_loader=lambda start, stop: load_zone_measurements(
+                        history_source, plan_settings, salon_points, start, stop
+                    ),
                 )
                 built.append(plan_service)
                 plan_api.service = plan_service
@@ -302,10 +326,6 @@ async def lifespan(app: FastAPI):
                 )
 
                 # Salon and guest house radiators: shadow only, shares the plan's price feed
-                radiator_settings = load_radiator_settings(
-                    os.path.join(DATA_DIR, "options.json"),
-                    os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
-                )
                 if radiator_settings:
                     radiator_prefs_path = os.path.join(DATA_DIR, "radiator_prefs.json")
                     radiator_events_path = os.path.join(

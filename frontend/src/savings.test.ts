@@ -7,6 +7,7 @@ const row = (hour: number, price: number | null, flat: number | null, plan: numb
   current: false, past: true, price, floor: 18, extreme: false, rtsMeasured: null, rtsPlanned: null, rtsBaseline: null,
   roomMeasured: null, roomPlanned: null, roomBaseline: null, energyMeasured: null, energyPlanned: plan, energyBaseline: flat,
   savingPlanned: null, savingMeasured: measuredSaving, flowPlanned: null, flowBaseline: null, reason: null, mode: null, loops: {}, thermostats: {},
+  salonMeasured: null, salonPlanned: null, needGround: null, needSalon: null, needCombined: null, deliveredGround: null, flowMeasured: null, flowTarget: null, thermostat: null, thermostatTarget: null, loopsExpected: null,
 })
 
 describe('shiftRows', () => {

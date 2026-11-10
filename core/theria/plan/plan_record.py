@@ -31,6 +31,7 @@ class PlanRecord:
     # what the plan weighed for the hour (see planner.alternatives)
     alternatives: list[dict[str, Any]] | None = None
     held_by_commitment: dict[str, float] | None = None
+    thermostat: str | None = None  # the heat shift's thermostats: closing, opening or normal
 
 
 def _to_dict(record: PlanRecord) -> dict[str, Any]:

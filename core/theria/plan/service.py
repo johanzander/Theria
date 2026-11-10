@@ -96,6 +96,7 @@ from core.theria.plan.trim import trim_night, trim_room, trim_warmup
 from core.theria.plan.tuning import Recommendation, build_recommendations
 from core.theria.plan.warmup import WarmupFit
 from core.theria.plan.weather import OpenMeteoClient, WeatherHour
+from core.theria.plan.zone_heat import ZoneMeasured
 from core.theria.sensor_guard import SensorGuard
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,7 @@ class ForecastCheck(Protocol):
 
 OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
 ActualsLoader = Callable[[datetime, datetime], OutcomeInputs]
+ZoneLoader = Callable[[datetime, datetime], ZoneMeasured]
 TROUBLE_NOTIFICATION = "theria_plan_trouble"
 DAILY_NOTIFICATION = "theria_plan_daily"
 MARGIN_NOTIFICATION = "theria_plan_margin"
@@ -189,6 +191,7 @@ class PlanService:
         price_history: Callable[[datetime, datetime], list[PricePeriod]] | None = None,
         forecast_check: ForecastCheck | None = None,
         energy_forecast: ForecastCheck | None = None,
+        zone_loader: ZoneLoader | None = None,
     ):
         self._ha = ha_client
         self._settings = settings
@@ -257,6 +260,7 @@ class PlanService:
         self._actuals_loader = actuals_loader
         self._forecast_check = forecast_check
         self._energy_forecast = energy_forecast
+        self._zone_loader = zone_loader
         self._restore_failed = False  # leaving active mode failed: no window may be reapplied
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
@@ -936,14 +940,18 @@ class PlanService:
         now = self._now()
         latest = self.latest()
         measured = None
+        zones = None
         first = day_hours(day, self._settings.timezone)[0]
         current = _floor_hour(now.astimezone(UTC))
         if self._actuals_loader is not None and first < current:
             try:
                 # a day of lead-in: the setpoint is only logged when it changes
                 measured = self._actuals_loader(first - timedelta(days=1), current)
+                if self._zone_loader is not None:
+                    zones = self._zone_loader(first, current)
             except TheriaError:
                 logger.warning("could not read today's measurements", exc_info=True)
+        salon = self._salon_reading()
         hours = day_hours(day, self._settings.timezone)
         periods = self._price_history(hours[0], hours[-1] + timedelta(hours=1))
         records = (
@@ -959,6 +967,8 @@ class PlanService:
             None if latest is None else latest.plan,
             measured,
             records,
+            zones,
+            None if salon is None else salon.mean_c,
         )
 
     def history(self, hours: int) -> list[PlanSnapshot]:
@@ -1144,6 +1154,7 @@ class PlanService:
                     # only the optimizer weighs alternatives
                     alternatives=hour.reason.get("alternatives"),
                     held_by_commitment=hour.reason.get("held_by_commitment"),
+                    thermostat=hour.thermostat,
                 )
             )
         except OSError:

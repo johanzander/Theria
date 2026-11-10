@@ -13,10 +13,20 @@ import numpy as np
 
 from core.theria.plan.outcomes import OutcomeInputs
 from core.theria.plan.plan_record import PlanRecord
-from core.theria.plan.planner import Plan
+from core.theria.plan.planner import HourPlan, Plan
 from core.theria.plan.prices import QUARTERS_PER_HOUR, PricePeriod
 from core.theria.plan.series import hour_floor
 from core.theria.plan.settings import PlanSettings
+from core.theria.plan.shift_rules import thermostat_target
+from core.theria.plan.zone_heat import (
+    EXPECTED_HEATING_SHARE,
+    ZoneMeasured,
+    delivered_ground_kw,
+    expected_open_share,
+    ground_need_kw,
+    measured_open_share,
+    salon_need_kw,
+)
 
 
 def day_hours(day: date, timezone: str) -> list[datetime]:
@@ -60,6 +70,31 @@ def _saving(
     return float(price * (baseline_kwh - kwh))
 
 
+def _expected_zones(
+    hour: HourPlan, settings: PlanSettings, night: bool, salon_now_c: float | None
+) -> dict[str, Any]:
+    """The salon is where it is now plus what the plan changes: its forecast does not beat that."""
+    room = hour.room_c_end + hour.sun_swing_c
+    salon = None if salon_now_c is None else salon_now_c + hour.salon_delta_c
+    return {
+        "thermostat": hour.thermostat,
+        "thermostat_target_c": thermostat_target(
+            hour.thermostat, night, room, settings
+        ),
+        "loops_expected": expected_open_share(hour.thermostat, room, night, settings),
+        "need_ground_kw": ground_need_kw(room, hour.t_out_c),
+        "delivered_ground_kw": delivered_ground_kw(
+            hour.flow_target_c,
+            room,
+            expected_open_share(hour.thermostat, room, night, settings),
+            EXPECTED_HEATING_SHARE,
+            settings.floor_mix_max_c,
+        ),
+        "salon_planned": salon,
+        "need_salon_kw": None if salon is None else salon_need_kw(salon, hour.t_out_c),
+    }
+
+
 def build_day_view(
     day: date,
     now: datetime,
@@ -68,6 +103,8 @@ def build_day_view(
     plan: Plan | None,
     measured: OutcomeInputs | None,
     records: dict[datetime, PlanRecord] | None = None,
+    zones: ZoneMeasured | None = None,
+    salon_now_c: float | None = None,
 ) -> dict[str, Any]:
     """`measured` covers the hours before now; None when it could not be read.
 
@@ -87,6 +124,7 @@ def build_day_view(
     )
     index = {} if measured is None else {h: i for i, h in enumerate(measured.hours)}
     loops = {} if measured is None else measured.loops_open
+    zone_index = {} if zones is None else {h: i for i, h in enumerate(zones.hours)}
     rows: list[dict[str, Any]] = []
     for hour in day_hours(day, settings.timezone):
         night = settings.in_night(hour)
@@ -115,7 +153,19 @@ def build_day_view(
             "decision": None,
             "loops_open": {},
             "thermostats": {},
+            "salon_measured": None,
+            "salon_planned": None,
+            "need_ground_kw": None,
+            "need_salon_kw": None,
+            "delivered_ground_kw": None,
+            "flow_measured_c": None,
+            "flow_target_c": None,
+            "thermostat": None,
+            "thermostat_target_c": None,
+            "loops_expected": None,
         }
+        if past and hour in records:
+            row["thermostat"] = records[hour].thermostat
         price = row["price_sek_per_kwh"]
         if past and hour in index:
             i = index[hour]
@@ -134,6 +184,31 @@ def build_day_view(
             row["loops_open"] = {
                 name: _known(counts[i]) for name, counts in loops.items()
             }
+            set_points = [
+                v[i] for v in measured.thermostat_set_c.values() if np.isfinite(v[i])
+            ]
+            row["thermostat_target_c"] = (
+                float(np.mean(set_points)) if set_points else None
+            )
+            t_out = float(measured.t_out_c[i])
+            row["need_ground_kw"] = ground_need_kw(float(measured.room_c[i]), t_out)
+            if zones is not None and hour in zone_index:
+                j = zone_index[hour]
+                row["salon_measured"] = _known(zones.salon_c[j])
+                row["flow_measured_c"] = _known(zones.flow_c[j])
+                row["flow_target_c"] = _known(zones.flow_target_c[j])
+                row["need_salon_kw"] = salon_need_kw(float(zones.salon_c[j]), t_out)
+                flow = float(zones.flow_c[j])
+                row["delivered_ground_kw"] = delivered_ground_kw(
+                    flow if np.isfinite(flow) else float(zones.flow_target_c[j]),
+                    float(measured.room_c[i]),
+                    measured_open_share(
+                        {name: float(counts[i]) for name, counts in loops.items()},
+                        {r: len(e) for r, e in settings.room_actuators.items()},
+                    ),
+                    1.0 - float(measured.hot_water[i]),
+                    settings.floor_mix_max_c,
+                )
         if past and hour in records:
             record = records[hour]
             price = record.price_sek_per_kwh
@@ -170,6 +245,7 @@ def build_day_view(
                 flow_planned_c=hour_plan.flow_target_c,
                 flow_baseline_c=baseline.flow_target_c,
                 reason=hour_plan.reason.get("binding"),
+                **_expected_zones(hour_plan, settings, night, salon_now_c),
                 decision=None
                 if hour_plan.reason.get("alternatives") is None
                 else {

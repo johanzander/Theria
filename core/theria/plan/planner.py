@@ -82,6 +82,7 @@ class HourPlan:
     valves_closed: bool = False
     # The heat shift's thermostats this hour: closing, opening or normal.
     thermostat: str = "normal"
+    t_out_c: float = float("nan")  # the outdoor temperature the hour was planned with
     # What the setpoint's change does to each zone against the flat setpoint (house_model), in C.
     main_delta_c: float = 0.0
     salon_delta_c: float = 0.0
@@ -426,6 +427,7 @@ class _Problem:
             reason=reason,
             sun_swing_c=float(self.swing[t]),
             valves_closed=closed,
+            t_out_c=float(self.inputs.t_out_c[t]),
         )
 
     def follow_policy(

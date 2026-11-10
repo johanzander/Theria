@@ -2,16 +2,15 @@ import {
   Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import {
-  axisLabel, axisTicks, firstPredicted, MODE_LABEL, quarterRows, rangeLabel, splitPredicted, tooltipFormatter, UNITS,
-  type DayView, type HourRow, type Unit,
+  axisLabel, axisTicks, firstPredicted, MODE_LABEL, quarterRows, rangeLabel, roomColour, shiftWindows, splitPredicted, tooltipFormatter, UNITS,
+  type DayView, type HourRow, type ShiftWindow, type Unit,
 } from '../model'
 import { Panel } from '../ui'
 
 const C = {
   measured: '#102a43', plan: '#0b6bcb', flat: '#9aa5b1', price: '#cbd2d9', floor: '#b42318', limit: '#d9822b',
-  target: '#067647', savingPlan: '#74a9e8', savingMeasured: '#067647',
+  target: '#067647', salon: '#7b3fa0', delivered: '#067647', savingPlan: '#74a9e8', savingMeasured: '#067647',
 }
-const ROOM_COLOURS = ['#2f855a', '#b7791f', '#7b3fa0', '#c2410c']
 
 /** The x axis shared by the charts: every even hour as 00, 02, 04, with a line at each midnight. */
 export function axisFor(rows: { key: string }[]) {
@@ -39,6 +38,14 @@ export function predictedArea(rows: { key: string; past: boolean }[], yAxisId?: 
     label={{ value: 'predicted', position: 'insideTopRight', fill: '#52606d', fontSize: 12 }} />]
 }
 
+/** Sell and buy windows, shaded the same on every chart so that one window can be followed from room to price. */
+function windowAreas(windows: ShiftWindow[], yAxisId?: string) {
+  return windows.map((w) => (
+    <ReferenceArea key={`${w.kind}-${w.x1}`} x1={w.x1} x2={w.x2} yAxisId={yAxisId} fill={w.kind === 'sell' ? '#b42318' : '#d9822b'} fillOpacity={0.1} />
+  ))
+}
+
+const WINDOW_NOTE = 'Red shading: a sell, the thermostats close the loops and the setpoint is lowered. Orange: a buy just before a sell, the thermostats open the loops.'
 const PREDICTED_DASH = '6 3'
 
 export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows }: {
@@ -61,13 +68,14 @@ export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows 
 
 export function DayCharts({ rows, views, loopsTotal, limits }: {
   rows: HourRow[]; views: (DayView | null)[]; loopsTotal: Record<string, number>
-  limits: { ceiling: number | null; target: number | null }
+  limits: { target: number | null }
 }) {
   const quarters = splitPredicted(quarterRows(views), ['rtsPlanned'])
   const now = rows.find((r) => r.current)?.key
   const quarterNow = quarters.find((q) => q.current)?.key
   const dayStarts = axisFor(rows).dayStarts
   const quarterDayStarts = axisFor(quarters).dayStarts
+  const windows = shiftWindows(rows)
   const thermostats = Object.keys(rows.find((r) => Object.keys(r.thermostats).length > 0)?.thermostats ?? {})
   const roomRows = splitPredicted(
     rows.map((r) => ({
@@ -77,49 +85,104 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
     ['roomPlanned'],
   )
   const energyRows = splitPredicted(rows, ['energyPlanned'])
+  const flowRows = splitPredicted(rows, ['flowPlanned'])
   const rooms = Object.keys(loopsTotal)
-  const loopRows = rows.map((r) => ({ ...r, ...Object.fromEntries(rooms.map((room) => [room, r.loops[room] ?? null])) }))
-  const temps = rows.flatMap((r) => [r.roomMeasured, r.roomPlanned, r.roomBaseline, r.floor]).filter((v): v is number => v !== null)
-  const low = Math.floor(Math.min(...temps, 18) * 2) / 2 - 0.5
-  const high = Math.ceil(Math.max(...temps, limits.ceiling ?? 0) * 2) / 2 + 0.5
+  const loopRows = rows.map((r) => ({
+    ...r,
+    expectedOpen: r.loopsExpected === null ? null : 100 * r.loopsExpected,
+    ...Object.fromEntries(rooms.map((room) => {
+      const open = r.loops[room]
+      return [room, open === null || open === undefined ? null : (100 * open) / loopsTotal[room]]
+    })),
+  }))
+  const temps = rows
+    .flatMap((r) => [r.roomMeasured, r.roomPlanned, r.floor, r.salonMeasured, r.salonPlanned, r.thermostatTarget, ...Object.values(r.thermostats).map((t) => t.room_c)])
+    .filter((v): v is number => v !== null)
+  const low = Math.floor(Math.min(...temps, 18))
+  const high = Math.ceil(Math.max(...temps))
   const priceOrTemp = (name: string) => (name.includes('Price') ? UNITS.price : UNITS.temp)
   return (
     <>
       <Panel
-        title="Price and pump setpoint"
-        description="Grey bars: the electricity price per quarter of an hour. Lines: the pump's room setpoint, which is a heat-curve offset and not a room temperature. Dark: what the pump actually had. Blue: what the plan chose; solid for hours that have passed (the plan that was applied), dashed in the shaded area, where it is only a prediction that changes with every replan. Dashed grey: the flat setpoint the plan is compared with. A good plan sits above the dashed line when the price is low and below it when the price is high."
+        title="Room temperature"
+        description={`Each area we optimise, read top down: rooms, what they need, what the pump sends, and why. Dark: the measured mean of the ground-floor rooms, thin coloured lines each room. Blue: what the plan expected for the ground floor, dashed in the shaded future. Purple: the salon, measured, and dashed its expected temperature. The expected salon is where it is now plus what the plan changes, because its forecast does not beat that. Orange: the thermostat target; the ground-floor loops close when a room is above it. Dashed red: the comfort floor. ${WINDOW_NOTE}`}
+      >
+        <Chart rows={roomRows} axisRows={rows} height={280} unitFor={() => UNITS.temp}>
+          <YAxis domain={[low, high]} tickCount={high - low + 1} allowDecimals={false} unit="°" />
+          {predictedArea(rows)}
+          {windowAreas(windows)}
+          <Line type="stepAfter" dataKey="floor" name="Floor" stroke={C.floor} strokeDasharray="4 3" dot={false} />
+          <Line type="stepAfter" dataKey="thermostatTarget" name="Thermostat target" stroke={C.limit} strokeWidth={1.5} dot={false} connectNulls />
+          {limits.target !== null && <ReferenceLine y={limits.target} stroke={C.target} strokeDasharray="2 4" label="target" />}
+          {thermostats.map((n) => (
+            <Line key={n} type="monotone" dataKey={`room_${n}`} name={n.replace(/^lk_/, '')} stroke={roomColour(n)} strokeWidth={1} dot={false} />
+          ))}
+          <Line type="monotone" dataKey="roomMeasured" name="Ground floor, measured" stroke={C.measured} strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="roomPlanned" name="Ground floor, expected (applied)" stroke={C.plan} strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="roomPlannedPredicted" name="Ground floor, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
+          <Line type="monotone" dataKey="salonMeasured" name="Salon, measured" stroke={C.salon} strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="salonPlanned" name="Salon, expected" stroke={C.salon} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
+          {guides(now, dayStarts)}
+        </Chart>
+      </Panel>
+
+      <Panel
+        title="Heating need"
+        description={`The heat each zone loses at its temperature and the outdoor temperature, in kW, calculated from the heat demand analysis: the rooms behind the LK thermostats (161.5 W/K) and the salon (84.2 W/K, less 250 W of measured other heat). The need exists whether the pump, heat stored in the floor or the stove meets it. Green, dotted: what the ground-floor loops give, from the LK figures (167 W/K of flow above the room, at most 40 °C, through the loops that are open). Green under blue means the rooms are living on stored heat, the stove or the sun; green over blue means the floor is storing heat. The upper floor and guest house are not included, so "combined" is the zones we optimise and not the whole house. Sun and people are not counted for the ground floor. ${WINDOW_NOTE}`}
+      >
+        <Chart rows={rows} axisRows={rows} height={220} unitFor={() => UNITS.kw}>
+          <YAxis unit=" kW" width={72} />
+          {predictedArea(rows)}
+          {windowAreas(windows)}
+          <Line type="stepAfter" dataKey="needGround" name="Ground floor" stroke={C.plan} strokeWidth={2} dot={false} />
+          <Line type="stepAfter" dataKey="deliveredGround" name="Ground floor, delivered by the loops" stroke={C.delivered} strokeWidth={2} strokeDasharray="3 2" dot={false} />
+          <Line type="stepAfter" dataKey="needSalon" name="Salon" stroke={C.salon} strokeWidth={2} dot={false} />
+          <Line type="stepAfter" dataKey="needCombined" name="Combined" stroke={C.measured} strokeWidth={2.5} dot={false} />
+          {guides(now, dayStarts)}
+        </Chart>
+      </Panel>
+
+      <Panel
+        title="Flow temperature and thermostats"
+        description={`Top: the flow to the heating. Dark: the pump's own flow target; blue, dashed: the target the plan expects, which continues it. Grey: the measured flow, without hot water and the quarter of an hour after it; it runs above the target while the pump catches up after hot water. The floor gets at most 40 °C. Bottom: the share of each room's floor loops that were open, and dashed what the thermostats are expected to do. ${WINDOW_NOTE}`}
+      >
+        <Chart rows={flowRows} axisRows={rows} height={200} unitFor={() => UNITS.temp}>
+          <YAxis domain={['auto', 'auto']} unit="°" />
+          {predictedArea(rows)}
+          {windowAreas(windows)}
+          <Line type="linear" dataKey="flowMeasured" name="Flow, measured" stroke={C.flat} strokeWidth={1.5} dot={false} connectNulls />
+          <Line type="stepAfter" dataKey="flowTarget" name="Pump's flow target" stroke={C.measured} strokeWidth={2} dot={false} />
+          <Line type="stepAfter" dataKey="flowPlanned" name="Flow, expected (applied)" stroke={C.plan} strokeWidth={2} dot={false} />
+          <Line type="stepAfter" dataKey="flowPlannedPredicted" name="Flow, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
+          {guides(now, dayStarts)}
+        </Chart>
+        <Chart rows={loopRows} axisRows={rows} height={170} unitFor={() => UNITS.percent}>
+          <YAxis domain={[0, 100]} unit=" %" />
+          {predictedArea(rows)}
+          {windowAreas(windows)}
+          {rooms.map((room) => (
+            <Line key={room} type="stepAfter" dataKey={room} name={`${room}, loops open`} stroke={roomColour(room)} strokeWidth={2} dot={false} />
+          ))}
+          <Line type="stepAfter" dataKey="expectedOpen" name="Loops open, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
+          {guides(now, dayStarts)}
+        </Chart>
+      </Panel>
+
+      <Panel
+        title="Pump setpoint and price"
+        description={`Grey bars: the electricity price per quarter of an hour. Lines: the pump's room setpoint, a heat-curve offset and not a room temperature. Dark: what the pump actually had. Blue: what the plan chose, dashed where it is a prediction that changes with every replan. Dashed grey: the flat setpoint it is compared with. ${WINDOW_NOTE}`}
       >
         <Chart rows={quarters} axisRows={quarters} height={280} unitFor={priceOrTemp} minutes={15}>
           <YAxis yAxisId="price" orientation="right" unit=" kr" />
           <YAxis yAxisId="rts" domain={[16, 20]} unit="°" />
           {predictedArea(quarters, 'rts')}
+          {windowAreas(windows, 'rts')}
           <Bar yAxisId="price" dataKey="price" name="Price per quarter" fill={C.price} />
           <Line yAxisId="rts" type="stepAfter" dataKey="rtsMeasured" name="Measured setpoint" stroke={C.measured} strokeWidth={2} dot={false} />
           <Line yAxisId="rts" type="stepAfter" dataKey="rtsPlanned" name="Plan setpoint (applied)" stroke={C.plan} strokeWidth={2} dot={false} />
           <Line yAxisId="rts" type="stepAfter" dataKey="rtsPlannedPredicted" name="Plan setpoint (predicted)" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
           <Line yAxisId="rts" type="stepAfter" dataKey="rtsBaseline" name="Flat setpoint" stroke={C.flat} strokeDasharray="4 3" dot={false} />
           {guides(quarterNow, quarterDayStarts, 'rts')}
-        </Chart>
-      </Panel>
-
-      <Panel
-        title="Room temperature"
-        description="Dark: the measured mean of the ground-floor rooms. Blue: what the plan expected the room to be, from the plan that was applied (solid), and what it expects from now on (dashed, in the shaded area). Dashed grey: what the model expects with the flat setpoint. Thin coloured lines: each room. Dashed red: the comfort floor. Orange: the normal thermostat target, where the LK loops close. Green: the comfort target. Plan and measurement close together means the model is right."
-      >
-        <Chart rows={roomRows} axisRows={rows} height={260} unitFor={() => UNITS.temp}>
-          <YAxis domain={[low, high]} unit="°" />
-          {predictedArea(rows)}
-          <Line type="stepAfter" dataKey="floor" name="Floor" stroke={C.floor} strokeDasharray="4 3" dot={false} />
-          {limits.ceiling !== null && <ReferenceLine y={limits.ceiling} stroke={C.limit} strokeDasharray="6 3" label="thermostat" />}
-          {limits.target !== null && <ReferenceLine y={limits.target} stroke={C.target} strokeDasharray="2 4" label="target" />}
-          {thermostats.map((n, i) => (
-            <Line key={n} type="monotone" dataKey={`room_${n}`} name={n.replace(/^lk_/, '')} stroke={ROOM_COLOURS[i % ROOM_COLOURS.length]} strokeWidth={1} dot={false} />
-          ))}
-          <Line type="monotone" dataKey="roomMeasured" name="Measured (mean)" stroke={C.measured} strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="roomPlanned" name="Expected with plan (applied)" stroke={C.plan} strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="roomPlannedPredicted" name="Expected with plan (predicted)" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />
-          <Line type="monotone" dataKey="roomBaseline" name="Expected, flat setpoint" stroke={C.flat} strokeDasharray="4 3" dot={false} />
-          {guides(now, dayStarts)}
         </Chart>
       </Panel>
 
@@ -153,22 +216,6 @@ export function DayCharts({ rows, views, loopsTotal, limits }: {
           {guides(now, dayStarts)}
         </Chart>
       </Panel>
-
-      {rooms.length > 0 && (
-        <Panel
-          title="Open floor loops"
-          description="How many of each room's floor loops had their valve open, per hour. A loop closes when its room reaches the LK thermostat setpoint; zero means the floor is not heating that room."
-        >
-          <Chart rows={loopRows} axisRows={rows} height={180} unitFor={() => UNITS.count}>
-            <YAxis domain={[0, Math.max(...Object.values(loopsTotal))]} allowDecimals={false} />
-            {predictedArea(rows)}
-            {rooms.map((room, i) => (
-              <Line key={room} type="stepAfter" dataKey={room} name={`${room} (of ${loopsTotal[room]})`} stroke={ROOM_COLOURS[i % ROOM_COLOURS.length]} strokeWidth={2} dot={false} />
-            ))}
-            {guides(now, dayStarts)}
-          </Chart>
-        </Panel>
-      )}
 
       <Panel
         title="Schedule"

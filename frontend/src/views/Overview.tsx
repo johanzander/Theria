@@ -107,7 +107,7 @@ function limitsOf(settings: SettingEntry[] | null) {
     const v = settings?.find((s) => s.key === key)?.value
     return typeof v === 'number' ? v : null
   }
-  return { ceiling: value('lk_base_c'), target: value('target_c') }
+  return { target: value('target_c') }
 }
 
 export function Overview() {

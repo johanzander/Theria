@@ -245,6 +245,11 @@ Routers in `backend/`. The plan routes are in `plan_api.py`:
 React and Vite in `frontend/src/`, with one view per tab: Overview, Värmepump, Plan, Savings, Energy, Models, Settings, Sensors,
 Control and Radiators.
 
+The Overview's charts read from the room to the price, on one time axis with the sell and buy windows shaded: room temperature (ground floor and salon, measured and
+expected, with the thermostat target), heating need per zone and combined (`plan/zone_heat.py`), flow and floor loops, then the pump setpoint and price. The heating need
+is each zone's heat loss, calculated from the heat demand analysis, whatever meets it, and cannot be checked per zone: only the whole house has a heat meter. The expected salon is its temperature now plus what the plan
+changes, because its forecast does not beat that.
+
 ## Development and Testing
 
 `./dev-start.sh` copies the add-on's settings and state and runs on port 8081 against the real Home Assistant and InfluxDB

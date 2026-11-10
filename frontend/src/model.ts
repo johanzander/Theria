@@ -361,6 +361,8 @@ export const UNITS = {
   kwh: { suffix: ' kWh', digits: 1 },
   sek: { suffix: ' kr', digits: 1 },
   count: { suffix: '', digits: 1 },
+  kw: { suffix: ' kW', digits: 2 },
+  percent: { suffix: ' %', digits: 0 },
 } as const
 
 /** A tooltip value with a sensible number of decimals and its unit; a missing value is a dash. */
