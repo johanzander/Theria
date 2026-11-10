@@ -7,7 +7,7 @@ be read. The forecasts are kept as they were made, and two simple references run
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -17,7 +17,9 @@ import numpy as np
 from core.theria.exceptions import ModelFitError
 from core.theria.plan.calibration_data import (
     FLOW_PLAUSIBLE_C,
+    OUTDOOR_PLAUSIBLE_C,
     HistorySource,
+    curve_changed,
 )
 from core.theria.plan.series import (
     FloatArray,
@@ -49,13 +51,8 @@ ISSUE_HOUR = 14  # local: tomorrow's prices are out
 SETPOINT_FFILL_HOURS = 400 * 24  # logged only when it changes
 FLOW_FFILL_HOURS = 6
 OUTDOOR_GAP_HOURS = 3
-OUTDOOR_PLAUSIBLE_C = (-35.0, 45.0)  # the sensor sometimes reports garbage
 BACKFILL_DAYS = 14
-# `Min. utetemperatur` stood at -20: the flow target was about 2.6 C high in this period
-CURVE_CHANGED = (
-    datetime(2026, 11, 8, 11, 41, tzinfo=UTC),
-    datetime(2026, 11, 9, 16, 25, tzinfo=UTC),
-)
+MODEL_AGE = timedelta(hours=24)  # the plan's heating model is refitted once a day
 
 
 @dataclass
@@ -90,62 +87,173 @@ def _hinge(knot: float, values: FloatArray) -> FloatArray:
     return np.maximum(knot - values, 0.0)
 
 
-class _Heating:
-    """The heating model's inputs for one history."""
+def trailing_means(t_out_c: FloatArray) -> tuple[FloatArray, FloatArray]:
+    """The outdoor temperature's mean over the last 24 and 72 hours, hour by hour."""
+    return _trailing(t_out_c, 24), _trailing(t_out_c, 72)
 
-    def __init__(self, h: EnergyHistory, cut: int):
-        self.h = h
-        self.t = h.t_out_c
-        self.t24 = _trailing(h.t_out_c, 24)
-        self.t72 = _trailing(h.t_out_c, 72)
-        self.sun = np.nan_to_num(h.sun_wm2)
-        self.wind = np.nan_to_num(h.wind_kmh)
-        changed = np.array([CURVE_CHANGED[0] <= x < CURVE_CHANGED[1] for x in h.hours])
-        self.changed = changed
-        self.flow_fit = self._fit_flow(cut)
 
-    def _flow_x(self, i: np.ndarray) -> np.ndarray:
-        t = self.t[i]
-        return np.column_stack([np.ones(len(i)), t, t * t, self.h.setpoint_c[i] - 18.0])
+def _flow_x(t_out_c: np.ndarray, setpoint_c: np.ndarray) -> np.ndarray:
+    return np.column_stack(
+        [np.ones(len(t_out_c)), t_out_c, t_out_c * t_out_c, setpoint_c - 18.0]
+    )
 
-    def _fit_flow(self, cut: int) -> np.ndarray:
-        known = np.isfinite(self.h.flow_c) & ~self.changed & np.isfinite(self.t)
-        known &= np.isfinite(self.h.setpoint_c)
-        known[cut:] = False
-        recent = known.copy()
-        recent[: max(0, cut - FLOW_FIT_HOURS)] = False
-        rows = np.flatnonzero(recent if recent.sum() >= MIN_FLOW_ROWS else known)
-        if len(rows) == 0:
-            raise ModelFitError("no flow target history to fit the pump's curve on")
-        coefficients, *_ = np.linalg.lstsq(
-            self._flow_x(rows), self.h.flow_c[rows], rcond=None
+
+def _features(
+    t: np.ndarray,
+    t24: np.ndarray,
+    t72: np.ndarray,
+    sun_wm2: np.ndarray,
+    wind_kmh: np.ndarray,
+    flow_c: np.ndarray,
+) -> np.ndarray:
+    degrees = _hinge(16.0, t)
+    over = flow_c - 35.0
+    sun = np.nan_to_num(sun_wm2) / 100.0
+    return np.column_stack(
+        [
+            np.ones(len(t)),
+            degrees,
+            _hinge(10.0, t),
+            _hinge(4.0, t),
+            _hinge(-2.0, t),
+            _hinge(16.0, t24),
+            _hinge(16.0, t72),
+            over,
+            over * degrees / 10.0,
+            sun,
+            sun * degrees / 10.0,
+            np.nan_to_num(wind_kmh) / 10.0 * degrees / 10.0,
+        ]
+    )
+
+
+@dataclass(frozen=True)
+class HeatingModel:
+    """The fitted heating part of the forecast: compressor electricity per hour, hot water left out."""
+
+    beta: tuple[float, ...]
+    flow_fit: tuple[float, ...]  # the pump's flow target from outdoor and setpoint
+    level: float  # the last days against the model, half of it
+
+    def flow_c(self, t_out_c: np.ndarray, setpoint_c: np.ndarray) -> np.ndarray:
+        return np.asarray(_flow_x(t_out_c, setpoint_c) @ np.array(self.flow_fit))
+
+    def kwh(
+        self,
+        t_out_c: np.ndarray,
+        t24_c: np.ndarray,
+        t72_c: np.ndarray,
+        sun_wm2: np.ndarray,
+        wind_kmh: np.ndarray,
+        setpoint_c: np.ndarray,
+    ) -> np.ndarray:
+        x = _features(
+            t_out_c, t24_c, t72_c, sun_wm2, wind_kmh, self.flow_c(t_out_c, setpoint_c)
         )
-        return np.asarray(coefficients)
+        return np.asarray(np.maximum(x @ np.array(self.beta), 0.0) * self.level)
 
-    def estimated_flow(self, i: np.ndarray) -> np.ndarray:
-        return np.asarray(self._flow_x(i) @ self.flow_fit)
-
-    def features(self, i: np.ndarray, flow: np.ndarray) -> np.ndarray:
-        t = self.t[i]
-        degrees = _hinge(16.0, t)
-        over = flow - 35.0
-        sun = self.sun[i] / 100.0
+    def table(
+        self,
+        t_out_c: np.ndarray,
+        t24_c: np.ndarray,
+        t72_c: np.ndarray,
+        sun_wm2: np.ndarray,
+        wind_kmh: np.ndarray,
+        setpoints_c: np.ndarray,
+    ) -> np.ndarray:
+        """kWh per hour (rows) and setpoint (columns)."""
         return np.column_stack(
             [
-                np.ones(len(i)),
-                degrees,
-                _hinge(10.0, t),
-                _hinge(4.0, t),
-                _hinge(-2.0, t),
-                _hinge(16.0, self.t24[i]),
-                _hinge(16.0, self.t72[i]),
-                over,
-                over * degrees / 10.0,
-                sun,
-                sun * degrees / 10.0,
-                self.wind[i] / 10.0 * degrees / 10.0,
+                self.kwh(
+                    t_out_c, t24_c, t72_c, sun_wm2, wind_kmh, np.full(len(t_out_c), s)
+                )
+                for s in setpoints_c
             ]
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "beta": list(self.beta),
+            "flow_fit": list(self.flow_fit),
+            "level": self.level,
+        }
+
+    @staticmethod
+    def from_dict(body: dict[str, Any]) -> "HeatingModel":
+        return HeatingModel(
+            tuple(body["beta"]), tuple(body["flow_fit"]), float(body["level"])
+        )
+
+
+def _valid(h: EnergyHistory, cut: int) -> np.ndarray:
+    total = h.heating_kwh + h.hot_water_kwh
+    return np.asarray(
+        np.isfinite(total)
+        & (h.heating_kwh >= 0)
+        & (h.hot_water_kwh >= 0)
+        & (total <= MAX_HOURLY_KWH)
+        & (np.arange(len(h.hours)) < cut)
+    )
+
+
+def _fit_flow(h: EnergyHistory, cut: int, changed: np.ndarray) -> np.ndarray:
+    known = np.isfinite(h.flow_c) & ~changed & np.isfinite(h.t_out_c)
+    known &= np.isfinite(h.setpoint_c)
+    known[cut:] = False
+    recent = known.copy()
+    recent[: max(0, cut - FLOW_FIT_HOURS)] = False
+    rows = np.flatnonzero(recent if recent.sum() >= MIN_FLOW_ROWS else known)
+    if len(rows) == 0:
+        raise ModelFitError("no flow target history to fit the pump's curve on")
+    coefficients, *_ = np.linalg.lstsq(
+        _flow_x(h.t_out_c[rows], h.setpoint_c[rows]), h.flow_c[rows], rcond=None
+    )
+    return np.asarray(coefficients)
+
+
+def fit_heating_model(
+    h: EnergyHistory, cut: int, timezone: str, day: date
+) -> HeatingModel:
+    """The heating model from what was measured before index `cut`, levelled by the days before `day`."""
+    tz = ZoneInfo(timezone)
+    ordinal = np.array([x.astimezone(tz).date().toordinal() for x in h.hours])
+    t24, t72 = trailing_means(h.t_out_c)
+    changed = curve_changed(h.hours)
+    usable = _valid(h, cut) & np.isfinite(h.t_out_c) & np.isfinite(h.setpoint_c)
+    usable &= ~changed & np.isfinite(t24) & np.isfinite(t72)
+    rows = np.flatnonzero(usable)
+    if len(rows) < MIN_TRAINING_HOURS:
+        raise ModelFitError(
+            f"energy forecast needs {MIN_TRAINING_HOURS} hours of history, found {len(rows)}"
+        )
+    raw = HeatingModel((), tuple(_fit_flow(h, cut, changed)), 1.0)
+    flow = np.where(
+        np.isfinite(h.flow_c[rows]),
+        h.flow_c[rows],
+        raw.flow_c(h.t_out_c[rows], h.setpoint_c[rows]),
+    )
+    weights = 0.5 ** ((cut - rows) / (24.0 * HALF_LIFE_DAYS))
+    x = _features(
+        h.t_out_c[rows], t24[rows], t72[rows], h.sun_wm2[rows], h.wind_kmh[rows], flow
+    )
+    model = HeatingModel(
+        tuple(_ridge(x, h.heating_kwh[rows], weights).tolist()), raw.flow_fit, 1.0
+    )
+    recent = np.flatnonzero(usable & (ordinal >= day.toordinal() - LEVEL_DAYS - 1))
+    if len(recent) <= LEVEL_DAYS * 12:
+        return model
+    expected = model.kwh(
+        h.t_out_c[recent],
+        t24[recent],
+        t72[recent],
+        h.sun_wm2[recent],
+        h.wind_kmh[recent],
+        h.setpoint_c[recent],
+    )
+    ratio = (h.heating_kwh[recent].sum() + LEVEL_PRIOR_KWH) / (
+        expected.sum() + LEVEL_PRIOR_KWH
+    )
+    return replace(model, level=float(np.clip(ratio, *LEVEL_CLIP)) ** LEVEL_POWER)
 
 
 def _ridge(x: np.ndarray, y: np.ndarray, weights: np.ndarray) -> np.ndarray:
@@ -174,41 +282,18 @@ def forecast_energy(
     ordinal = np.array([x.date().toordinal() for x in local])
     weekend = np.array([x.weekday() >= 5 for x in local])
     day = int(ordinal[target[0]])
-    before = np.arange(len(h.hours)) < cut
     total = h.heating_kwh + h.hot_water_kwh
-    valid = (
-        np.isfinite(total)
-        & (h.heating_kwh >= 0)
-        & (h.hot_water_kwh >= 0)
-        & (total <= MAX_HOURLY_KWH)
-        & before
+    valid = _valid(h, cut)
+    model = fit_heating_model(h, cut, timezone, date.fromordinal(day))
+    t24, t72 = trailing_means(h.t_out_c)
+    heat = model.kwh(
+        h.t_out_c[target],
+        t24[target],
+        t72[target],
+        h.sun_wm2[target],
+        h.wind_kmh[target],
+        h.setpoint_c[target],
     )
-    heating = _Heating(h, cut)
-    usable = valid & np.isfinite(h.t_out_c) & np.isfinite(h.setpoint_c)
-    usable &= ~heating.changed & np.isfinite(heating.t24) & np.isfinite(heating.t72)
-    rows = np.flatnonzero(usable)
-    if len(rows) < MIN_TRAINING_HOURS:
-        raise ModelFitError(
-            f"energy forecast needs {MIN_TRAINING_HOURS} hours of history, found {len(rows)}"
-        )
-    flow = np.where(
-        np.isfinite(h.flow_c[rows]), h.flow_c[rows], heating.estimated_flow(rows)
-    )
-    weights = 0.5 ** ((cut - rows) / (24.0 * HALF_LIFE_DAYS))
-    beta = _ridge(heating.features(rows, flow), h.heating_kwh[rows], weights)
-
-    def model(i: np.ndarray) -> np.ndarray:
-        return np.asarray(
-            np.maximum(heating.features(i, heating.estimated_flow(i)) @ beta, 0.0)
-        )
-
-    heat = model(target)
-    recent = np.flatnonzero(usable & (ordinal >= day - LEVEL_DAYS - 1))
-    if len(recent) > LEVEL_DAYS * 12:
-        ratio = (h.heating_kwh[recent].sum() + LEVEL_PRIOR_KWH) / (
-            model(recent).sum() + LEVEL_PRIOR_KWH
-        )
-        heat = heat * float(np.clip(ratio, *LEVEL_CLIP)) ** LEVEL_POWER
 
     same_kind = valid & (ordinal >= day - HOT_WATER_DAYS - 1)
     same_kind &= weekend == weekend[target[0]]
@@ -374,6 +459,12 @@ class EnergyForecaster:
         self._now = now
         self._planned_setpoint = planned_setpoint
         self._backfill_days = backfill_days
+        self._model: HeatingModel | None = None
+        self._model_at: datetime | None = None
+
+    def heating_model(self) -> HeatingModel | None:
+        """The heating model the plan uses, fitted at most a day ago; None until the first fit."""
+        return self._model
 
     def _day_start(self, day: date) -> datetime:
         return datetime(day.year, day.month, day.day, tzinfo=self._tz).astimezone(UTC)
@@ -387,16 +478,26 @@ class EnergyForecaster:
         missing = [d for d in past if d.isoformat() not in have]
         tomorrow = today + timedelta(days=1)
         issue = now.hour >= ISSUE_HOUR and tomorrow.isoformat() not in have
-        if not missing and not issue:
+        stale = self._model_at is None or self._now() - self._model_at >= MODEL_AGE
+        if not missing and not issue and not stale:
             return 0
         first = (missing[0] if missing else tomorrow) - timedelta(days=TRAINING_DAYS)
         h = self._load(
             self._day_start(first), self._day_start(tomorrow + timedelta(days=1))
         )
+        if stale:
+            moment = (
+                self._now().astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+            )
+            self._model = fit_heating_model(
+                h, h.hours.index(moment), self._timezone, tomorrow
+            )
+            self._model_at = self._now()
         lines = [self._measured_day(h, day) for day in missing]
         if issue:
             lines.append(self._tomorrow(h, tomorrow))
-        self._store.append(lines)
+        if lines:
+            self._store.append(lines)
         return len(lines)
 
     def _indices(self, h: EnergyHistory, day: date) -> np.ndarray:

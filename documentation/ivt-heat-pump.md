@@ -521,6 +521,12 @@ The H60 gateway answers with garbage now and then. What was found in the stored 
   a month back it still can) has no price rather than another source's. The Värmepump tab is the one exception: it reads the stored `sensor.nord_pool_se4_current_price` (InfluxDB, from 2025-08-30), the same
   integration (2026-11-08: 672 quarters, all within 0.01 kr of the feed), so that it can show more than a month back.
 
+- **[observed, 2026-11-10] Live readings and the rest of the plan.** 120 days: `sensor.outdoor` up to 59.2 C, `sensor.heating_setpoint` 0 C in 3.7 % of
+  readings, `heat_carrier_forwrd`/`return` 0 C, the energy counters 0, 58, 359, 938 and 36352. Outside -35..45 C (outdoor) and 15-65 C (flow) a reading is now left
+  out everywhere the plan reads the history (model fit, energy forecast, plan against reality, measured days, dashboard), and a live reading outside them stops that
+  plan computation (`SensorError`) instead of shifting the whole weather forecast or the floor's start state. The Värmepump tab already had its own ranges.
+- **[observed] The flow targets of 8 Nov 12:41 - 9 Nov 17:25 local** are left out of the model fit and the energy forecast: `Min. utetemperatur` stood at -20.
+
 ## Room heat balance from the design documents, checked against the winter (2026-11-09)
 
 `C dR/dt = emitter(flow, valve) - H (R - T)`. H from the heat demand analysis (demand at -9.6 C / 29.6 K), the floor emitter from the LK calculation, the salon's radiators from their rating.
@@ -732,6 +738,10 @@ The fixed curves are in `core/theria/plan/house_model.py`, one per zone: `d(room
 
 - **[observed] Salon, valves closed, dark hours, Oct 2025-Nov 2026 (mean of the four points), C/h by outdoor temperature, median / 90th percentile:** -4..0 C: 0.13 / 0.29 (n = 8 runs); 0..4 C: 0.08 / 0.17 (22); 4..8 C: 0.03 / 0.10 (58); 8..12 C: 0.01 / 0.11 (32). Curve: loss 0.0115/h. The whole-room sensors with the valves open give a gain of 0.0053/h of the gap to the flow (974 hours, RMSE 0.42 C/h).
 - **[observed, 2026-11-09] The salon does not follow one gain and one loss.** Night of 8-9 Nov, 22-06, both thermostats requesting 100 %, flow 38.1 C, outdoor 6.5 C: mean of the floor and ceiling points 17.2 -> 17.95 C; the curve (gain 0.0053, loss 0.0115) gives 17.03. Thirteen winter nights with the same request (Dec 2025 - Feb 2026, flow 39-43 C, outdoor -5 to 2 C, room 14-17 C) moved -0.4 to +0.3 C in 8 h. No constant pair fits both, so a term is missing; what it is has not been measured. `heating_power_request` is the demand, not the valve position.
+- **[observed, 2026-11-10] How far open the loops are against target minus room**, actuators 29 Oct - 10 Nov, target steady for 2 h, 5083 five-minute samples:
+  share open 0.00 at 1 C or more above the target, 0.10 at 0.5-0.75 above, 0.25 at 0.05-0.5 above, 0.31 at the target, 0.54 at 0.05-0.3 below, 0.59 at 0.3-0.5
+  below, 0.81 at 0.5-0.75 below, 0.99 at 0.75-1 below. Fit `clip((target - room + 0.75) / 1.7, 0, 1)`: they start to open 0.75 C above the target and are all open
+  0.95 C below it (Vardagsrum alone 0.70 / 1.60, Bibliotek 0.75 / 1.75). The room model used 0 / 0.5 until then, so it took a room at its target for closed.
 - **[observed, 2026-11-09] Ground floor, what opens the loops (29 Oct - 8 Nov, HA actuators):** the thermostat target minus the room decides, not the flow. Target at least 0.5 C above the room: 96-98 % of the loops open; at least 0.5 C below: 9-12 %. With the loop state known, per room, `dR = a * open * (flow - room) + k * (outdoor - room)` gives a = 0.0058-0.0078/h (+/-0.0015) and k = 0.0083-0.0139/h; residual per 3 h block 0.08-0.09 C at night, 0.20-0.23 C over all hours. The actuators are not in InfluxDB; the LK thermostats' `hvac_action` is, and agrees with them 87-89 % of the time.
 - **[observed, 2026-11-09] The electricity per setpoint degree is not the same both ways:** 0.23-0.25 kWh/h below setpoint 18 and 0.35-0.37 above it (+/-0.04; 3, 4 and 6 h blocks, 11 Oct - 9 Nov, 3-14 C outdoors; only 13-25 blocks above 18). A shift that sells one degree and buys one degree earns a median of 0.69 kr/day on 44 days instead of 2.06.
 - **[observed, 2026-11-09] How open the floor loops are depends on who sets the thermostats:** 0.71 of the loops open on 30 Oct - 4 Nov while the targets moved between 17.7 and 22, 0.42 since they stand at 19-19.5 by hand (15:00 0.21, 16:00 0.27, 17:00 0.32).

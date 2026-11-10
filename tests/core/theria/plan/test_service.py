@@ -11,8 +11,8 @@ from core.theria.exceptions import (
     WeatherDataError,
 )
 from core.theria.plan.calibration import FittedModels, PumpFit, RoomFit
-from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.prices import PricePeriod
+from core.theria.plan.pump_model import PumpParams
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomParams,
@@ -225,7 +225,11 @@ def test_refit_switches_to_fitted_models_and_plans_with_them(settings):
     assert status["room"]["params"] == with_measured_response(FITTED_ROOM)
     assert status["fitted_at"] == NOW
     snapshot = service.run_once()
-    assert snapshot.model_status == {"pump": "fitted", "room": "fitted"}
+    assert snapshot.model_status == {
+        "energy": "pump model",
+        "pump": "fitted",
+        "room": "fitted",
+    }
     assert snapshot.plan.hours[0].flow_target_c != before
 
 
@@ -313,7 +317,11 @@ def test_a_rejected_room_fit_still_applies_the_pump_fit_and_keeps_the_room_prior
         "params"
     ] == with_measured_response(PRIOR_ROOM_PARAMS)
     assert status["room"]["fit_error"] == "ModelFitError: rejected"
-    assert service.run_once().model_status == {"pump": "fitted", "room": "prior"}
+    assert service.run_once().model_status == {
+        "energy": "pump model",
+        "pump": "fitted",
+        "room": "prior",
+    }
 
 
 def test_a_later_rejection_keeps_the_room_fit_that_was_accepted_before(settings):

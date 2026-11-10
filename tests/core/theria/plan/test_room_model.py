@@ -1,21 +1,19 @@
-import numpy as np
 import pytest
 
-from core.theria.plan.pump_model import PRIOR_PUMP_PARAMS, flow_target
 from core.theria.plan.room_model import (
     PRIOR_ROOM_PARAMS,
     RoomParams,
-    RoomState,
-    simulate,
     step,
     valve_open,
 )
 
 
 def test_valves_close_as_room_reaches_the_lk_setpoint():
-    assert valve_open(19.0, 21.0) == 1.0
-    assert valve_open(20.75, 21.0) == pytest.approx(0.5)
-    assert valve_open(21.5, 21.0) == 0.0
+    # measured 29 Oct - 10 Nov 2026: the loops start to open 0.75 C above the target, all open 0.95 C below it
+    assert valve_open(20.0, 21.0) == 1.0
+    assert valve_open(21.0, 21.0) == pytest.approx(0.75 / 1.7)
+    assert valve_open(21.5, 21.0) == pytest.approx(0.25 / 1.7)
+    assert valve_open(21.8, 21.0) == 0.0
 
 
 def test_hot_slab_warms_room_and_closed_valves_stop_it():

@@ -35,7 +35,7 @@ def test_the_dense_sensors_are_not_fetched_point_by_point(settings):
             raw.append(entity_id)
             return super().series(entity_id, start, stop, field)
 
-        def hourly_means(self, entity_id, start, stop):
+        def hourly_means(self, entity_id, start, stop, plausible=None):
             return FakeSource.series(self, entity_id, start, stop)  # not counted as raw
 
     world = World(days=20)

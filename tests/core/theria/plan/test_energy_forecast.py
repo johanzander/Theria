@@ -12,6 +12,7 @@ from core.theria.plan.energy_forecast import (
     forecast_energy,
     load_energy_history,
     summarize_days,
+    trailing_means,
 )
 from core.theria.plan.series import interpolated_counter_energy
 from core.theria.plan.weather import WeatherHour
@@ -376,3 +377,60 @@ def test_outdoor_garbage_is_left_out_before_the_hours_are_averaged(settings):
         source, settings, lambda a, b: [], START, START + timedelta(days=2)
     )
     assert source.asked == (-35.0, 45.0)
+
+
+# The model the plan uses
+
+
+def test_the_heating_model_gives_the_forecasts_heating_part():
+    from core.theria.plan.energy_forecast import fit_heating_model
+
+    h = world()
+    cut, target = cut_for(h, DAY), day_range(h, DAY)
+    model = fit_heating_model(h, cut, TZ, DAY)
+    t24, t72 = trailing_means(h.t_out_c)
+    table = model.table(
+        h.t_out_c[target],
+        t24[target],
+        t72[target],
+        h.sun_wm2[target],
+        h.wind_kmh[target],
+        np.array([h.setpoint_c[target[0]]]),
+    )
+    hot = run(h)["simple"] - table[:, 0]
+    assert hot == pytest.approx(np.full(len(target), 0.4), abs=0.02)
+
+
+def test_the_model_costs_more_at_a_higher_setpoint():
+    from core.theria.plan.energy_forecast import fit_heating_model
+
+    h = world()
+    model = fit_heating_model(h, cut_for(h, DAY), TZ, DAY)
+    table = model.table(
+        np.array([5.0]),
+        np.array([5.0]),
+        np.array([5.0]),
+        np.zeros(1),
+        np.full(1, 10.0),
+        np.array([17.0, 18.0, 19.0]),
+    )
+    assert table[0, 0] < table[0, 1] < table[0, 2]
+
+
+def test_the_model_survives_a_restart():
+    from core.theria.plan.energy_forecast import HeatingModel, fit_heating_model
+
+    h = world()
+    model = fit_heating_model(h, cut_for(h, DAY), TZ, DAY)
+    assert HeatingModel.from_dict(model.to_dict()) == model
+
+
+def test_the_forecaster_fits_a_model_for_the_plan_even_when_nothing_is_due(tmp_path):
+    h = Harness(tmp_path, datetime(2026, 4, 20, 10, 0, tzinfo=UTC))
+    h.forecaster._backfill_days = 0
+    assert h.forecaster.heating_model() is None
+    h.forecaster.run_due()
+    assert h.forecaster.heating_model() is not None
+    loads = h.loads
+    h.forecaster.run_due()
+    assert h.loads == loads  # fitted once a day

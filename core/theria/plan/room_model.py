@@ -13,7 +13,11 @@ import numpy as np
 
 Array = float | np.ndarray  # scalars and numpy arrays are both accepted
 
-VALVE_RAMP_C = 0.5  # valves close over the last 0.5 C below the LK setpoint
+# How the floor loops open against the thermostat target minus the room, measured with the actuators
+# 29 Oct - 10 Nov 2026 (5083 samples, both rooms, target steady for 2 h; Vardagsrum 0.70 / 1.60, Bibliotek
+# 0.75 / 1.75 on their own): they start to open 0.75 C above the target and are all open 0.95 C below it.
+VALVE_OPEN_ABOVE_C = 0.75
+VALVE_RAMP_C = 1.7
 # Measured on real plan nights with the loops open and closed, 27 Oct - 4 Nov 2026, outdoor 4-13 C
 # (documentation/ivt-heat-pump.md, "Closed loops measured"). The daily fit's response is about half as fast.
 MEASURED_K_SLAB = 0.0065
@@ -84,7 +88,9 @@ def day_heat_c_per_h(local_hour: int) -> float:
 
 def valve_open(room_c: Array, lk_setpoint_c: Array) -> Array:
     """Fraction (0-1) of the loops open; scalars and numpy arrays."""
-    return np.clip((lk_setpoint_c - room_c) / VALVE_RAMP_C, 0.0, 1.0)
+    return np.clip(
+        (lk_setpoint_c - room_c + VALVE_OPEN_ABOVE_C) / VALVE_RAMP_C, 0.0, 1.0
+    )
 
 
 def step(

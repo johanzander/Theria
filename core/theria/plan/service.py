@@ -28,6 +28,7 @@ from core.theria.exceptions import (
 )
 from core.theria.ha_client import HAClient
 from core.theria.plan.calibration import Calibrator, FittedModels
+from core.theria.plan.calibration_data import FLOW_PLAUSIBLE_C, OUTDOOR_PLAUSIBLE_C
 from core.theria.plan.data_health import (
     COUNTED_WINDOW_HOURS,
     WINDOW_HOURS,
@@ -43,6 +44,7 @@ from core.theria.plan.debug_export import (
     read_log_lines,
 )
 from core.theria.plan.disturbance import DisturbanceEstimator, Sample
+from core.theria.plan.energy_forecast import trailing_means
 from core.theria.plan.event_log import EventLog
 from core.theria.plan.exec_trace import ExecTraceStore
 from core.theria.plan.executor import MAX_PLAN_AGE, ExecutionResult, PlanExecutor
@@ -109,6 +111,11 @@ TUNING_DAYS = 14
 TUNING_CACHE = timedelta(
     hours=1
 )  # the measured days change slowly; the query is not cheap
+LAG_HOURS = 72  # the energy model's trailing outdoor means
+ENERGY_SETPOINTS_C = (
+    12.0,
+    24.0,
+)  # the energy table covers every setpoint the plan may use
 SNAPSHOTS_KEPT = 96 * 2  # two days at one snapshot per 15 minutes
 
 
@@ -126,6 +133,24 @@ class Notifier(Protocol):
 
 class ForecastCheck(Protocol):
     def run_due(self) -> int: ...
+
+
+class HeatingTable(Protocol):
+    def table(
+        self,
+        t_out_c: np.ndarray,
+        t24_c: np.ndarray,
+        t72_c: np.ndarray,
+        sun_wm2: np.ndarray,
+        wind_kmh: np.ndarray,
+        setpoints_c: np.ndarray,
+    ) -> np.ndarray: ...
+
+
+class EnergyForecast(Protocol):
+    def run_due(self) -> int: ...
+
+    def heating_model(self) -> HeatingTable | None: ...
 
 
 OutcomeLoader = Callable[[datetime, datetime], list[DayOutcome]]
@@ -190,7 +215,7 @@ class PlanService:
         actuals_loader: ActualsLoader | None = None,
         price_history: Callable[[datetime, datetime], list[PricePeriod]] | None = None,
         forecast_check: ForecastCheck | None = None,
-        energy_forecast: ForecastCheck | None = None,
+        energy_forecast: EnergyForecast | None = None,
         zone_loader: ZoneLoader | None = None,
     ):
         self._ha = ha_client
@@ -261,7 +286,9 @@ class PlanService:
         self._forecast_check = forecast_check
         self._energy_forecast = energy_forecast
         self._zone_loader = zone_loader
-        self._restore_failed = False  # leaving active mode failed: no window may be reapplied
+        self._restore_failed = (
+            False  # leaving active mode failed: no window may be reapplied
+        )
         self._events: deque[dict[str, Any]] = deque(
             [] if event_log is None else event_log.read(LOG_KEPT), maxlen=LOG_KEPT
         )
@@ -290,13 +317,19 @@ class PlanService:
     def now(self) -> datetime:
         return self._now()
 
-    def _read_float(self, entity_id: str) -> float:
-        """Numeric state of an entity; raises SensorError for unavailable/unknown."""
+    def _read_float(
+        self, entity_id: str, bounds: tuple[float, float] | None = None
+    ) -> float:
+        """Numeric state of an entity; raises SensorError for unavailable/unknown, and for a value
+        outside `bounds` (the H60 answers with garbage now and then)."""
         raw = self._ha.get_state(entity_id)["state"]
         try:
-            return float(raw)
+            value = float(raw)
         except (TypeError, ValueError) as e:
             raise SensorError(f"{entity_id} has non-numeric state {raw!r}") from e
+        if bounds is not None and not bounds[0] <= value <= bounds[1]:
+            raise SensorError(f"{entity_id} reads {value}, outside {bounds}")
+        return value
 
     @property
     def mode(self) -> str:
@@ -824,9 +857,12 @@ class PlanService:
             sample = Sample(
                 at=now,
                 room_c=room_c,
-                flow_c=min(self._read_float(s.flow_measured_entity), s.floor_mix_max_c),
+                flow_c=min(
+                    self._read_float(s.flow_measured_entity, FLOW_PLAUSIBLE_C),
+                    s.floor_mix_max_c,
+                ),
                 valve=self._open_fraction(),
-                t_out_c=self._read_float(s.outdoor_entity),
+                t_out_c=self._read_float(s.outdoor_entity, OUTDOOR_PLAUSIBLE_C),
                 sun_wm2=self._forecast_at(weather, _floor_hour(now)).shortwave_wm2,
             )
         except (RuntimeError, ValueError, KeyError, TypeError, WeatherDataError):
@@ -841,6 +877,42 @@ class PlanService:
         )
         if innovation is not None:
             self._skill.add(innovation)
+
+    def _energy_table(
+        self, starts: list[datetime], weather: dict[datetime, WeatherHour], bias: float
+    ) -> dict[str, np.ndarray]:
+        """The energy forecast's heating per hour and setpoint, with the outdoor history it needs for
+        its trailing means; nothing until its model has been fitted."""
+        model = (
+            None
+            if self._energy_forecast is None
+            else self._energy_forecast.heating_model()
+        )
+        if model is None:
+            return {}
+        hours = [starts[0] - timedelta(hours=k) for k in range(LAG_HOURS, 0, -1)]
+        hours += starts
+        t_out = np.array(
+            [weather[h].temperature_c + bias if h in weather else np.nan for h in hours]
+        )
+        t24, t72 = trailing_means(t_out)
+        future = slice(LAG_HOURS, None)
+        setpoints = np.arange(
+            ENERGY_SETPOINTS_C[0],
+            ENERGY_SETPOINTS_C[1] + 1e-9,
+            self._settings.rts_step_c,
+        )
+        table = model.table(
+            t_out[future],
+            t24[future],
+            t72[future],
+            np.array(
+                [weather[h].shortwave_wm2 if h in weather else 0.0 for h in starts]
+            ),
+            np.array([weather[h].wind_kmh if h in weather else 0.0 for h in starts]),
+            setpoints,
+        )
+        return {"energy_setpoints_c": setpoints, "energy_kwh_table": table}
 
     def use_salon_status(self, status: Callable[[], SalonStatus]) -> None:
         """Where the heat shift reads the salon from; without it the salon is not looked after."""
@@ -1030,7 +1102,7 @@ class PlanService:
         prices = np.array([p for _, p in hourly])
 
         weather = {w.start: w for w in self._weather.fetch()}
-        measured_outdoor = self._read_float(s.outdoor_entity)
+        measured_outdoor = self._read_float(s.outdoor_entity, OUTDOOR_PLAUSIBLE_C)
         bias = measured_outdoor - self._forecast_at(weather, starts[0]).temperature_c
         t_out = np.array(
             [self._forecast_at(weather, h).temperature_c + bias for h in starts]
@@ -1050,7 +1122,7 @@ class PlanService:
             else float(np.mean([self._read_float(e) for e in s.room_temp_entities]))
         )
         self._scoreboard.record(now, room_c)
-        flow_now = self._read_float(s.flow_setpoint_entity)
+        flow_now = self._read_float(s.flow_setpoint_entity, FLOW_PLAUSIBLE_C)
         previous_rts = float(
             self._ha.get_climate_state(s.room_setpoint_entity)["target_temperature"]
         )
@@ -1081,6 +1153,7 @@ class PlanService:
             extra_drift_c_per_h=self._extra_drift(starts),
             past_prices_sek_per_kwh=self._prices_today(periods, starts[0]),
             shift=self._shift_readings(room_c),
+            **self._energy_table(starts, weather, bias),
         )
         baseline_flow = np.minimum(
             np.asarray(flow_target(self._pump, t_out, s.rts_base_c), dtype=float),
@@ -1102,6 +1175,9 @@ class PlanService:
                 result, effective, room_params, baseline_flow
             ),
             model_status={
+                "energy": (
+                    "pump model" if inputs.energy_kwh_table is None else "forecast"
+                ),
                 "pump": "prior" if self._models is None else "fitted",
                 "room": "fitted" if self._models and self._models.room else "prior",
             },
@@ -1209,6 +1285,11 @@ class PlanService:
             except Exception as e:  # supervisor boundary: the loop must survive
                 self._schedule_refit_retry(e)
                 logger.exception("plan model refit failed; keeping previous models")
+        if self._energy_forecast is not None:
+            try:
+                await asyncio.to_thread(self._energy_forecast.run_due)
+            except Exception:  # supervisor boundary: the loop must survive
+                logger.exception("the energy forecast failed")
         try:
             await asyncio.to_thread(self.run_once)
             self._plan_error = None
@@ -1224,11 +1305,6 @@ class PlanService:
                 await asyncio.to_thread(self._forecast_check.run_due)
             except Exception:  # supervisor boundary: the loop must survive
                 logger.exception("checking the plans against what happened failed")
-        if self._energy_forecast is not None:
-            try:
-                await asyncio.to_thread(self._energy_forecast.run_due)
-            except Exception:  # supervisor boundary: the loop must survive
-                logger.exception("the energy forecast failed")
         if self._mode == "active":
             try:
                 await asyncio.to_thread(self._control)
@@ -1433,7 +1509,11 @@ class PlanService:
             return normal, None
         hours = snapshot.plan.hours
         current = next(
-            (i for i, h in enumerate(hours) if h.start <= now < h.start + timedelta(hours=1)),
+            (
+                i
+                for i, h in enumerate(hours)
+                if h.start <= now < h.start + timedelta(hours=1)
+            ),
             None,
         )
         if current is None or hours[current].thermostat == NORMAL:

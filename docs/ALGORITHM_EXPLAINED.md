@@ -224,7 +224,7 @@ mild: 1.89 against 1.43 kWh/h at 7 C. The plan therefore overstates what mild-we
 18.5: +1.6, 20: +6.5, 21.5: +10.9. That is about 3 C of flow per degree of setpoint, which agrees with the last 40 days
 (2.99 C per degree, RMSE 0.54 C). The fixed `flow_per_rts` of 1.9 is used only outside the measured setpoints.
 
-### The forecast of the electricity (built, shown, not yet used by the plan)
+### The forecast of the electricity (built, and the plan's energy)
 
 A walk-forward test over four years compared forecasts issued at 14:00 the day before ([study and review](../documentation/energy-forecast/README.md)).
 The chosen model (`plan/energy_forecast.py`) has two parts:
@@ -239,8 +239,10 @@ against 8.3 kWh for the plan's energy model above and 8.4-9.9 kWh for BESS's two
 about 0.5 C a day ahead, but flow alone gives 14 kWh/day of error: it matters together with the outdoor temperature, because
 how many loops are open decides the heat drawn.
 
-It is good enough to plan with. It cannot yet measure savings: the setpoint response is unvalidated, and monthly savings below
-about 6 % are inside its error.
+Since 2026-11-10 the plan takes its energy per hour and setpoint from this model's heating part (a table made each cycle, kept with
+the plan run for replay), and the pump model above only until the model has been fitted after a start (`model_status.energy`). It
+cannot yet measure savings: the setpoint response is unvalidated (about 0.28 kWh/h per degree on 10 Nov, against 0.23-0.37
+measured), and monthly savings below about 6 % are inside its error.
 
 ### What one degree costs
 

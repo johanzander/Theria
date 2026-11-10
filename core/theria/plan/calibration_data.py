@@ -1,7 +1,7 @@
 """Hourly calibration data assembled from InfluxDB history and Open-Meteo."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 import numpy as np
@@ -25,6 +25,7 @@ from core.theria.plan.weather import WeatherHour
 MAX_ENERGY_KWH_PER_HOUR = 5.0  # AirX 170 draws about 4.4-5.8 kW at full speed (capacity diagram); anything above is a counter spike
 # what the H60 shows for a working pump; it answers 0 or nonsense when a register fails
 FLOW_PLAUSIBLE_C = (15.0, 65.0)
+OUTDOOR_PLAUSIBLE_C = (-35.0, 45.0)  # the H60 outdoor sensor has read 59.2 C
 MAX_AUX_KWH_PER_HOUR = 9.0  # the electric heater (AirBox E9) is at most 9 kW
 SETPOINT_FFILL_HOURS = 24 * 60  # setpoints are only logged when they change
 SMALL_GAP_HOURS = 3
@@ -137,6 +138,35 @@ class CalibrationInputs:
         )
 
 
+# `Min. utetemperatur` stood at -20 instead of -30: the pump's flow targets were about 2.6 C high
+# (8 Nov 12:41 - 9 Nov 17:25 local), so they do not describe its curve
+CURVE_CHANGED = (
+    datetime(2026, 11, 8, 11, 41, tzinfo=UTC),
+    datetime(2026, 11, 9, 16, 25, tzinfo=UTC),
+)
+
+
+def curve_changed(hours: list[datetime]) -> np.ndarray:
+    """The hours touched by the wrong curve setting."""
+    return np.array(
+        [
+            CURVE_CHANGED[0] < h + timedelta(hours=1) and h < CURVE_CHANGED[1]
+            for h in hours
+        ],
+        dtype=bool,
+    )
+
+
+def without_curve_change(hours: list[datetime], values: FloatArray) -> FloatArray:
+    """The flow targets with the hours of the wrong curve setting left out."""
+    return np.where(curve_changed(hours), np.nan, values)
+
+
+def plausible(points: list[Point], bounds: tuple[float, float]) -> list[Point]:
+    """The readings a working sensor can give; the H60 also answers with garbage."""
+    return [p for p in points if bounds[0] <= p[1] <= bounds[1]]
+
+
 def _cleaned(
     points: list[Point], start: datetime, n: int, window: int, max_dev: float
 ) -> FloatArray:
@@ -209,7 +239,11 @@ def load_calibration_inputs(
         )
 
     t_out = _cleaned(
-        source.hourly_means(settings.outdoor_entity, start, end), start, n, 7, 6.0
+        source.hourly_means(settings.outdoor_entity, start, end, OUTDOOR_PLAUSIBLE_C),
+        start,
+        n,
+        7,
+        6.0,
     )
     rooms = [
         _cleaned(source.hourly_means(e, start, end), start, n, 7, 2.0)
@@ -253,16 +287,18 @@ def load_calibration_inputs(
     return CalibrationInputs(
         hours=hours,
         t_out_c=t_out,
-        heating_setpoint_c=to_hourly(
-            [
-                p
-                for p in source.series(settings.flow_setpoint_entity, start, end)
-                if FLOW_PLAUSIBLE_C[0] <= p[1] <= FLOW_PLAUSIBLE_C[1]
-            ],
-            start,
-            n,
-            how="last",
-            ffill_hours=48,
+        heating_setpoint_c=without_curve_change(
+            hours,
+            to_hourly(
+                plausible(
+                    source.series(settings.flow_setpoint_entity, start, end),
+                    FLOW_PLAUSIBLE_C,
+                ),
+                start,
+                n,
+                how="last",
+                ffill_hours=48,
+            ),
         ),
         rts_c=last(settings.room_setpoint_entity, "temperature", SETPOINT_FFILL_HOURS),
         hot_water=step_fraction(

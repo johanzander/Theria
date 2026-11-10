@@ -8,7 +8,12 @@ import numpy as np
 import numpy.typing as npt
 
 from core.theria.exceptions import OptimizationError
-from core.theria.plan.pump_model import PumpParams, flow_target, total_kwh_per_hour
+from core.theria.plan.pump_model import (
+    PumpParams,
+    aux_kwh_per_hour,
+    flow_target,
+    total_kwh_per_hour,
+)
 from core.theria.plan.room_model import RoomParams, RoomState, step, valve_open
 from core.theria.plan.settings import PlanSettings
 from core.theria.plan.shift_rules import ShiftReadings, ShiftWindow
@@ -57,6 +62,10 @@ class PlanInputs:
     past_prices_sek_per_kwh: FloatArray | None = None
     # What the heat shift's guards read, and the window that has started; None: no guards
     shift: ShiftReadings | None = None
+    # The heating electricity per hour (rows) and setpoint (columns) from the energy forecast's model;
+    # None until it has been fitted, and the pump model is used
+    energy_setpoints_c: FloatArray | None = None
+    energy_kwh_table: FloatArray | None = None
 
 
 @dataclass(frozen=True)
@@ -257,7 +266,14 @@ class _Problem:
         )
 
     def energy_kwh(self, t: int, rts_c: float, closed: bool = False) -> float:
-        kwh = float(total_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
+        table = self.inputs.energy_kwh_table
+        setpoints = self.inputs.energy_setpoints_c
+        if table is None or setpoints is None:
+            kwh = float(total_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c))
+        else:
+            kwh = float(np.interp(rts_c, setpoints, table[t])) + float(
+                aux_kwh_per_hour(self.pump, self.inputs.t_out_c[t], rts_c)
+            )
         return kwh * self.settings.closed_share if closed else kwh
 
     def stage_cost(

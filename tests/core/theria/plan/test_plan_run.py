@@ -96,3 +96,24 @@ def test_a_run_keeps_the_room_and_flow_it_expected_so_they_can_be_checked_later(
     hour = service.latest().plan.hours[0]
     assert body["decided"][0]["room_c"] == hour.room_c_end + hour.sun_swing_c
     assert body["decided"][0]["flow_c"] == hour.flow_target_c
+
+
+def test_a_run_keeps_the_energy_table(settings, tmp_path):
+    from dataclasses import replace
+
+    import numpy as np
+
+    from core.theria.plan.plan_run import run_to_dict
+
+    _, store = kept_run(settings, tmp_path)
+    [body] = store.read(PLAN_START - timedelta(hours=1))
+    run = run_from_dict(body)
+    n = len(run.inputs.hour_starts)
+    inputs = replace(
+        run.inputs,
+        energy_setpoints_c=np.array([17.0, 18.0]),
+        energy_kwh_table=np.ones((n, 2)),
+    )
+    again = run_from_dict(run_to_dict(replace(run, inputs=inputs)))
+    assert again.inputs.energy_kwh_table.shape == (n, 2)
+    assert list(again.inputs.energy_setpoints_c) == [17.0, 18.0]

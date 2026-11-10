@@ -246,21 +246,6 @@ def test_a_cut_is_paid_for_by_as_much_buying_before_it(settings):
     assert moved > 0 and abs(net) <= 0.1 * moved
 
 
-def closed_energy(settings, closes):
-    result, _ = planned(
-        replace(settings, plan_closes_valves=closes), inputs_for(MONDAY)
-    )
-    return next(
-        h.energy_kwh for h in result.hours if h.reason["binding"] == "shift_sell"
-    )
-
-
-def test_a_closed_sell_hour_still_uses_the_measured_share_of_the_energy(settings):
-    assert closed_energy(settings, True) == pytest.approx(
-        0.6 * closed_energy(settings, False)
-    )
-
-
 # A buy only where the heat will be needed at the sell
 
 
@@ -358,3 +343,14 @@ def test_a_raise_does_not_warm_a_room_whose_loops_are_closed(settings):
     result, _ = planned(settings, with_room(inputs_for(CHEAP_THEN_DEAR), 21.5))
     assert result.hours[4].main_delta_c == pytest.approx(0.0, abs=1e-6)
     assert result.hours[4].salon_delta_c > 0
+
+
+def test_the_plan_takes_its_energy_from_the_table_when_it_has_one(settings):
+    inputs = inputs_for(MONDAY)
+    table = np.tile(np.array([[1.0, 2.0, 3.0]]), (len(MONDAY), 1))
+    with_table = replace(
+        inputs, energy_setpoints_c=np.array([17.0, 18.0, 19.0]), energy_kwh_table=table
+    )
+    result, rts = planned(settings, with_table)
+    expected = {17.0: 1.0, 18.0: 2.0, 19.0: 3.0}
+    assert [h.energy_kwh for h in result.hours] == [expected[r] for r in rts]

@@ -68,11 +68,11 @@ def shift(settings):
 
 
 def test_a_closing_thermostat_expects_closed_loops_above_its_target(shift):
-    assert expected_open_share("closing", 19.5, False, shift) == 0.0
+    assert expected_open_share("closing", 19.9, False, shift) == 0.0
 
 
 def test_a_closing_thermostat_reopens_a_room_that_has_fallen(shift):
-    assert expected_open_share("closing", 18.4, False, shift) == 1.0
+    assert expected_open_share("closing", 18.0, False, shift) == 1.0
 
 
 def test_an_opening_thermostat_expects_open_loops(shift):
@@ -80,7 +80,9 @@ def test_an_opening_thermostat_expects_open_loops(shift):
 
 
 def test_a_normal_thermostat_opens_below_the_normal_target(shift):
-    assert expected_open_share("normal", 19.25, False, shift) == pytest.approx(0.5)
+    assert expected_open_share("normal", 19.25, False, shift) == pytest.approx(
+        1.0 / 1.7
+    )
 
 
 class Source:

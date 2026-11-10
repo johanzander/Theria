@@ -145,7 +145,8 @@ The pump's compressor electricity per hour for the next day, chosen and reviewed
 [energy-forecast](../documentation/energy-forecast/README.md). `EnergyForecaster.run_due` runs in each cycle: after 14:00 local it
 issues tomorrow with the weather forecast, and it fills in the last 14 days from what was measured. Each forecast is kept as it was
 made in `energy_forecast.jsonl`. `view` joins them with the measured electricity for `GET /api/energy-forecast` and the Energy tab.
-It only shows; nothing in the plan reads it yet.
+It also keeps the fitted heating model, refitted daily and run before the plan in each cycle; the plan service turns it into a table of
+kWh per hour and setpoint (`PlanInputs.energy_kwh_table`), which the planner reads instead of the pump model's energy.
 
 ### Records and outcomes
 
@@ -202,6 +203,7 @@ Leaving active mode writes the base values back. If that fails the mode stays ac
 | Where | What |
 |---|---|
 | `config.yaml`, `/data/options.json` | entities, sensors, default plan settings |
+| Settings tab | the settings that only the optimizer reads are in their own group, "Optimizer only (not used by the heat shift)" |
 | `plan/settings.py` `PlanSettings` | every plan setting, validated at start |
 | `/data/plan_overrides.json` | values changed in the UI (`plan/settings_manager.py`) |
 | `radiators/settings.py`, `/data/radiator_prefs.json` | radiator configuration and preferences |
@@ -269,9 +271,8 @@ per window.
 
 | Where | Mismatch |
 |---|---|
-| `plan/calibration.py` | does not leave out 8 Nov 12:41 - 9 Nov 17:25 local, when `Min. utetemperatur` stood at -20 and flow targets were about 2.6 C high |
-| `plan/calibration_data.py` | reads the outdoor hourly means without the plausibility range, so a garbage reading can move an hour by several degrees (1.6 % of hours); `energy_forecast.py` filters them |
 | `planner.py` `closed_energy_share` 0.15 | optimizer only; the heat shift uses `shift_closed_energy_share` 0.6, as measured |
 | `outcomes.py` | scales measured energy by the model and leaves out hot-water hours; it is not the agreed saving (see the algorithm document) |
+| `room_model.valve_open` | fitted on 12 days in mild weather (29 Oct - 10 Nov 2026); refit when colder days are logged |
 | `radiators/settings.py` | salon 51.7 W/K against 84 W/K in the analysis |
 | `binary_sensor.lk_*_actuator_*` | not written to InfluxDB, so loop state exists only in about 10 days of HA history |

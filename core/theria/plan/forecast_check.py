@@ -19,11 +19,14 @@ from typing import Any, Protocol
 import numpy as np
 
 from core.theria.plan.calibration_data import (
+    FLOW_PLAUSIBLE_C,
     MAX_AUX_KWH_PER_HOUR,
     MAX_ENERGY_KWH_PER_HOUR,
+    OUTDOOR_PLAUSIBLE_C,
     SETPOINT_FFILL_HOURS,
     SMALL_GAP_HOURS,
     HistorySource,
+    plausible,
 )
 from core.theria.plan.series import (
     FloatArray,
@@ -126,13 +129,22 @@ def load_measured(
             ffill_hours=SETPOINT_FFILL_HOURS,
         ),
         flow_c=to_hourly(
-            series(settings.flow_setpoint_entity),
+            plausible(series(settings.flow_setpoint_entity), FLOW_PLAUSIBLE_C),
             first,
             n,
             ffill_hours=FLOW_FFILL_HOURS,
         ),
         t_out_c=interpolate_gaps(
-            despike(to_hourly(series(settings.outdoor_entity), first, n), 7, 6.0), 3
+            despike(
+                to_hourly(
+                    plausible(series(settings.outdoor_entity), OUTDOOR_PLAUSIBLE_C),
+                    first,
+                    n,
+                ),
+                7,
+                6.0,
+            ),
+            3,
         ),
         sun_wm2=np.array([sun.get(h, np.nan) for h in hours], dtype=float),
     )

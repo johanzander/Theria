@@ -58,7 +58,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.5,
     ),
     "target_c": _f(
-        "Comfort",
+        "Optimizer only (not used by the heat shift)",
         "Comfort target (day)",
         "The temperature you want on average; being below it costs the comfort cost per degree-hour.",
         "°C",
@@ -67,7 +67,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.5,
     ),
     "ceiling_c": _f(
-        "Comfort",
+        "Optimizer only (not used by the heat shift)",
         "Room limit",
         "The warmest a room may be planned to get. The LK thermostats are held at this in active mode (not above the LK limit).",
         "°C",
@@ -76,7 +76,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.5,
     ),
     "extreme_floor_c": _f(
-        "Comfort",
+        "Optimizer only (not used by the heat shift)",
         "Floor at extreme prices",
         "A lower floor that is allowed in the dearest hours.",
         "°C",
@@ -94,7 +94,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.5,
     ),
     "night_target_c": _f(
-        "Comfort",
+        "Optimizer only (not used by the heat shift)",
         "Comfort target (night)",
         "The target at night; nobody is in the ground floor then.",
         "°C",
@@ -173,7 +173,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.05,
     ),
     "lk_limit_c": _f(
-        "Floor and valves",
+        "Optimizer only (not used by the heat shift)",
         "LK thermostat setpoint (active)",
         "Where the LK thermostats are held while Theria controls them: the valves close when a room reaches it.",
         "°C",
@@ -236,7 +236,7 @@ EDITABLE: dict[str, SettingInfo] = {
         1,
     ),
     "max_flow_c": _f(
-        "Floor and valves",
+        "Optimizer only (not used by the heat shift)",
         "Largest flow temperature asked for",
         "A sanity bound on the flow temperature the plan may ask the pump for.",
         "°C",
@@ -245,7 +245,7 @@ EDITABLE: dict[str, SettingInfo] = {
         1,
     ),
     "boost_flow_limit_c": _f(
-        "Floor and valves",
+        "Optimizer only (not used by the heat shift)",
         "Flow where the electric heater starts",
         "The plan does not raise the flow above this unless the baseline already is above.",
         "°C",
@@ -254,7 +254,7 @@ EDITABLE: dict[str, SettingInfo] = {
         1,
     ),
     "shift_room_swing_c": _f(
-        "Comfort",
+        "Heat shift",
         "How far the rooms may swing (±)",
         "Sets how long the setpoint may stay lowered: this swing and the house's cooling give the length of the window.",
         "°C",
@@ -263,7 +263,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.1,
     ),
     "shift_rts_c": _f(
-        "Comfort",
+        "Heat shift",
         "Setpoint change in a window",
         "How much the setpoint goes down in the dear window and up in the cheap window before it.",
         "°C",
@@ -272,7 +272,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.5,
     ),
     "shift_min_gain_sek_per_kwh": _f(
-        "Comfort",
+        "Heat shift",
         "Smallest price difference worth moving",
         "A dear and a cheap window closer in price than this are left alone.",
         "kr/kWh",
@@ -288,7 +288,7 @@ EDITABLE: dict[str, SettingInfo] = {
         "bool",
     ),
     "closed_energy_share": _f(
-        "Floor and valves",
+        "Optimizer only (not used by the heat shift)",
         "Energy with loops closed",
         "What the pump still uses in an hour with the floor loops closed (hot water, radiators), as a share of its energy at the lowest setpoint. A prior; lower it as measured closed hours show.",
         "",
@@ -297,14 +297,14 @@ EDITABLE: dict[str, SettingInfo] = {
         0.05,
     ),
     "regulator_active": SettingInfo(
-        "Floor and valves",
+        "Optimizer only (not used by the heat shift)",
         "Regulator closes valves",
         "On: the regulator closes a room's valves early; off: it only logs what it would do.",
         "",
         "bool",
     ),
     "comfort_cost_sek_per_c_hour": _f(
-        "Weights",
+        "Optimizer only (not used by the heat shift)",
         "Comfort cost",
         "What an hour one degree below the target costs. Lower: the plan accepts a cooler room to save money.",
         "kr per °C·h",
@@ -313,7 +313,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.1,
     ),
     "floor_violation_cost_sek_per_c_hour": _f(
-        "Weights",
+        "Optimizer only (not used by the heat shift)",
         "Floor violation cost",
         "What an hour one degree under the comfort floor costs. Higher: the plan heats harder to hold the floor, even when power is dear.",
         "kr per °C·h",
@@ -322,7 +322,7 @@ EDITABLE: dict[str, SettingInfo] = {
         1,
     ),
     "setpoint_deviation_cost_sek_per_c_hour": _f(
-        "Weights",
+        "Optimizer only (not used by the heat shift)",
         "Cost of moving the setpoint",
         "Stands in for the fast rooms (salon, guest house): every hour away from the base setpoint costs this.",
         "kr per °C·h",
@@ -331,7 +331,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.05,
     ),
     "min_saving_sek": _f(
-        "Weights",
+        "Optimizer only (not used by the heat shift)",
         "Minimum saving",
         "A plan that saves less than this over the horizon is replaced by the flat setpoint (0 switches it off).",
         "kr",
@@ -340,7 +340,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.1,
     ),
     "commit_margin_sek": _f(
-        "Weights",
+        "Optimizer only (not used by the heat shift)",
         "Commitment margin",
         "The first hour keeps the setpoint and valve state that were applied last unless a change is better by more than this over the horizon (0 switches it off).",
         "kr",
@@ -349,7 +349,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.05,
     ),
     "extreme_price_percentile": _f(
-        "Prices",
+        "Optimizer only (not used by the heat shift)",
         "Extreme price percentile",
         "Hours above this percentile of the recent prices (and the minimum below) count as extreme.",
         "%",
@@ -358,7 +358,7 @@ EDITABLE: dict[str, SettingInfo] = {
         1,
     ),
     "extreme_price_min_sek_per_kwh": _f(
-        "Prices",
+        "Optimizer only (not used by the heat shift)",
         "Extreme price minimum",
         "A price below this is never extreme.",
         "kr/kWh",
@@ -367,7 +367,7 @@ EDITABLE: dict[str, SettingInfo] = {
         0.1,
     ),
     "extreme_history_days": _i(
-        "Prices",
+        "Optimizer only (not used by the heat shift)",
         "Extreme price history",
         "How many days of prices the percentile is taken over.",
         "days",

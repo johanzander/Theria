@@ -66,6 +66,6 @@ far buy is worth.
 
 - The plan's flat energy is about twice the counter in mild weather (2.1 against 1.1-1.2 kWh/h at 7 C), so the modelled kronor are too high. A reviewer's estimate of a
   5 h sell is about 13 kr at most, against the 22 kr modelled.
-- The valve ramp in the room model is too narrow: real loops start opening about 0.3 C above target.
+- The valve ramp in the room model was too narrow. Refitted 2026-11-10: loops start to open 0.75 C above the target, all open 0.95 C below it.
 - Raises with closed loops and the rebound after a sell are essentially unmeasured.
 - The forecast on a stove day was 1.1 C too low at 8-12 h, so the rule can be wrong on such days. The plan is recomputed every 15 minutes from the measured room.

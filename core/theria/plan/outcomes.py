@@ -21,8 +21,10 @@ import numpy.typing as npt
 from core.theria.plan.calibration_data import (
     MAX_AUX_KWH_PER_HOUR,
     MAX_ENERGY_KWH_PER_HOUR,
+    OUTDOOR_PLAUSIBLE_C,
     SMALL_GAP_HOURS,
     HistorySource,
+    plausible,
 )
 from core.theria.plan.prices import PricePeriod, hourly_price_array
 from core.theria.plan.pump_model import PumpParams, energy_kwh_per_hour
@@ -236,7 +238,21 @@ def load_outcome_inputs(
             how="last",
             ffill_hours=SETPOINT_FFILL_HOURS,
         ),
-        t_out_c=interpolate_gaps(despike(mean(settings.outdoor_entity), 7, 6.0), 3),
+        t_out_c=interpolate_gaps(
+            despike(
+                to_hourly(
+                    plausible(
+                        source.series(settings.outdoor_entity, first, stop),
+                        OUTDOOR_PLAUSIBLE_C,
+                    ),
+                    first,
+                    n,
+                ),
+                7,
+                6.0,
+            ),
+            3,
+        ),
         compressor_kwh=counter(settings.energy_counter_entity, MAX_ENERGY_KWH_PER_HOUR),
         aux_kwh=counter(settings.aux_energy_entity, MAX_AUX_KWH_PER_HOUR),
         hot_water=step_fraction(

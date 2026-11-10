@@ -50,6 +50,10 @@ def _array(values: Any) -> list[float] | None:
     return None if values is None else [float(v) for v in values]
 
 
+def _optional_array(values: Any) -> np.ndarray | None:
+    return None if values is None else np.array(values, dtype=float)
+
+
 def run_to_dict(run: PlanRun) -> dict[str, Any]:
     i = run.inputs
     return {
@@ -67,6 +71,12 @@ def run_to_dict(run: PlanRun) -> dict[str, Any]:
             "extra_drift_c_per_h": _array(i.extra_drift_c_per_h),
             "past_prices_sek_per_kwh": _array(i.past_prices_sek_per_kwh),
             "shift": None if i.shift is None else i.shift.to_dict(),
+            "energy_setpoints_c": _array(i.energy_setpoints_c),
+            "energy_kwh_table": (
+                None
+                if i.energy_kwh_table is None
+                else [_array(row) for row in i.energy_kwh_table]
+            ),
         },
         "settings": _settings_to_dict(run.settings),
         "pump": asdict(run.pump),
@@ -99,6 +109,9 @@ def run_from_dict(body: dict[str, Any]) -> PlanRun:
             shift=(
                 None if i.get("shift") is None else ShiftReadings.from_dict(i["shift"])
             ),
+            # absent in runs kept before 2026-11-10
+            energy_setpoints_c=_optional_array(i.get("energy_setpoints_c")),
+            energy_kwh_table=_optional_array(i.get("energy_kwh_table")),
         ),
         # runs kept before 2026-11-09 were made by the optimizer
         settings=PlanSettings.from_dict(

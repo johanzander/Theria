@@ -1,6 +1,6 @@
 # Forecasting the heat pump's electricity (study, 2026-11-09)
 
-Which estimate of the pump's electricity is best, how it was tested, and what it cannot do. Built in `core/theria/plan/energy_forecast.py` and shown on the Energy tab; the plan does not read it yet.
+Which estimate of the pump's electricity is best, how it was tested, and what it cannot do. Built in `core/theria/plan/energy_forecast.py`, shown on the Energy tab, and since 2026-11-10 the plan's energy per hour.
 The scripts are in [`code/`](code/) and the independent reviewer's in [`code/review/`](code/review/). The data files they
 build are not kept in the repository.
 
@@ -146,7 +146,7 @@ weather and known setpoint, 3.8 kWh with measured weather, on one held-out winte
 
 ## What is left
 
-1. **To plan:** let the plan read it. Forecast against actual is built: each estimate is stored when it is made, and the error
+1. **To plan:** done 2026-11-10, the plan reads its heating part per hour and setpoint. Forecast against actual is built: each estimate is stored when it is made, and the error
    is shown per day. The built code, run on the final test's days with its own data loading, gives 3.87 kWh/day (224 days).
 2. **To measure savings:** freeze a baseline on pre-control data without level correction, run deliberate setpoint steps to
    validate the setpoint response, and keep control days.
