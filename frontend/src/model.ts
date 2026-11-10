@@ -370,3 +370,22 @@ export function dayStatus(loaded: boolean, hasDay: boolean, empty: string): stri
   if (!hasDay) return 'No plan yet: the first one comes within a minute of a start. If it does not, the Control tab says why.'
   return empty
 }
+
+export interface TooltipItem { dataKey: string; name: string; value: unknown; color: string }
+
+/**
+ * A tooltip's rows with each target folded into the row of what it is for: "Kök  20.1 °C (target 20.0 °C)".
+ * `targets` maps a target's data key to its actual's; a target whose actual is not shown keeps its own row.
+ */
+export function pairedTooltipRows(items: TooltipItem[], targets: Record<string, string>, unit: Unit): { name: string; color: string; text: string }[] {
+  const shown = new Set(items.map((i) => i.dataKey))
+  const targetOf = Object.fromEntries(Object.entries(targets).map(([target, actual]) => [actual, target]))
+  const byKey = Object.fromEntries(items.map((i) => [i.dataKey, i]))
+  return items
+    .filter((i) => !(i.dataKey in targets && shown.has(targets[i.dataKey])))
+    .map((i) => {
+      const target = byKey[targetOf[i.dataKey]]
+      const text = formatValue(i.value, unit)
+      return { name: i.name, color: i.color, text: target ? `${text} (target ${formatValue(target.value, unit)})` : text }
+    })
+}

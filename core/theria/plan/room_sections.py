@@ -5,14 +5,16 @@ its thermostats' setpoints and heat demand beside them, so that the whole house 
 the zones the plan moves.
 """
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
+import numpy as np
+
 from core.theria.exceptions import ConfigurationError
 from core.theria.plan.calibration_data import HistorySource
-from core.theria.plan.series import FloatArray, to_hourly
+from core.theria.plan.series import FloatArray, Point, to_hourly
 
 # Many room sensors (Verisure, the upper floor) and the Netatmo demand only report on change: a value
 # holds for a few silent hours, after that the line breaks (a dead sensor does not draw for long).
@@ -83,25 +85,91 @@ def room_sections_from_options(options: dict[str, Any]) -> tuple[RoomSection, ..
     return sections
 
 
+SILENT_STATES = ("unavailable", "unknown")
+
+
+def silent_entities(
+    states: Iterable[Mapping[str, Any]], entities: Iterable[str]
+) -> frozenset[str]:
+    """The entities Home Assistant has as unavailable or unknown now (a flat battery, a lost device).
+
+    InfluxDB keeps no point for such a state, so without this a silent sensor's last value would be
+    carried on as if it still held. When it fell silent is taken from its last report, not from Home
+    Assistant, whose `last_changed` starts over when the integration is reloaded.
+    """
+    wanted = set(entities)
+    return frozenset(
+        s["entity_id"]
+        for s in states
+        if s["entity_id"] in wanted and s["state"] in SILENT_STATES
+    )
+
+
+def last_report(points: Sequence[Point]) -> datetime | None:
+    return max((moment for moment, _ in points), default=None)
+
+
+def end_silent(
+    values: FloatArray, first: datetime, points: Sequence[Point], silent: bool
+) -> FloatArray:
+    """A silent entity's values end with the hour of its last report; nothing at all without one."""
+    if not silent:
+        return values
+    last = last_report(points)
+    if last is None:
+        return np.full(len(values), np.nan)
+    return cut_after(values, first, last)
+
+
+def cut_after(
+    values: FloatArray, first: datetime, since: datetime | None
+) -> FloatArray:
+    """NaN from the first hour that starts after `since`; the hour it fell silent in keeps its reports."""
+    if since is None:
+        return values
+    out = np.array(values, dtype=float)
+    hours_before = (since - first) / timedelta(hours=1)
+    out[max(0, int(np.floor(hours_before)) + 1) :] = np.nan
+    return out
+
+
+def section_entities(sections: Sequence[RoomSection]) -> set[str]:
+    """Every entity the sections read."""
+    return {
+        e
+        for s in sections
+        for e in [r.entity for r in s.rooms]
+        + [t.entity for t in s.thermostats]
+        + [t.demand_entity for t in s.thermostats]
+    }
+
+
 @dataclass(frozen=True)
 class SectionMeasured:
     rooms: dict[str, FloatArray]
     setpoints: dict[str, FloatArray]
     demand: dict[str, FloatArray]
+    # rooms and thermostats Home Assistant has lost now, with their last report (None: none in the window)
+    offline: dict[str, datetime | None] = field(default_factory=dict)
 
 
-def _setpoint(
-    source: HistorySource, entity: str, first: datetime, stop: datetime, n: int
+def _hourly(
+    source: HistorySource,
+    entity: str,
+    field: str | None,
+    first: datetime,
+    stop: datetime,
+    n: int,
+    ffill_hours: int,
+    silent: frozenset[str],
+    lead_hours: int = 0,
+    how: str = "mean",
 ) -> FloatArray:
-    lead = timedelta(hours=SETPOINT_FFILL_HOURS)
-    values = to_hourly(
-        source.series(entity, first - lead, stop, "temperature"),
-        first - lead,
-        n + SETPOINT_FFILL_HOURS,
-        how="last",
-        ffill_hours=SETPOINT_FFILL_HOURS,
-    )
-    return values[SETPOINT_FFILL_HOURS:]
+    """An entity's hourly values from `first`, read with `lead_hours` of lead-in, ended when it is silent."""
+    lead = timedelta(hours=lead_hours)
+    points = source.series(entity, first - lead, stop, field)
+    values = to_hourly(points, first - lead, n + lead_hours, how, ffill_hours)
+    return end_silent(values[lead_hours:], first, points, entity in silent)
 
 
 def load_section_measurements(
@@ -110,32 +178,69 @@ def load_section_measurements(
     first: datetime,
     stop: datetime,
     n: int,
+    silent: frozenset[str] = frozenset(),
 ) -> dict[str, SectionMeasured]:
-    """Hourly room temperatures, thermostat setpoints and heat demand per section, from `first` for n hours."""
+    """Hourly room temperatures, thermostat setpoints and heat demand per section, from `first` for n hours.
+
+    `silent` (from `silent_entities`) are the entities Home Assistant has lost: they end with their
+    last report, and their rooms and thermostats are listed as offline with it.
+    """
+
+    def offline(
+        entities: Iterable[tuple[str, str, str | None, int]],
+    ) -> dict[str, datetime | None]:
+        out: dict[str, datetime | None] = {}
+        for name, entity, attribute, lead in entities:
+            if entity in silent and name not in out:
+                lead_td = timedelta(hours=lead)
+                out[name] = last_report(
+                    source.series(entity, first - lead_td, stop, attribute)
+                )
+        return out
+
     return {
         s.id: SectionMeasured(
             rooms={
-                r.name: to_hourly(
-                    source.series(r.entity, first, stop),
-                    first,
-                    n,
-                    ffill_hours=ROOM_FFILL_HOURS,
+                r.name: _hourly(
+                    source, r.entity, None, first, stop, n, ROOM_FFILL_HOURS, silent
                 )
                 for r in s.rooms
             },
             setpoints={
-                t.name: _setpoint(source, t.entity, first, stop, n)
-                for t in s.thermostats
-            },
-            demand={
-                t.name: to_hourly(
-                    source.series(t.demand_entity, first, stop, t.demand_field),
+                t.name: _hourly(
+                    source,
+                    t.entity,
+                    "temperature",
                     first,
+                    stop,
                     n,
-                    ffill_hours=DEMAND_FFILL_HOURS,
+                    SETPOINT_FFILL_HOURS,
+                    silent,
+                    lead_hours=SETPOINT_FFILL_HOURS,
+                    how="last",
                 )
                 for t in s.thermostats
             },
+            demand={
+                t.name: _hourly(
+                    source,
+                    t.demand_entity,
+                    t.demand_field,
+                    first,
+                    stop,
+                    n,
+                    DEMAND_FFILL_HOURS,
+                    silent,
+                )
+                for t in s.thermostats
+            },
+            offline=offline(
+                [(r.name, r.entity, None, 0) for r in s.rooms]
+                + [
+                    (t.name, t.entity, "temperature", SETPOINT_FFILL_HOURS)
+                    for t in s.thermostats
+                ]
+            ),
         )
         for s in sections
     }

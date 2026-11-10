@@ -251,7 +251,10 @@ The room temperature and the thermostats are shown per part of the house, as on 
 `room_sections` lists each section (Salong, Bottenvåning, Gårdshus, Ovanvåning) with its room sensors and its radiator thermostats
 (setpoint from the climate entity, heat demand in percent from Netatmo's `heating_power_request` or Tado's heating sensor).
 `plan/room_sections.py` reads them hourly from InfluxDB with the zone measurements; they are display only and the plan does not read
-them. The sections with id `ground` and `salon` also carry the plan's own lines, and always get a chart.
+them. The sections with id `ground` and `salon` also carry the plan's own lines, and always get a chart. Sensors that
+report only on change are carried on for a few hours; InfluxDB keeps no point for an unavailable or unknown state, so the
+loader asks Home Assistant which of the sections' entities are lost now (`silent_since`) and ends them from the hour after
+(`cut_after`), as the plan's own salon reading does.
 
 The heating need chart also shows the whole house: its loss `H (room - outdoor)` and the pump heat it should take (the loss less
 the free heat F), both from `plan/house_loss.py`, fitted with the other models (`FittedModels.house`) to the pump's heat counter

@@ -1,11 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pytest
 
 from core.theria.exceptions import ConfigurationError
 from core.theria.plan.room_sections import (
     load_section_measurements,
     room_sections_from_options,
+    section_entities,
+    silent_entities,
 )
 
 START = datetime(2026, 11, 10, 0, tzinfo=UTC)
@@ -77,3 +80,32 @@ def test_rooms_setpoints_and_demand_per_hour():
     assert guest.setpoints["Kök"] == pytest.approx([20.0, 20.0, 20.0])
     assert guest.demand["Kök"][0] == pytest.approx(20.0)
     assert measured["upper"].rooms == {}
+
+
+def test_a_sensor_home_assistant_has_lost_ends_with_its_last_report():
+    sections = room_sections_from_options(OPTIONS)
+    states = [
+        # last_changed is when the integration was reloaded, not when the battery died
+        {"entity_id": "sensor.kitchen_temperature", "state": "unknown"},
+        {"entity_id": "climate.kitchen", "state": "unavailable"},
+        {"entity_id": "sensor.kitchen_heating", "state": "12"},
+        {"entity_id": "sensor.other", "state": "unavailable"},
+    ]
+    silent = silent_entities(states, section_entities(sections))
+    assert silent == {"sensor.kitchen_temperature", "climate.kitchen"}
+    source = Source(
+        {
+            ("sensor.kitchen_temperature", None): [(10, 19.0), (65, 21.0)],
+            ("climate.kitchen", "temperature"): [(-600, 20.0)],
+        }
+    )
+    measured = load_section_measurements(
+        source, sections, START, START + timedelta(hours=4), 4, silent
+    )
+    guest = measured["guest"]
+    # the hour of the last report keeps it; the hours after are unknown, not held
+    assert guest.rooms["Kök"][:2] == pytest.approx([19.0, 21.0])
+    assert np.isnan(guest.rooms["Kök"][2:]).all()
+    assert np.isnan(guest.setpoints["Kök"]).all()  # last set the evening before
+    assert guest.offline == {"Kök": START + timedelta(minutes=65)}
+    assert measured["upper"].offline == {}

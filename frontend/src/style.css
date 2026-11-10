@@ -68,3 +68,12 @@ td.desc { color: #52606d; max-width: 60ch; }
   font-weight: 600;
   color: #334e68;
 }
+
+.paired-tooltip {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 10px;
+  white-space: nowrap;
+}
+.paired-tooltip p { margin: 0 0 4px; }
+.paired-tooltip-label { color: #102a43; margin-bottom: 6px !important; }

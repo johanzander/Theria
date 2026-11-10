@@ -245,7 +245,9 @@ def test_a_past_hour_shows_each_sections_rooms_and_thermostats(settings):
             "demand": {"Kök": None},
         }
     }
-    assert next(h for h in hours if not h["past"])["sections"] == {}
+    coming = [h for h in hours if not h["past"]]
+    assert coming[0]["sections"]["guest"]["rooms"] == {"Kök": 20.1}  # in progress
+    assert coming[1]["sections"] == {}
 
 
 def test_the_whole_house_is_shown_from_its_fit_and_the_heat_counter(settings):

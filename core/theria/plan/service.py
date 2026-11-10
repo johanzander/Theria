@@ -974,12 +974,14 @@ class PlanService:
         zones = None
         first = day_hours(day, self._settings.timezone)[0]
         current = _floor_hour(now.astimezone(UTC))
-        if self._actuals_loader is not None and first < current:
+        if self._actuals_loader is not None and first <= current:
+            # up to the end of the hour in progress, so that it shows what was measured so far
+            stop = current + timedelta(hours=1)
             try:
                 # a day of lead-in: the setpoint is only logged when it changes
-                measured = self._actuals_loader(first - timedelta(days=1), current)
+                measured = self._actuals_loader(first - timedelta(days=1), stop)
                 if self._zone_loader is not None:
-                    zones = self._zone_loader(first, current)
+                    zones = self._zone_loader(first, stop)
             except TheriaError:
                 logger.warning("could not read today's measurements", exc_info=True)
         salon = self._salon_reading()

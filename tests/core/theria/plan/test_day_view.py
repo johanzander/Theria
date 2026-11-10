@@ -57,7 +57,9 @@ def test_hours_already_passed_show_what_was_measured_and_the_rest_the_plan(setti
         planned["room_planned"] == first.room_c_end
         and planned["rts_baseline"] is not None
     )
-    assert planned["rts_measured"] is None
+    # the hour in progress shows what was measured so far; the hours after it have nothing yet
+    assert planned["room_measured"] == 20.0 and planned["energy_measured_kwh"] is None
+    assert rows[PLAN_START + timedelta(hours=1)]["rts_measured"] is None
 
 
 def test_prices_cover_the_hours_that_have_passed_too(settings):
@@ -95,7 +97,10 @@ def test_hours_that_passed_carry_the_open_floor_loops_per_room(settings):
     rows = {r["start"]: r for r in view["hours"]}
     assert view["loops_total"] == {"bib": 3}
     assert rows[PLAN_START - timedelta(hours=1)]["loops_open"] == {"bib": 2.0}
-    assert rows[PLAN_START]["loops_open"] == {}
+    assert rows[PLAN_START]["loops_open"] == {
+        "bib": 2.0
+    }  # the hour in progress, so far
+    assert rows[PLAN_START + timedelta(hours=1)]["loops_open"] == {}
 
 
 def test_hours_that_passed_carry_each_thermostats_temperature_and_setpoint(settings):
@@ -117,7 +122,7 @@ def test_hours_that_passed_carry_each_thermostats_temperature_and_setpoint(setti
     assert rows[PLAN_START - timedelta(hours=1)]["thermostats"] == {
         "lk_a": {"room_c": 19.8, "set_c": 19.5}
     }
-    assert rows[PLAN_START]["thermostats"] == {}
+    assert rows[PLAN_START + timedelta(hours=1)]["thermostats"] == {}
 
 
 def test_every_hour_carries_its_four_quarter_prices_and_the_hour_price_is_their_mean(

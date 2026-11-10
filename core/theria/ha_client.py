@@ -75,6 +75,22 @@ class HAClient:
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"HA API request failed: {e}") from e
 
+    def get_states(self) -> list[dict[str, Any]]:
+        """Every entity's current state in one call.
+
+        Raises:
+            RuntimeError: If API request fails
+        """
+        url = f"{self.base_url}/api/states"
+        try:
+            response = self.session.get(url, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"HA API request failed: {e}") from e
+        return [
+            self._with_simulated_setpoint(s["entity_id"], s) for s in response.json()
+        ]
+
     def _with_simulated_setpoint(
         self, entity_id: str, state: dict[str, Any]
     ) -> dict[str, Any]:

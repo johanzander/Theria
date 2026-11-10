@@ -26,7 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from core.theria.exceptions import TheriaError
+from core.theria.exceptions import HAConnectionError, TheriaError
 from core.theria.ha_client import HANotifier
 from core.theria.health_monitor import HealthMonitorService
 from core.theria.heat_pump_monitor import HeatPumpMonitorService
@@ -57,13 +57,17 @@ from core.theria.plan.parameter_log import ParameterLog
 from core.theria.plan.plan_record import PlanRecordStore
 from core.theria.plan.plan_run import PlanRunStore
 from core.theria.plan.price_feed import NordpoolFeed
-from core.theria.plan.room_sections import room_sections_from_options
+from core.theria.plan.room_sections import (
+    room_sections_from_options,
+    section_entities,
+    silent_entities,
+)
 from core.theria.plan.service import PlanService
 from core.theria.plan.settings import load_plan_settings
 from core.theria.plan.settings_manager import SettingsManager
 from core.theria.plan.state_store import PlanStateStore
 from core.theria.plan.weather import OpenMeteoClient
-from core.theria.plan.zone_heat import load_zone_measurements
+from core.theria.plan.zone_heat import ZoneMeasured, load_zone_measurements
 from core.theria.radiators.service import RadiatorService
 from core.theria.radiators.settings import load_radiator_settings
 from core.theria.radiators.store import PrefsStore
@@ -246,6 +250,25 @@ async def lifespan(app: FastAPI):
                     or {}
                 )
 
+                watched = section_entities(room_sections) | {e for e, _ in salon_points}
+
+                def zone_loader(start: datetime, stop: datetime) -> ZoneMeasured:
+                    try:
+                        states = ha_client.get_states()
+                    except RuntimeError as e:
+                        raise HAConnectionError(
+                            f"cannot read the sensors' states: {e}"
+                        ) from e
+                    return load_zone_measurements(
+                        history_source,
+                        plan_settings,
+                        salon_points,
+                        room_sections,
+                        start,
+                        stop,
+                        silent_entities(states, watched),
+                    )
+
                 def actuals_loader(start: datetime, stop: datetime) -> OutcomeInputs:
                     return load_outcome_inputs(
                         history_source,
@@ -324,14 +347,7 @@ async def lifespan(app: FastAPI):
                     price_history=prices.history,
                     forecast_check=forecast_check,
                     energy_forecast=energy_forecaster,
-                    zone_loader=lambda start, stop: load_zone_measurements(
-                        history_source,
-                        plan_settings,
-                        salon_points,
-                        room_sections,
-                        start,
-                        stop,
-                    ),
+                    zone_loader=zone_loader,
                     room_sections=room_sections,
                 )
                 built.append(plan_service)

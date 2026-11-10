@@ -21,6 +21,7 @@ from core.theria.plan.room_model import valve_open
 from core.theria.plan.room_sections import (
     RoomSection,
     SectionMeasured,
+    end_silent,
     load_section_measurements,
 )
 from core.theria.plan.series import (
@@ -140,9 +141,10 @@ def load_zone_measurements(
     sections: Sequence[RoomSection],
     start: datetime,
     stop: datetime,
+    silent: frozenset[str] = frozenset(),
 ) -> ZoneMeasured:
     """The flow to the heating, the pump's own target for it, the mean of the salon's points and
-    every section's rooms and thermostats."""
+    every section's rooms and thermostats. `silent` ends the points Home Assistant has lost."""
     first = hour_floor(start)
     n = int((hour_floor(stop) - first) / timedelta(hours=1))
     flow = to_hourly(
@@ -160,10 +162,12 @@ def load_zone_measurements(
         how="last",
         ffill_hours=TARGET_FFILL_HOURS,
     )
-    points = [
-        to_hourly(source.series(entity, first, stop, field), first, n)
-        for entity, field in salon_points
-    ]
+
+    def salon_point(entity: str, attribute: str | None) -> FloatArray:
+        series = source.series(entity, first, stop, attribute)
+        return end_silent(to_hourly(series, first, n), first, series, entity in silent)
+
+    points = [salon_point(entity, attribute) for entity, attribute in salon_points]
     if points:
         stacked = np.array(points)
         seen = np.isfinite(stacked).sum(axis=0)
@@ -185,5 +189,5 @@ def load_zone_measurements(
             MAX_HEAT_KWH_PER_HOUR,
             SMALL_GAP_HOURS,
         ),
-        load_section_measurements(source, sections, first, stop, n),
+        load_section_measurements(source, sections, first, stop, n, silent),
     )

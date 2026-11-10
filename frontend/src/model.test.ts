@@ -192,7 +192,7 @@ const dayHour = (start: string, extra: Partial<DayHour> = {}): DayHour => ({
   flow_planned_c: 35, flow_baseline_c: 36, reason: 'price_trade_off', loops_open: {}, thermostats: {}, ...extra,
 })
 
-const day = (date: string, now: string, hours: DayHour[]): DayView => ({ day: date, now, loops_total: {}, sections: [], house: null, hours })
+const day = (date: string, now: string, hours: DayHour[]): DayView => ({ day: date, now, loops_total: {}, sections: [], house: null, offline: {}, hours })
 
 describe('timelineRows', () => {
   const today = day('2026-10-14', '2026-10-14T01:00:00+00:00', [

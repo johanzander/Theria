@@ -184,13 +184,16 @@ def build_day_view(
         if past and hour in records:
             row["thermostat"] = records[hour].thermostat
         price = row["price_sek_per_kwh"]
-        if past and hour in index:
+        # The hour in progress shows what was measured so far, so that the lines reach now; its
+        # energy and heat wait for the whole hour, as part of an hour would read low.
+        if (past or hour == current) and hour in index:
             i = index[hour]
             row["rts_measured"] = _known(measured.rts_c[i])
             row["room_measured"] = _known(measured.room_c[i])
-            row["energy_measured_kwh"] = _known(
-                measured.compressor_kwh[i] + measured.aux_kwh[i]
-            )
+            if past:
+                row["energy_measured_kwh"] = _known(
+                    measured.compressor_kwh[i] + measured.aux_kwh[i]
+                )
             row["thermostats"] = {
                 name: {
                     "room_c": _known(measured.thermostat_room_c[name][i]),
@@ -221,7 +224,8 @@ def build_day_view(
                     for sid, m in zones.sections.items()
                 }
                 row["salon_measured"] = _known(zones.salon_c[j])
-                row["heat_measured_kw"] = _known(zones.heat_kwh[j])
+                if past:
+                    row["heat_measured_kw"] = _known(zones.heat_kwh[j])
                 row["flow_measured_c"] = _known(zones.flow_c[j])
                 row["flow_target_c"] = _known(zones.flow_target_c[j])
                 row["need_salon_kw"] = salon_need_kw(float(zones.salon_c[j]), t_out)
@@ -286,6 +290,12 @@ def build_day_view(
             room: len(entities) for room, entities in settings.room_actuators.items()
         },
         "sections": sections_meta(sections),
+        # rooms and thermostats Home Assistant has lost now, per section, with their last report
+        "offline": (
+            {}
+            if zones is None
+            else {sid: m.offline for sid, m in zones.sections.items() if m.offline}
+        ),
         "house": None if house is None else house.__dict__,
         "hours": rows,
     }

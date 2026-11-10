@@ -71,6 +71,8 @@ export interface DayView {
   loops_total: Record<string, number>
   sections: Section[]
   house: HouseLoss | null
+  /** per section id: rooms and thermostats Home Assistant has lost now, with their last report (ISO) */
+  offline: Record<string, Record<string, string | null>>
   hours: DayHour[]
 }
 
@@ -314,8 +316,8 @@ export function firstPredicted(rows: { key: string; past: boolean }[]): string |
   return rows.find((r) => !r.past)?.key
 }
 
-// Clear of the plan's own colours (dark, blue, orange, red, green) and of the two LK rooms' colours.
-const SECTION_PALETTE = ['#0e7490', '#be185d', '#7c3aed', '#a16207', '#64748b', '#0f766e', '#9d174d']
+// Clear of the plan's own colours (dark, blue, red) and of the targets' grey and of the two LK rooms' colours.
+const SECTION_PALETTE = ['#0e7490', '#be185d', '#7c3aed', '#a16207', '#65a30d', '#0f766e', '#9d174d']
 
 /** A room's colour within its section; a thermostat with the room's name gets the same colour. The LK rooms keep theirs. */
 export function sectionColour(section: Section, name: string): string {
@@ -337,4 +339,19 @@ export function sectionRows<T extends { sections: Record<string, SectionHour> }>
       ...Object.fromEntries(section.thermostats.map((n) => [`demand_${n}`, m?.demand[n] ?? null])),
     } as T & Record<string, number | null>
   })
+}
+
+/** An LK room's target: its thermostat's measured setpoint, and for coming hours the plan's LK target (both thermostats get it). */
+export function lkTarget(row: { past: boolean; thermostats: DayHour['thermostats']; thermostatTarget: number | null }, room: string): number | null {
+  return row.thermostats[`lk_${room.toLowerCase()}`]?.set_c ?? (row.past ? null : row.thermostatTarget)
+}
+
+/** A room's name, with the note that it is offline and since its last report: "Väntsidan (offline, last 19:03)". */
+export function offlineName(name: string, lastReport: string | null | undefined): string {
+  if (lastReport === undefined) return name
+  if (lastReport === null) return `${name} (offline)`
+  const at = new Date(lastReport)
+  const today = new Date().toLocaleDateString('sv-SE') === at.toLocaleDateString('sv-SE')
+  const clock = at.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+  return `${name} (offline, last ${today ? clock : `${at.toLocaleDateString('sv-SE')} ${clock}`})`
 }
