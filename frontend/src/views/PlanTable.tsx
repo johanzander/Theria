@@ -1,30 +1,30 @@
-import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { useState } from 'react'
+import { Line, ReferenceLine, YAxis } from 'recharts'
 import { fetchDay, fetchPlan, fetchSettings } from '../api'
-import { axisLabel, axisTicks, dayStatus, describeReason, rangeLabel, timelineRows, tooltipFormatter, UNITS, MODE_LABEL, type HourRow } from '../model'
-import { DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
+import { dayStatus, describeReason, splitPredicted, timelineRows, UNITS, MODE_LABEL, type HourRow } from '../model'
+import { DayNav, PageIntro, Panel, shiftDay, useDay, useLoaded } from '../ui'
+import { axisFor, Chart, guides, predictedArea } from './DayCharts'
 
 const fix = (v: number | null, digits: number, suffix = '') => (v === null ? '-' : `${v.toFixed(digits)}${suffix}`)
 
+/** As on the dashboard: a line at midnight and at now, the coming hours shaded, the plan solid where applied and dashed where expected. */
 function FlowChart({ rows, cap }: { rows: HourRow[]; cap: number | null }) {
+  const now = rows.find((r) => r.current)?.key
+  const data = splitPredicted(rows, ['flowPlanned'])
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <ComposedChart data={rows}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="key" ticks={axisTicks(rows.map((r) => r.key))} tickFormatter={axisLabel} interval={0} />
-        <YAxis unit="°" domain={[(min: number) => Math.floor(min) - 2, (max: number) => Math.ceil(max) + 2]} />
-        <Tooltip labelFormatter={(k) => rangeLabel(String(k))} formatter={tooltipFormatter(() => UNITS.temp)} />
-        <Legend />
-        {cap !== null && <ReferenceLine y={cap} stroke="#d9822b" strokeDasharray="6 3" label="floor limit" />}
-        <Line type="stepAfter" dataKey="flowPlanned" name="Plan" stroke="#0b6bcb" strokeWidth={2} dot={false} />
-        <Line type="stepAfter" dataKey="flowBaseline" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
-      </ComposedChart>
-    </ResponsiveContainer>
+    <Chart rows={data} axisRows={rows} height={240} unitFor={() => UNITS.temp}>
+      <YAxis unit="°" domain={[(min: number) => Math.floor(min) - 2, (max: number) => Math.ceil(max) + 2]} />
+      {predictedArea(rows)}
+      {cap !== null && <ReferenceLine y={cap} stroke="#d9822b" strokeDasharray="6 3" label={{ value: 'floor limit', position: 'insideTopLeft' }} />}
+      <Line type="stepAfter" dataKey="flowPlanned" name="Plan (applied)" stroke="#0b6bcb" strokeWidth={2} dot={false} />
+      <Line type="stepAfter" dataKey="flowPlannedPredicted" name="Plan, expected" stroke="#0b6bcb" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+      <Line type="stepAfter" dataKey="flowBaseline" name="Flat setpoint" stroke="#9aa5b1" strokeDasharray="4 3" dot={false} />
+      {guides(now, axisFor(rows).dayStarts)}
+    </Chart>
   )
 }
 
 export function PlanTable() {
-  const [day, setDay] = useState(todayIso())
+  const [day, setDay] = useDay()
   const plan = useLoaded(fetchPlan)
   const settings = useLoaded(fetchSettings)
   const first = useLoaded(() => fetchDay(day), [day])
@@ -46,7 +46,7 @@ export function PlanTable() {
         <>
           <Panel
             title="Flow temperature"
-            description="The flow temperature the pump asks for: the heat curve shifted by the setpoint. Blue: the plan. Dashed grey: the flat setpoint. Orange: what the floor mixing valves let through to the floor loops; above it, a lower setpoint costs the floor nothing and the radiators are the only ones who notice."
+            description="The flow temperature the pump asks for: the heat curve shifted by the setpoint, for the day shown and the next; the grey line is midnight, the dotted line now, and the shaded part the coming hours. Blue: the plan, solid where it was applied and dashed where it is expected. Dashed grey: the flat setpoint. Orange: what the floor mixing valves let through to the floor loops; above it, a lower setpoint costs the floor nothing and the radiators are the only ones who notice."
           >
             <FlowChart rows={rows} cap={typeof cap === 'number' ? cap : null} />
           </Panel>

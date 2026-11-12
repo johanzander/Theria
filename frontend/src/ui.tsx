@@ -68,6 +68,29 @@ export const shiftDay = (day: string, by: number) => {
 
 export const todayIso = () => new Date().toLocaleDateString('sv-SE')
 
+/** The day a page shows: the picked one, or today when none was (null). */
+export const shownDay = (picked: string | null, today: string) => picked ?? today
+
+/** Picking today keeps no day, so the page moves on to the next day at midnight. */
+export const keptPick = (day: string, today: string) => (day === today ? null : day)
+
+/** Today's date, which changes at midnight while the page stays open. */
+function useToday(): string {
+  const [today, setToday] = useState(todayIso())
+  useEffect(() => {
+    const id = setInterval(() => setToday(todayIso()), REFRESH_MS)
+    return () => clearInterval(id)
+  }, [])
+  return today
+}
+
+/** The day a page shows and how to pick another; showing today follows it past midnight. */
+export function useDay(): [string, (day: string) => void] {
+  const today = useToday()
+  const [picked, setPicked] = useState<string | null>(null)
+  return [shownDay(picked, today), (day) => setPicked(keptPick(day, today))]
+}
+
 /** Step through the days: the chosen day and the next one (when it has data) are shown. */
 export function DayNav({ day, onChange }: { day: string; onChange: (day: string) => void }) {
   const today = todayIso()

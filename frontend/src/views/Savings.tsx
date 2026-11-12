@@ -1,9 +1,8 @@
-import { useState } from 'react'
 import { Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fetchDay, fetchSavings } from '../api'
 import { dayStatus, timelineRows, tooltipFormatter, UNITS } from '../model'
 import { dailyRows, dailyTotals, shiftRows, shiftTotals, type DailyRow, type ShiftRow } from '../savings'
-import { Card, DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
+import { Card, DayNav, PageIntro, Panel, shiftDay, useDay, useLoaded } from '../ui'
 import { axisFor, Chart, guides } from './DayCharts'
 
 const C = { flat: '#9aa5b1', plan: '#0b6bcb', preheat: '#e8903a', cut: '#0b6bcb', price: '#cbd2d9', saving: '#067647', measured: '#102a43' }
@@ -214,7 +213,7 @@ function History({ days }: { days: DailyRow[] }) {
 }
 
 export function Savings() {
-  const [day, setDay] = useState(todayIso())
+  const [day, setDay] = useDay()
   const first = useLoaded(() => fetchDay(day), [day])
   const second = useLoaded(() => fetchDay(shiftDay(day, 1)), [day])
   const history = useLoaded(() => fetchSavings(HISTORY_DAYS))

@@ -1,11 +1,10 @@
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { useState } from 'react'
 import { fetchDay, fetchExecution, fetchPlan, fetchPreflight, fetchSavings, fetchSettings } from '../api'
 import {
   dayStatus, outlookText, planSaving, savingsTotals, statusTone, timelineRows, tooltipFormatter, UNITS,
   type Execution, type PlanResponse, type Preflight, type SavingsResponse, type SettingEntry,
 } from '../model'
-import { Card, DayNav, PageIntro, Panel, shiftDay, todayIso, useLoaded } from '../ui'
+import { Card, DayNav, PageIntro, Panel, shiftDay, useDay, useLoaded } from '../ui'
 import { DayCharts } from './DayCharts'
 import { PumpDiagram } from './PumpDiagram'
 
@@ -111,7 +110,7 @@ function limitsOf(settings: SettingEntry[] | null) {
 }
 
 export function Overview() {
-  const [day, setDay] = useState(todayIso())
+  const [day, setDay] = useDay()
   const plan = useLoaded(fetchPlan)
   const execution = useLoaded(fetchExecution)
   const savings = useLoaded(() => fetchSavings(14))
