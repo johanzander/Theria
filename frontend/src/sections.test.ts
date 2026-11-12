@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lkTarget, offlineName, pairedTooltipRows, roomColour, sectionColour, sectionRows, UNITS, type Section, type SectionHour } from './model'
+import { continueFromNow, lkTarget, offlineName, pairedTooltipRows, roomColour, sectionColour, sectionRows, UNITS, type Section, type SectionHour } from './model'
 import { houseNote, withPlanZones } from './views/DayCharts'
 
 const guest: Section = { id: 'guest', name: 'Gårdshus', rooms: ['Sovrum', 'Kök'], thermostats: ['Kök'] }
@@ -49,7 +49,7 @@ describe('paired tooltip', () => {
       { dataKey: 'set_Kök', name: 'Kök, target', value: 20, color: 'a' },
       { dataKey: 'set_Hall', name: 'Hall, target', value: 19.5, color: 'b' },
     ]
-    const rows = pairedTooltipRows(items, { set_Kök: 'room_Kök', set_Hall: 'room_Hall' }, UNITS.temp)
+    const rows = pairedTooltipRows(items, { set_Kök: ['room_Kök'], set_Hall: ['room_Hall'] }, UNITS.temp)
     expect(rows.map((r) => [r.name, r.text])).toEqual([
       ['Kök', '20.1 °C (target 20.0 °C)'],
       ['Hall, target', '19.5 °C'],
@@ -74,5 +74,22 @@ describe('offline room', () => {
     today.setHours(19, 3, 0, 0)
     expect(offlineName('Väntsidan', today.toISOString())).toBe('Väntsidan (offline, last 19:03)')
     expect(offlineName('Väntsidan', '2026-01-02T08:00:00Z')).toContain('2026-01-02')
+  })
+})
+
+describe('prediction from now', () => {
+  it("starts at the room's value now and follows the zone's expected change", () => {
+    const rows = [
+      { current: false, room: 20.0, zone: 19.0 },
+      { current: true, room: 21.0, zone: 19.5 },
+      { current: false, room: null, zone: 19.0 },
+      { current: false, room: null, zone: null },
+    ]
+    expect(continueFromNow(rows, (r) => r.room, (r) => r.zone)).toEqual([null, 21.0, 20.5, null])
+  })
+
+  it('pairs a target with the expected value when nothing is measured', () => {
+    const items = [{ dataKey: 'pred_Kök', name: 'Kök, expected', value: 20.5, color: 'a' }, { dataKey: 'set_Kök', name: 'Kök, target', value: 20, color: 'a' }]
+    expect(pairedTooltipRows(items, { set_Kök: ['room_Kök', 'pred_Kök'] }, UNITS.temp).map((r) => r.text)).toEqual(['20.5 °C (target 20.0 °C)'])
   })
 })

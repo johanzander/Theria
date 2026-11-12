@@ -375,14 +375,20 @@ export interface TooltipItem { dataKey: string; name: string; value: unknown; co
 
 /**
  * A tooltip's rows with each target folded into the row of what it is for: "Kök  20.1 °C (target 20.0 °C)".
- * `targets` maps a target's data key to its actual's; a target whose actual is not shown keeps its own row.
+ * `targets` maps a target's data key to its actuals' keys in order; a target with none shown keeps its own row.
  */
-export function pairedTooltipRows(items: TooltipItem[], targets: Record<string, string>, unit: Unit): { name: string; color: string; text: string }[] {
+export function pairedTooltipRows(
+  items: TooltipItem[], targets: Record<string, string[]>, unit: Unit, standIns: Record<string, string> = {},
+): { name: string; color: string; text: string }[] {
+  // a stand-in (a room's expected value) is left out where the value it stands in for is shown
+  items = items.filter((i) => !(i.dataKey in standIns && items.some((j) => j.dataKey === standIns[i.dataKey])))
   const shown = new Set(items.map((i) => i.dataKey))
-  const targetOf = Object.fromEntries(Object.entries(targets).map(([target, actual]) => [actual, target]))
+  // each target goes to the first of its actuals that is shown: the measured value, else the expected one
+  const partner = Object.fromEntries(Object.entries(targets).map(([target, actuals]) => [target, actuals.find((a) => shown.has(a))]))
+  const targetOf = Object.fromEntries(Object.entries(partner).filter(([, a]) => a !== undefined).map(([target, a]) => [a as string, target]))
   const byKey = Object.fromEntries(items.map((i) => [i.dataKey, i]))
   return items
-    .filter((i) => !(i.dataKey in targets && shown.has(targets[i.dataKey])))
+    .filter((i) => !(i.dataKey in partner && partner[i.dataKey] !== undefined))
     .map((i) => {
       const target = byKey[targetOf[i.dataKey]]
       const text = formatValue(i.value, unit)

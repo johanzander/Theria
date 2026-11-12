@@ -2,7 +2,7 @@ import {
   Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import {
-  axisLabel, axisTicks, firstPredicted, MODE_LABEL, pairedTooltipRows, quarterRows, rangeLabel, roomColour, lkTarget, offlineName, sectionColour, sectionRows, shiftWindows, splitPredicted,
+  axisLabel, axisTicks, firstPredicted, MODE_LABEL, pairedTooltipRows, quarterRows, rangeLabel, roomColour, continueFromNow, lkTarget, offlineName, sectionColour, sectionRows, shiftWindows, splitPredicted,
   tooltipFormatter, UNITS,
   type DayView, type HouseLoss, type HourRow, type Section, type ShiftWindow, type TooltipItem, type Unit,
 } from '../model'
@@ -48,6 +48,7 @@ function windowAreas(windows: ShiftWindow[], yAxisId?: string) {
 
 const WINDOW_NOTE = 'Red shading: a sell, the thermostats close the loops and the setpoint is lowered. Orange: a buy just before a sell, the thermostats open the loops.'
 const PREDICTED_DASH = '6 3'
+const EXPECTED_OPACITY = 0.45 // a room's expected temperature: its own colour, paler, carrying on from now
 const TARGET_DASH = '5 4' // a target (a thermostat's setpoint, the LK target) is stepped and dashed, in the colour of what it is for
 
 /** A thermostat's setpoint, in the colour of its room; it shares the room's legend entry and tooltip row. */
@@ -59,25 +60,28 @@ function targetLine(section: Section, name: string) {
 }
 
 /** A tooltip that shows a target in its actual's row: "Kök  20.1 °C (target 20.0 °C)". */
-function PairedTooltip({ active, payload, label, targets, unit, minutes }: {
-  active?: boolean; payload?: TooltipItem[]; label?: string | number; targets: Record<string, string>; unit: Unit; minutes: number
+function PairedTooltip({ active, payload, label, targets, standIns, unit, minutes }: {
+  active?: boolean; payload?: TooltipItem[]; label?: string | number; targets: Record<string, string[]>; standIns: Record<string, string>
+  unit: Unit; minutes: number
 }) {
   if (!active || !payload || payload.length === 0) return null
   return (
     <div className="paired-tooltip">
       <p className="paired-tooltip-label">{rangeLabel(String(label), minutes)}</p>
-      {pairedTooltipRows(payload, targets, unit).map((r) => (
+      {pairedTooltipRows(payload, targets, unit, standIns).map((r) => (
         <p key={r.name} style={{ color: r.color }}>{r.name} : {r.text}</p>
       ))}
     </div>
   )
 }
 
-export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows, targets }: {
+export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows, targets, standIns = {} }: {
   rows: object[]; height: number; children: React.ReactNode; unitFor: (name: string) => Unit; minutes?: number
   axisRows: { key: string }[]
-  /** a target's data key to its actual's, to show them on one tooltip row; the chart's unit must then be one */
-  targets?: Record<string, string>
+  /** a target's data key to its actuals' (measured, then expected), to show them on one tooltip row; the chart's unit must then be one */
+  targets?: Record<string, string[]>
+  /** an expected value's key to its measured value's: left out of the tooltip where that is shown */
+  standIns?: Record<string, string>
 }) {
   const axis = axisFor(axisRows)
   return (
@@ -86,7 +90,7 @@ export function Chart({ rows, height, children, unitFor, minutes = 60, axisRows,
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="key" ticks={axis.ticks} tickFormatter={axis.tickFormatter} interval={0} />
         {targets
-          ? <Tooltip content={<PairedTooltip targets={targets} unit={unitFor('')} minutes={minutes} />} />
+          ? <Tooltip content={<PairedTooltip targets={targets} standIns={standIns} unit={unitFor('')} minutes={minutes} />} />
           : <Tooltip labelFormatter={(k) => rangeLabel(String(k), minutes)} formatter={tooltipFormatter(unitFor)} />}
         <Legend />
         {children}
@@ -127,9 +131,16 @@ function SectionRoomChart({ section, rows, windows, now, dayStarts, limits, lkNa
   const lkTargeted = ground ? section.rooms.filter((n) => lkNames.includes(n.toLowerCase())) : []
   const targeted = [...section.thermostats, ...lkTargeted]
   const meanTarget = ground && lkTargeted.length === 0
-  const data = sectionRows(rows, section).map((r) => ({
+  // The plan expects one temperature per zone; each room it covers carries on from where it is now by the
+  // zone's expected change, in its own colour, so the prediction starts at the room.
+  const predicted = ground ? lkTargeted : salon ? section.rooms : []
+  const zoneExpected = (r: HourRow) => (ground ? r.roomPlanned : salon ? r.salonPlanned : null)
+  const rowsNow = sectionRows(rows, section)
+  const expectations = Object.fromEntries(predicted.map((n) => [n, continueFromNow(rowsNow, (r) => r[`room_${n}`] ?? null, zoneExpected)]))
+  const data = rowsNow.map((r, i) => ({
       ...r,
       roomExpected: r.past ? null : r.roomPlanned,
+      ...Object.fromEntries(predicted.map((n) => [`pred_${n}`, expectations[n][i]])),
       ...Object.fromEntries(lkRooms.map((n) => [`lk_${n}`, r.thermostats[n]?.room_c ?? null])),
       ...Object.fromEntries(lkTargeted.map((n) => [`set_${n}`, lkTarget(r, n)])),
     }) as unknown as HourRow & Record<string, number | null>)
@@ -138,15 +149,16 @@ function SectionRoomChart({ section, rows, windows, now, dayStarts, limits, lkNa
     : salon ? [r.salonPlanned] : [])
   const [low, high] = yRange([
     ...planValues,
-    ...data.flatMap((r) => [...section.rooms.map((n) => r[`room_${n}`]), ...targeted.map((n) => r[`set_${n}`] as number | null)]),
+    ...data.flatMap((r) => [...section.rooms.map((n) => r[`room_${n}`]), ...targeted.map((n) => r[`set_${n}`] as number | null),
+      ...predicted.map((n) => r[`pred_${n}`] as number | null)]),
     ...data.flatMap((r) => lkRooms.map((n) => r[`lk_${n}`] as number | null)),
   ])
   return (
     <>
       <h3 className="chart-heading">{section.name}</h3>
       <Chart rows={data} axisRows={rows} height={240} unitFor={() => UNITS.temp} targets={{
-        ...Object.fromEntries(targeted.map((n) => [`set_${n}`, `room_${n}`])),
-      }}>
+        ...Object.fromEntries(targeted.map((n) => [`set_${n}`, [`room_${n}`, `pred_${n}`]])),
+      }} standIns={Object.fromEntries(predicted.map((n) => [`pred_${n}`, `room_${n}`]))}>
         <YAxis domain={[low, high]} tickCount={high - low + 1} allowDecimals={false} unit="°" />
         {predictedArea(rows)}
         {windowAreas(windows)}
@@ -154,15 +166,21 @@ function SectionRoomChart({ section, rows, windows, now, dayStarts, limits, lkNa
         {section.rooms.flatMap((n) => [
           <Line key={n} type="monotone" dataKey={`room_${n}`} name={offlineName(n, offline[n])} stroke={sectionColour(section, n)} strokeWidth={1.25}
             dot={false} />,
+          ...(predicted.includes(n) ? [
+            <Line key={`pred-${n}`} type="monotone" dataKey={`pred_${n}`} name={`${n}, expected`} stroke={sectionColour(section, n)} strokeWidth={1.75}
+              strokeOpacity={EXPECTED_OPACITY} dot={false} legendType="none" />,
+          ] : []),
           ...(targeted.includes(n) ? [targetLine(section, n)] : []),
         ])}
         {section.thermostats.filter((n) => !section.rooms.includes(n)).map((n) => targetLine(section, n))}
         {lkRooms.map((n) => (
           <Line key={n} type="monotone" dataKey={`lk_${n}`} name={n.replace(/^lk_/, '')} stroke={roomColour(n)} strokeWidth={1} dot={false} />
         ))}
-        {/* expected by the plan, coming hours only: dashed blue */}
-        {ground && <Line type="monotone" dataKey="roomExpected" name="LK rooms, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />}
-        {salon && <Line type="monotone" dataKey="salonPlanned" name="Salon, expected" stroke={C.plan} strokeWidth={2} strokeDasharray={PREDICTED_DASH} dot={false} />}
+        {/* the plan's zone line, only where no room carries the prediction */}
+        {ground && predicted.length === 0 && <Line type="monotone" dataKey="roomExpected" name="LK rooms, expected" stroke={C.plan} strokeWidth={2}
+          strokeDasharray={PREDICTED_DASH} dot={false} />}
+        {salon && predicted.length === 0 && <Line type="monotone" dataKey="salonPlanned" name="Salon, expected" stroke={C.plan} strokeWidth={2}
+          strokeDasharray={PREDICTED_DASH} dot={false} />}
         {/* targets are stepped and dashed; the comfort floor is a limit, dashed red */}
         {meanTarget && <Line type="stepAfter" dataKey="thermostatTarget" name="LK target" stroke={C.measured} strokeWidth={2} strokeDasharray={TARGET_DASH}
           dot={false} connectNulls />}
@@ -242,7 +260,7 @@ export function DayCharts({ rows, views, loopsTotal, sections, house, offline, l
     <>
       <Panel
         title="Room temperature"
-        description={`The house part by part, as on the Home Assistant climate view; read the page top down: rooms, what they need, what the pump sends, and why. Each room is a solid line, its target a dashed line in the same colour (Bibliotek and Vardagsrum their own LK thermostat's, and for coming hours the target the plan gives both); hover shows them together. Dashed blue is the temperature the plan expects in the coming hours: for the ground floor the mean of the two LK rooms, the LK loops close when a room is above its target; for the salon where it is now plus what the plan changes. Dashed red is the comfort floor the plan holds, the grey dashed line the comfort target. The upper floor and the guest house are only measured: the plan does not move them. ${WINDOW_NOTE}`}
+        description={`The house part by part, as on the Home Assistant climate view; read the page top down: rooms, what they need, what the pump sends, and why. Each room is a solid line, its target a dashed line in the same colour (Bibliotek and Vardagsrum their own LK thermostat's, and for coming hours the target the plan gives both); hover shows them together. From now on, the same colour paler is what the room is expected to do: where it is now plus the change the plan expects for its zone (the LK rooms on the ground floor, whose loops close when a room is above its target; the salon). The plan expects one temperature per zone, so the rooms move together; rooms it does not model have no prediction. Dashed red is the comfort floor the plan holds, the grey dashed line the comfort target. The upper floor and the guest house are only measured: the plan does not move them. ${WINDOW_NOTE}`}
       >
         {shown.map((section) => (
           <SectionRoomChart key={section.id} section={section} rows={rows} windows={windows} now={now} dayStarts={dayStarts} limits={limits}

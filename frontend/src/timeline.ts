@@ -355,3 +355,19 @@ export function offlineName(name: string, lastReport: string | null | undefined)
   const clock = at.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
   return `${name} (offline, last ${today ? clock : `${at.toLocaleDateString('sv-SE')} ${clock}`})`
 }
+
+/**
+ * A room's expected temperature from now on: where it is now plus the change the plan expects for its
+ * zone, so that the prediction starts where the room is and has no jump. Null before now, and where
+ * the room or the plan is unknown.
+ */
+export function continueFromNow<T extends { current: boolean }>(rows: T[], actual: (r: T) => number | null, zone: (r: T) => number | null): (number | null)[] {
+  const now = rows.findIndex((r) => r.current)
+  const start = now === -1 ? null : actual(rows[now])
+  const base = now === -1 ? null : zone(rows[now])
+  return rows.map((r, i) => {
+    const planned = zone(r)
+    if (i < now || start === null || base === null || planned === null) return null
+    return start + (planned - base)
+  })
+}
