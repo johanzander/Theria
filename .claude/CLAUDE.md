@@ -115,8 +115,11 @@ zones:
 ### Start Dev Server
 
 ```bash
-./dev-start.sh  # Starts FastAPI on port 8081 with hot reload
+./dev-start.sh  # FastAPI on 8081 (restarts on .py/.yaml changes) and the frontend on 5175 with hot reload
 ```
+
+Open http://localhost:5175 while developing: Vite reloads on changes in `frontend/src` and sends `/api` to 8081.
+Port 8081 serves the frontend as last built into `backend/static/plan` (`npm run build` in `frontend/`).
 
 `dev-start.sh` runs in test mode unless `.env` sets `HA_TEST_MODE=false`: it reads the real Home Assistant
 and InfluxDB, but only `nordpool.get_prices_for_date` gets through as a service call. Before it starts it

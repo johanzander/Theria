@@ -71,10 +71,25 @@ if ! python scripts/pull_addon_data.py "$THERIA_DATA_DIR"; then
     exit 1
 fi
 
+# Frontend with hot reload (Vite on 5175, /api proxied to 8081); stopped together with this script
+if lsof -ti :5175 >/dev/null 2>&1 ; then
+    echo "⚠️  Port 5175 is in use. Stopping it..."
+    kill $(lsof -ti :5175) 2>/dev/null || true
+    sleep 1
+fi
+if [ ! -d frontend/node_modules ]; then
+    echo "📦 Installing frontend packages..."
+    (cd frontend && npm install)
+fi
+(cd frontend && npm run dev -- --strictPort) &
+VITE_PID=$!
+trap 'kill $VITE_PID 2>/dev/null; pkill -P $VITE_PID 2>/dev/null' EXIT INT TERM
+
 # Change to backend directory
 cd backend
 
 # Start uvicorn with hot reload
+echo "🖥️  Frontend with hot reload on http://localhost:5175 (8081 serves the last npm run build)"
 echo "📡 Starting FastAPI on http://localhost:8081"
 echo "📖 API docs at http://localhost:8081/docs"
 echo "🔍 Health check at http://localhost:8081/api/health"
